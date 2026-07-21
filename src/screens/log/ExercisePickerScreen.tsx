@@ -1,23 +1,31 @@
 import React, { useState } from 'react';
-import { FlatList, View, ActivityIndicator, Pressable } from 'react-native';
+import { FlatList, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField } from '../../components/core';
+import { Text, TextField, ListRow, LoadingState, EmptyState } from '../../components/core';
 import { useExercises } from '../../services/api/queries/exercises';
 import { useActiveWorkoutStore } from '../../store/activeWorkoutStore';
-import type { LogStackParamList } from '../../navigation/types';
+import { useWorkoutTemplate, useAddTemplateExercise } from '../../services/api/queries/workoutTemplates';
+import { useUnitPreference } from '../../hooks/useUnitPreference';
+import type { LogStackParamList, ProgramsStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<LogStackParamList>;
-type Route = RouteProp<LogStackParamList, 'ExercisePicker'>;
+// ExercisePicker is registered on both LogStack and ProgramsStack (reached
+// from TemplateEditor on either) with identical params.
+type Route = RouteProp<LogStackParamList | ProgramsStackParamList, 'ExercisePicker'>;
 
 export function ExercisePickerScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
   const selectMode = params?.selectMode ?? false;
+  const templateId = params?.templateId;
   const addExercise = useActiveWorkoutStore(state => state.addExercise);
+  const unitPref = useUnitPreference();
+  const { data: template } = useWorkoutTemplate(templateId);
+  const addTemplateExercise = useAddTemplateExercise();
   const [search, setSearch] = useState('');
   const { data: exercises, isLoading } = useExercises(search);
 
@@ -33,36 +41,44 @@ export function ExercisePickerScreen() {
         />
 
         {isLoading ? (
-          <ActivityIndicator color={theme.colors.accent.primary} />
+          <LoadingState />
         ) : (
           <FlatList
             data={exercises ?? []}
             keyExtractor={item => item.id}
             ItemSeparatorComponent={() => (
-              <View style={{ height: 1, backgroundColor: theme.colors.border.default }} />
+              <View style={{ height: 1, backgroundColor: theme.colors.border.subtle }} />
             )}
             renderItem={({ item }) => (
-              <Pressable
+              <ListRow
+                title={item.name}
+                subtitle={`${item.category} · ${item.equipment} · ${item.primary_muscle}`}
+                showChevron={!selectMode && !templateId}
                 onPress={() => {
-                  if (selectMode) {
-                    addExercise({ exerciseId: item.id, exerciseName: item.name });
+                  if (templateId) {
+                    const nextIndex = template?.workout_template_exercises.length ?? 0;
+                    addTemplateExercise.mutate({
+                      workout_template_id: templateId,
+                      exercise_id: item.id,
+                      order_index: nextIndex,
+                      target_sets: 3,
+                    });
+                    navigation.goBack();
+                  } else if (selectMode) {
+                    addExercise({
+                      exerciseId: item.id,
+                      exerciseName: item.name,
+                      metric: unitPref === 'lb' ? 'weight_lb' : 'weight_kg',
+                    });
                     navigation.goBack();
                   } else {
                     navigation.navigate('ExerciseDetail', { exerciseId: item.id });
                   }
                 }}
-                style={{ paddingVertical: theme.spacing.md }}
-              >
-                <Text variant="body">{item.name}</Text>
-                <Text variant="caption" color="secondary">
-                  {item.category} · {item.equipment} · {item.primary_muscle}
-                </Text>
-              </Pressable>
+              />
             )}
             ListEmptyComponent={
-              <Text variant="body" color="secondary">
-                No exercises match "{search}".
-              </Text>
+              <EmptyState icon="search" title="No matches" description={`No exercises match "${search}".`} />
             }
           />
         )}

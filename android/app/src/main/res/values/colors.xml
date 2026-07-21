@@ -1,0 +1,4 @@
+<resources>
+    <!-- SoSet brand background — avoids a white flash between the OS splash and JS bundle load on a dark-mode-first app. -->
+    <color name="sosetBackground">#090B10</color>
+</resources>

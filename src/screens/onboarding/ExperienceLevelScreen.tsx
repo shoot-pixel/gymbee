@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button, SelectableCard } from '../../components/core';
+import { Text, Button, SelectableCard, StepProgress } from '../../components/core';
 import { useOnboardingStore } from '../../store/onboardingStore';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import type { ExperienceLevel } from '../../types/database';
@@ -25,10 +25,8 @@ export function ExperienceLevelScreen({ navigation }: Props) {
     <SafeAreaView
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
-      <View>
-        <Text variant="label" color="secondary">
-          STEP 2 OF 5
-        </Text>
+      <View style={{ gap: theme.spacing.md }}>
+        <StepProgress step={2} total={5} />
         <Text variant="title">Experience level</Text>
       </View>
 

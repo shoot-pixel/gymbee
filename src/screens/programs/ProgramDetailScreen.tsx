@@ -1,11 +1,11 @@
 import React from 'react';
-import { ScrollView, View, Pressable, ActivityIndicator } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card } from '../../components/core';
+import { Text, Card, Header, ListRow, LoadingState } from '../../components/core';
 import { useProgramTree } from '../../services/api/queries/programs';
 import type { ProgramsStackParamList } from '../../navigation/types';
 
@@ -20,50 +20,46 @@ export function ProgramDetailScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
-          <Text
-            variant="subtitle"
-            color="secondary"
-            onPress={() => navigation.goBack()}
-            style={{ fontSize: 22 }}
-          >
-            ←
-          </Text>
-          <Text variant="title">{program?.title ?? 'Program'}</Text>
-        </View>
-
+      <Header title={program?.title ?? 'Program'} />
+      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
         {isLoading || !program ? (
-          <ActivityIndicator color={theme.colors.accent.primary} />
+          <LoadingState fill={false} />
         ) : (
           <>
-            <Card>
+            <Card variant="subtle">
               <Text variant="body" color="secondary">
                 {program.weeks_count} weeks · {program.days_per_week}x/week · {program.goal ?? 'general'}
               </Text>
             </Card>
 
             {program.program_weeks.map(week => (
-              <View key={week.id} style={{ gap: theme.spacing.sm }}>
+              <View key={week.id} style={{ gap: theme.spacing.xs }}>
                 <Text variant="subtitle">
                   Week {week.week_number}
                   {week.focus ? ` — ${week.focus}` : ''}
                 </Text>
-                {week.program_days
-                  .filter(day => !day.is_rest_day)
-                  .map(day => (
-                    <Pressable
-                      key={day.id}
-                      onPress={() => navigation.navigate('DayDetail', { programDayId: day.id })}
-                    >
-                      <Card style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                        <Text variant="body">{day.title ?? 'Training Day'}</Text>
-                        <Text variant="body" color="secondary">
-                          {day.program_exercises.length} exercises
-                        </Text>
-                      </Card>
-                    </Pressable>
-                  ))}
+                <Card variant="elevated" style={{ gap: 0 }}>
+                  {week.program_days
+                    .filter(day => !day.is_rest_day)
+                    .map((day, index) => (
+                      <ListRow
+                        key={day.id}
+                        title={day.title ?? 'Training Day'}
+                        trailing={
+                          <Text variant="body" color="secondary">
+                            {day.program_exercises.length} exercises
+                          </Text>
+                        }
+                        showChevron
+                        onPress={() => navigation.navigate('DayDetail', { programDayId: day.id })}
+                        style={
+                          index > 0
+                            ? { borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }
+                            : undefined
+                        }
+                      />
+                    ))}
+                </Card>
               </View>
             ))}
           </>

@@ -17,7 +17,7 @@ export function Badge({ count, visible = true, size = 10 }: BadgeProps) {
         minWidth: count ? size + 4 : size,
         height: count ? size + 4 : size,
         borderRadius: theme.radii.pill,
-        backgroundColor: theme.colors.accent.primary,
+        backgroundColor: theme.colors.semantic.danger,
         borderWidth: 2,
         borderColor: theme.colors.bg.base,
         alignItems: 'center',

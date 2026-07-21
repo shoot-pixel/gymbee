@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TextInput, TextInputProps, View } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text } from './Text';
@@ -8,8 +8,16 @@ type TextFieldProps = TextInputProps & {
   error?: string;
 };
 
-export function TextField({ label, error, style, ...rest }: TextFieldProps) {
+export function TextField({ label, error, style, onFocus, onBlur, ...rest }: TextFieldProps) {
   const theme = useTheme();
+  const [focused, setFocused] = useState(false);
+
+  const borderColor = error
+    ? theme.colors.semantic.danger
+    : focused
+      ? theme.colors.accent.primary
+      : theme.colors.border.default;
+
   return (
     <View style={{ gap: theme.spacing.xs }}>
       {label ? (
@@ -19,14 +27,22 @@ export function TextField({ label, error, style, ...rest }: TextFieldProps) {
       ) : null}
       <TextInput
         placeholderTextColor={theme.colors.text.tertiary}
+        onFocus={e => {
+          setFocused(true);
+          onFocus?.(e);
+        }}
+        onBlur={e => {
+          setFocused(false);
+          onBlur?.(e);
+        }}
         style={[
           {
             backgroundColor: theme.colors.bg.surface,
             borderWidth: 1,
-            borderColor: error ? theme.colors.semantic.danger : theme.colors.border.default,
+            borderColor,
             borderRadius: theme.radii.md,
             paddingHorizontal: theme.spacing.md,
-            paddingVertical: 12,
+            paddingVertical: theme.spacing.md,
             color: theme.colors.text.primary,
             fontSize: 15,
           },

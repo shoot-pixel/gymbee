@@ -90,13 +90,13 @@ export function useProgramTree(programId: string | undefined) {
   });
 }
 
-type ProgramDayWithContext = ProgramDayWithExercises & {
+export type ProgramDayWithContext = ProgramDayWithExercises & {
   program_weeks: Pick<ProgramWeekRow, 'week_number' | 'focus'> & {
     programs: Pick<ProgramRow, 'title'>;
   };
 };
 
-async function fetchProgramDay(programDayId: string): Promise<ProgramDayWithContext> {
+export async function fetchProgramDay(programDayId: string): Promise<ProgramDayWithContext> {
   const { data, error } = await supabase
     .from('program_days')
     .select(
@@ -127,6 +127,72 @@ export function useProgramDay(programDayId: string | undefined) {
   });
 }
 
+export type ProgramDaySummary = {
+  programDayId: string;
+  title: string;
+  programTitle: string;
+  exerciseCount: number;
+  previewNames: string[];
+};
+
+type ProgramDayForSummary = {
+  id: string;
+  title: string | null;
+  is_rest_day: boolean;
+  program_exercises: Array<{ order_index: number; exercises: Pick<ExerciseRow, 'name'> }>;
+};
+
+/** Flattens every non-rest-day across all of the user's programs (not just
+ * the active one) — used by the Library's "Existing Workouts" section. */
+async function fetchAllProgramDaysWithExercises(userId: string): Promise<ProgramDaySummary[]> {
+  const { data, error } = await supabase
+    .from('programs')
+    .select(
+      `id, title,
+      program_weeks (
+        program_days (
+          id, title, is_rest_day,
+          program_exercises ( order_index, exercises ( name ) )
+        )
+      )`,
+    )
+    .eq('user_id', userId);
+
+  if (error) throw error;
+
+  const programs = data as unknown as Array<{
+    id: string;
+    title: string;
+    program_weeks: Array<{ program_days: ProgramDayForSummary[] }>;
+  }>;
+
+  const summaries: ProgramDaySummary[] = [];
+  for (const program of programs) {
+    for (const week of program.program_weeks) {
+      for (const day of week.program_days) {
+        if (day.is_rest_day) continue;
+        const sorted = [...day.program_exercises].sort((a, b) => a.order_index - b.order_index);
+        summaries.push({
+          programDayId: day.id,
+          title: day.title ?? 'Training Day',
+          programTitle: program.title,
+          exerciseCount: sorted.length,
+          previewNames: sorted.slice(0, 3).map(pe => pe.exercises.name),
+        });
+      }
+    }
+  }
+  return summaries;
+}
+
+export function useAllProgramDaysWithExercises(userId: string | null) {
+  return useQuery({
+    queryKey: ['programDays', 'all', userId],
+    queryFn: () => fetchAllProgramDaysWithExercises(userId as string),
+    enabled: userId != null,
+  });
+}
+
 /**
  * Resolves which program_week is "current" from the program's start_date
  * (weeks progress sequentially, clamped to the program's length) and which
@@ -154,6 +220,42 @@ export function getTodayProgramDay(
 
   const todayDayOfWeek = today.getDay();
   const day = week.program_days.find(d => d.day_of_week === todayDayOfWeek);
+  if (!day) return null;
+
+  return { week, day };
+}
+
+/**
+ * Same idea as `getTodayProgramDay` but for an arbitrary date — used by the
+ * Home calendar to resolve any visible day, not just today. Unlike
+ * `getTodayProgramDay`, this does NOT clamp to the program's date range: a
+ * date before the program started or after it ends correctly resolves to
+ * `null` rather than being pulled into week 1 or the final week, since
+ * showing "week 1" for a date three months before the program began would
+ * misrepresent the calendar.
+ */
+export function getProgramDayForDate(
+  program: ProgramTree | null | undefined,
+  date: Date,
+): { week: ProgramWeekWithDays; day: ProgramDayWithExercises } | null {
+  if (!program) return null;
+
+  const start = new Date(program.start_date);
+  const daysSinceStart = Math.floor(
+    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
+      Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) /
+      86_400_000,
+  );
+  if (daysSinceStart < 0) return null;
+
+  const weekNumber = Math.floor(daysSinceStart / 7) + 1;
+  if (weekNumber > program.weeks_count) return null;
+
+  const week = program.program_weeks.find(w => w.week_number === weekNumber);
+  if (!week) return null;
+
+  const dayOfWeek = date.getDay();
+  const day = week.program_days.find(d => d.day_of_week === dayOfWeek);
   if (!day) return null;
 
   return { week, day };

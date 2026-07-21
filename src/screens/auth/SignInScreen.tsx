@@ -3,7 +3,7 @@ import { View, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, Button } from '../../components/core';
+import { Text, TextField, Button, Header } from '../../components/core';
 import { useAuth } from '../../hooks/useAuth';
 import type { AuthStackParamList } from '../../navigation/types';
 
@@ -30,7 +30,8 @@ export function SignInScreen({ navigation }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-        <View style={{ flex: 1, padding: theme.spacing.xl, justifyContent: 'center', gap: theme.spacing.lg }}>
+        <Header title="" />
+        <View style={{ flex: 1, padding: theme.spacing.xl, paddingTop: 0, justifyContent: 'center', gap: theme.spacing.lg }}>
           <View>
             <Text variant="title">Welcome back</Text>
             <Text variant="body" color="secondary">

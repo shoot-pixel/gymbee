@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button, SelectableCard } from '../../components/core';
+import { Text, Button, SelectableCard, StepProgress } from '../../components/core';
 import { useOnboardingStore } from '../../store/onboardingStore';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import type { EquipmentType } from '../../types/database';
@@ -29,14 +29,14 @@ export function EquipmentScreen({ navigation }: Props) {
     <SafeAreaView
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
-      <View>
-        <Text variant="label" color="secondary">
-          STEP 4 OF 5
-        </Text>
-        <Text variant="title">Available equipment</Text>
-        <Text variant="body" color="secondary">
-          Select everything you have access to.
-        </Text>
+      <View style={{ gap: theme.spacing.md }}>
+        <StepProgress step={4} total={5} />
+        <View>
+          <Text variant="title">Available equipment</Text>
+          <Text variant="body" color="secondary">
+            Select everything you have access to.
+          </Text>
+        </View>
       </View>
 
       <View style={{ gap: theme.spacing.sm }}>

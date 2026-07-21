@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import { colors, spacing, radii, typography, fontFamily } from './tokens';
+import { colors, spacing, radii, shadows, gradients, sizes, typography, fontFamily } from './tokens';
 
-const theme = { colors, spacing, radii, typography, fontFamily } as const;
+const theme = { colors, spacing, radii, shadows, gradients, sizes, typography, fontFamily } as const;
 
 export type Theme = typeof theme;
 

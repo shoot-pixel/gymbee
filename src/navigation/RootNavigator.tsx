@@ -1,10 +1,10 @@
 import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer, DarkTheme, Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './types';
 import { useAuthStore } from '../store/authStore';
 import { useTheme } from '../theme/ThemeProvider';
+import { LoadingScreen } from '../screens/LoadingScreen';
 import { AuthStack } from './AuthStack';
 import { OnboardingStack } from './OnboardingStack';
 import { AppShell } from './AppShell';
@@ -18,18 +18,7 @@ export function RootNavigator() {
   const { hydrated, isAuthenticated, onboardingCompleted } = useAuthStore();
 
   if (!hydrated) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: theme.colors.bg.base,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <ActivityIndicator color={theme.colors.accent.primary} />
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   const navTheme: NavTheme = {

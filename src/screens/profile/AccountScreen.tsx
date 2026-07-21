@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, View } from 'react-native';
+import { Alert, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, Button, Card } from '../../components/core';
+import { Text, TextField, Button, Card, Header, LoadingState } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useProfile, useUpdateProfile } from '../../services/api/queries/profiles';
 import { useAuth } from '../../hooks/useAuth';
@@ -13,7 +13,7 @@ import type { ProfileStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Account'>;
 
-export function AccountScreen({ navigation }: Props) {
+export function AccountScreen(_props: Props) {
   const theme = useTheme();
   const userId = useAuthStore(state => state.userId);
   const { data: profile, isLoading } = useProfile(userId);
@@ -82,27 +82,10 @@ export function AccountScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: theme.spacing.md,
-          padding: theme.spacing.lg,
-        }}
-      >
-        <Text
-          variant="subtitle"
-          color="secondary"
-          onPress={() => navigation.goBack()}
-          style={{ fontSize: 22 }}
-        >
-          ←
-        </Text>
-        <Text variant="title">Account</Text>
-      </View>
+      <Header title="Account" />
 
       {isLoading ? (
-        <ActivityIndicator color={theme.colors.accent.primary} />
+        <LoadingState />
       ) : (
         <ScrollView
           contentContainerStyle={{
@@ -166,9 +149,9 @@ export function AccountScreen({ navigation }: Props) {
             />
           </View>
 
-          <Button label="Sign Out" variant="ghost" onPress={() => signOut()} />
+          <Button label="Sign Out" variant="ghost" icon="logOut" onPress={() => signOut()} />
 
-          <Card style={{ gap: theme.spacing.sm, borderColor: theme.colors.semantic.danger }}>
+          <Card variant="elevated" style={{ gap: theme.spacing.sm, borderColor: theme.colors.semantic.danger }}>
             <Text variant="subtitle" style={{ color: theme.colors.semantic.danger }}>
               Danger Zone
             </Text>
@@ -177,7 +160,7 @@ export function AccountScreen({ navigation }: Props) {
             </Text>
             <Button
               label="Delete Account"
-              variant="ghost"
+              variant="secondary"
               onPress={onDeleteAccount}
               loading={deleting}
               style={{ borderColor: theme.colors.semantic.danger }}

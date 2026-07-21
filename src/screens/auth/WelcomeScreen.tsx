@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button } from '../../components/core';
+import { Text, Button, SoSetLogo } from '../../components/core';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
@@ -19,12 +19,16 @@ export function WelcomeScreen({ navigation }: Props) {
         justifyContent: 'space-between',
       }}
     >
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: theme.spacing.sm }}>
-        <Text variant="numeralLg" style={{ fontSize: 40 }}>
-          🐝 GymBee
-        </Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: theme.spacing.lg }}>
+        <SoSetLogo variant="horizontal" size={56} accessibilityLabel="SoSet" />
         <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
-          AI-coached strength training, built around you.
+          <Text variant="body" style={{ fontWeight: '700' }}>
+            AI coaching.
+          </Text>{' '}
+          Real progress.{' '}
+          <Text variant="body" style={{ color: theme.colors.accent.blue, fontWeight: '700' }}>
+            Together.
+          </Text>
         </Text>
       </View>
       <View style={{ gap: theme.spacing.md }}>

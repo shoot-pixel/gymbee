@@ -46,11 +46,11 @@ export function TrendChart({ points, height = 120, emptyLabel = 'Not enough data
     <View style={{ height }} onLayout={e => setWidth(e.nativeEvent.layout.width)}>
       {width > 0 ? (
         <Svg width={width} height={height}>
-          <Path d={areaPath} fill={theme.colors.accent.primary} fillOpacity={0.12} />
+          <Path d={areaPath} fill={theme.colors.accent.primary} fillOpacity={0.08} />
           <Path
             d={linePath}
             stroke={theme.colors.accent.primary}
-            strokeWidth={2.5}
+            strokeWidth={2}
             fill="none"
             strokeLinejoin="round"
             strokeLinecap="round"

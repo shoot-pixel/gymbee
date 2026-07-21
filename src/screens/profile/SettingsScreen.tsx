@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button, SegmentedControl, SelectableCard } from '../../components/core';
+import { Text, SegmentedControl, SelectableCard, Header, ListRow, LoadingState, Card } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useProfile, useUpdateProfile } from '../../services/api/queries/profiles';
 import type { ProfileStackParamList } from '../../navigation/types';
@@ -49,27 +49,10 @@ export function SettingsScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: theme.spacing.md,
-          padding: theme.spacing.lg,
-        }}
-      >
-        <Text
-          variant="subtitle"
-          color="secondary"
-          onPress={() => navigation.goBack()}
-          style={{ fontSize: 22 }}
-        >
-          ←
-        </Text>
-        <Text variant="title">Settings</Text>
-      </View>
+      <Header title="Settings" />
 
       {isLoading ? (
-        <ActivityIndicator color={theme.colors.accent.primary} />
+        <LoadingState />
       ) : (
         <ScrollView
           contentContainerStyle={{
@@ -111,11 +94,16 @@ export function SettingsScreen({ navigation }: Props) {
             </View>
           </View>
 
-          <Button
-            label="Account"
-            variant="secondary"
-            onPress={() => navigation.navigate('Account')}
-          />
+          <Card variant="elevated" style={{ gap: 0 }}>
+            <ListRow title="Account" icon="user" showChevron onPress={() => navigation.navigate('Account')} />
+            <ListRow
+              title="Blocked Users"
+              icon="circleAlert"
+              showChevron
+              onPress={() => navigation.navigate('BlockedUsers')}
+              style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
+            />
+          </Card>
         </ScrollView>
       )}
     </SafeAreaView>

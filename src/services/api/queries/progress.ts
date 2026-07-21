@@ -91,6 +91,33 @@ export function computePrEvents(sets: LoggedSet[]): PrEvent[] {
   return events;
 }
 
+export type ExerciseE1rmPoint = { date: string; e1rm: number };
+export type ExerciseE1rmHistory = { exerciseId: string; exerciseName: string; points: ExerciseE1rmPoint[] };
+
+/**
+ * Per exercise, one point per calendar day holding that day's best estimated
+ * 1RM (multiple sets the same day collapse to their max, so a same-day
+ * cluster of sets doesn't skew a trend fit over these points), chronological.
+ */
+export function computeE1rmHistories(sets: LoggedSet[]): ExerciseE1rmHistory[] {
+  const byExercise = new Map<string, { exerciseName: string; byDate: Map<string, number> }>();
+  for (const set of sets) {
+    if (set.loadKg == null || set.loadKg <= 0) continue;
+    const e1rm = estimateOneRepMax(set.loadKg, set.reps);
+    const dateKey = set.loggedAt.slice(0, 10);
+    const bucket = byExercise.get(set.exerciseId) ?? { exerciseName: set.exerciseName, byDate: new Map() };
+    bucket.byDate.set(dateKey, Math.max(bucket.byDate.get(dateKey) ?? 0, e1rm));
+    byExercise.set(set.exerciseId, bucket);
+  }
+  return [...byExercise.entries()].map(([exerciseId, { exerciseName, byDate }]) => ({
+    exerciseId,
+    exerciseName,
+    points: [...byDate.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, e1rm]) => ({ date, e1rm })),
+  }));
+}
+
 export function computeWeeklyVolume(
   sets: LoggedSet[],
   weeks = 8,

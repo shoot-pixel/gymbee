@@ -1,8 +1,8 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
 import type { MainTabParamList } from './types';
 import { useTheme } from '../theme/ThemeProvider';
+import { Icon, type IconName } from '../components/core';
 import { TodayStack } from './TodayStack';
 import { ProgramsStack } from './ProgramsStack';
 import { LogStack } from './LogStack';
@@ -11,12 +11,12 @@ import { CommunityStack } from './CommunityStack';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-const TAB_GLYPHS: Record<keyof MainTabParamList, string> = {
-  TodayTab: '🏠',
-  ProgramsTab: '📅',
-  LogTab: '➕',
-  ProgressTab: '📈',
-  CommunityTab: '🏆',
+const TAB_ICONS: Record<keyof MainTabParamList, IconName> = {
+  TodayTab: 'home',
+  ProgramsTab: 'calendar',
+  LogTab: 'plusCircle',
+  ProgressTab: 'trendingUp',
+  CommunityTab: 'trophy',
 };
 
 export function MainTabs() {
@@ -27,18 +27,22 @@ export function MainTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: theme.colors.accent.primary,
-        tabBarInactiveTintColor: theme.colors.text.tertiary,
+        tabBarInactiveTintColor: theme.colors.text.primary,
         tabBarStyle: {
           backgroundColor: theme.colors.bg.surface,
-          borderTopColor: theme.colors.border.default,
+          borderTopColor: theme.colors.border.subtle,
+          borderTopWidth: 1,
           height: 84,
-          paddingTop: 8,
+          paddingTop: 10,
         },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' as const },
-        tabBarIcon: ({ color }) => (
-          <Text style={{ fontSize: 22, color }}>
-            {TAB_GLYPHS[route.name as keyof MainTabParamList]}
-          </Text>
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' as const, marginTop: 2 },
+        tabBarIcon: ({ color, focused }) => (
+          <Icon
+            name={TAB_ICONS[route.name as keyof MainTabParamList]}
+            size="md"
+            color={color}
+            strokeWidth={focused ? 2.25 : 1.75}
+          />
         ),
       })}
     >

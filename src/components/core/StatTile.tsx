@@ -4,6 +4,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Card } from './Card';
 import { Numeral } from './Numeral';
 import { Text } from './Text';
+import { Icon } from './Icon';
 
 type StatTileProps = {
   label: string;
@@ -19,18 +20,19 @@ export function StatTile({ label, value, trend }: StatTileProps) {
       : trend?.direction === 'down'
         ? theme.colors.semantic.danger
         : theme.colors.text.secondary;
-  const trendGlyph = trend?.direction === 'up' ? '▲' : trend?.direction === 'down' ? '▼' : '▬';
+  const trendIcon = trend?.direction === 'up' ? 'trendingUp' : trend?.direction === 'down' ? 'trendingDown' : 'minus';
 
   return (
-    <Card style={{ gap: theme.spacing.xs }}>
+    <Card variant="subtle" style={{ gap: theme.spacing.xxs, padding: theme.spacing.sm }}>
       <Text variant="label" color="secondary">
         {label.toUpperCase()}
       </Text>
       <Numeral value={value} size="md" />
       {trend ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xxs }}>
+          <Icon name={trendIcon} size="sm" color={trendColor} />
           <Text variant="caption" style={{ color: trendColor }}>
-            {trendGlyph} {trend.label}
+            {trend.label}
           </Text>
         </View>
       ) : null}

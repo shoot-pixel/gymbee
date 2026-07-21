@@ -20,10 +20,10 @@ export function SegmentedControl<T extends string>({
       style={{
         flexDirection: 'row',
         backgroundColor: theme.colors.bg.surface,
-        borderRadius: theme.radii.md,
+        borderRadius: theme.radii.sm,
         borderWidth: 1,
-        borderColor: theme.colors.border.default,
-        padding: 4,
+        borderColor: theme.colors.border.subtle,
+        padding: theme.spacing.xxs,
       }}
     >
       {options.map(option => {
@@ -32,11 +32,16 @@ export function SegmentedControl<T extends string>({
           <Pressable
             key={option.value}
             onPress={() => onChange(option.value)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            accessibilityLabel={option.label}
             style={{
               flex: 1,
-              paddingVertical: 8,
-              borderRadius: theme.radii.sm,
+              minHeight: theme.sizes.touchTarget - theme.spacing.xs,
+              paddingVertical: theme.spacing.xs,
+              borderRadius: theme.radii.xs,
               alignItems: 'center',
+              justifyContent: 'center',
               backgroundColor: selected ? theme.colors.accent.primary : 'transparent',
             }}
           >

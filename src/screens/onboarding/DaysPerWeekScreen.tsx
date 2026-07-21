@@ -3,7 +3,7 @@ import { View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button, Numeral } from '../../components/core';
+import { Text, Button, Numeral, StepProgress } from '../../components/core';
 import { useOnboardingStore } from '../../store/onboardingStore';
 import type { OnboardingStackParamList } from '../../navigation/types';
 
@@ -20,14 +20,14 @@ export function DaysPerWeekScreen({ navigation }: Props) {
     <SafeAreaView
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
-      <View>
-        <Text variant="label" color="secondary">
-          STEP 3 OF 5
-        </Text>
-        <Text variant="title">Days per week</Text>
-        <Text variant="body" color="secondary">
-          How many days can you train each week?
-        </Text>
+      <View style={{ gap: theme.spacing.md }}>
+        <StepProgress step={3} total={5} />
+        <View>
+          <Text variant="title">Days per week</Text>
+          <Text variant="body" color="secondary">
+            How many days can you train each week?
+          </Text>
+        </View>
       </View>
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -45,7 +45,7 @@ export function DaysPerWeekScreen({ navigation }: Props) {
                 justifyContent: 'center',
                 backgroundColor: selected ? theme.colors.accent.primary : theme.colors.bg.surface,
                 borderWidth: 1,
-                borderColor: selected ? theme.colors.accent.primary : theme.colors.border.default,
+                borderColor: selected ? theme.colors.accent.primary : theme.colors.border.subtle,
               }}
             >
               <Numeral value={day} size="md" color={selected ? theme.colors.text.onAccent : undefined} />

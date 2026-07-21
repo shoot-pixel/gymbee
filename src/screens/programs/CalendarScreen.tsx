@@ -1,12 +1,14 @@
-import React from 'react';
-import { ScrollView, View, Pressable, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { format, addDays } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card } from '../../components/core';
+import { Text, Card, Header, IconButton, ListRow, BottomSheet, EmptyState, LoadingState } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useActiveProgramTree, getTodayProgramDay } from '../../services/api/queries/programs';
+import { useScheduledWorkouts } from '../../services/api/queries/scheduledWorkouts';
 import type { ProgramsStackParamList } from '../../navigation/types';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -17,25 +19,56 @@ export function CalendarScreen() {
   const { data: program, isLoading } = useActiveProgramTree(userId);
   const navigation = useNavigation<NativeStackNavigationProp<ProgramsStackParamList>>();
   const todaysDay = getTodayProgramDay(program);
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
+
+  const today = new Date();
+  const { data: scheduledWorkouts, isLoading: scheduledLoading } = useScheduledWorkouts(userId, {
+    from: format(today, 'yyyy-MM-dd'),
+    to: format(addDays(today, 30), 'yyyy-MM-dd'),
+  });
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}>
-        <Text variant="title">Programs</Text>
+      <Header
+        title="Programs"
+        showBack={false}
+        right={<IconButton name="plus" onPress={() => setAddSheetOpen(true)} />}
+      />
+      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+        {scheduledLoading ? null : scheduledWorkouts && scheduledWorkouts.length > 0 ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <Text variant="label" color="secondary">
+              SCHEDULED
+            </Text>
+            <Card variant="elevated" style={{ gap: 0 }}>
+              {scheduledWorkouts.map((sw, index) => (
+                <ListRow
+                  key={sw.id}
+                  title={sw.name}
+                  subtitle={format(new Date(sw.scheduled_date), 'EEEE, MMM d')}
+                  showChevron
+                  onPress={() => navigation.navigate('ScheduledWorkoutDetail', { scheduledWorkoutId: sw.id })}
+                  style={
+                    index > 0 ? { borderTopWidth: 1, borderTopColor: theme.colors.border.subtle } : undefined
+                  }
+                />
+              ))}
+            </Card>
+          </View>
+        ) : null}
 
         {isLoading ? (
-          <ActivityIndicator color={theme.colors.accent.primary} />
+          <LoadingState fill={false} />
         ) : !program ? (
-          <Card>
-            <Text variant="subtitle">No program yet</Text>
-            <Text variant="body" color="secondary" style={{ marginTop: theme.spacing.xs }}>
-              Once generated, your weeks and days will show up here.
-            </Text>
-          </Card>
+          <EmptyState
+            icon="calendar"
+            title="No program yet"
+            description="Once generated, your weeks and days will show up here."
+          />
         ) : (
           <>
             <Pressable onPress={() => navigation.navigate('ProgramDetail', { programId: program.id })}>
-              <Card>
+              <Card variant="elevated">
                 <Text variant="subtitle">{program.title}</Text>
                 <Text variant="body" color="secondary">
                   {program.weeks_count} weeks · {program.days_per_week}x/week
@@ -67,7 +100,7 @@ export function CalendarScreen() {
                             ? theme.colors.bg.surface
                             : theme.colors.bg.surfaceElevated,
                           borderWidth: isToday ? 2 : 1,
-                          borderColor: isToday ? theme.colors.accent.primary : theme.colors.border.default,
+                          borderColor: isToday ? theme.colors.accent.primary : theme.colors.border.subtle,
                         }}
                       >
                         <Text
@@ -85,6 +118,27 @@ export function CalendarScreen() {
           </>
         )}
       </ScrollView>
+
+      <BottomSheet visible={addSheetOpen} onClose={() => setAddSheetOpen(false)} title="Add a Workout">
+        <View style={{ gap: theme.spacing.xs }}>
+          <ListRow
+            title="Create New Workout"
+            icon="plus"
+            onPress={() => {
+              setAddSheetOpen(false);
+              navigation.navigate('TemplateEditor', { scheduleAfterSave: true });
+            }}
+          />
+          <ListRow
+            title="Add From Library"
+            icon="dumbbell"
+            onPress={() => {
+              setAddSheetOpen(false);
+              navigation.navigate('Library', { pickMode: true });
+            }}
+          />
+        </View>
+      </BottomSheet>
     </SafeAreaView>
   );
 }

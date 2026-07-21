@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button, TextField } from '../../components/core';
+import { Text, Button, TextField, StepProgress } from '../../components/core';
 import { useOnboardingStore } from '../../store/onboardingStore';
 import type { OnboardingStackParamList } from '../../navigation/types';
 
@@ -18,14 +18,14 @@ export function InjuriesScreen({ navigation }: Props) {
     <SafeAreaView
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
-      <View>
-        <Text variant="label" color="secondary">
-          STEP 5 OF 5
-        </Text>
-        <Text variant="title">Any injuries or limitations?</Text>
-        <Text variant="body" color="secondary">
-          Optional — your coach will work around these.
-        </Text>
+      <View style={{ gap: theme.spacing.md }}>
+        <StepProgress step={5} total={5} />
+        <View>
+          <Text variant="title">Any injuries or limitations?</Text>
+          <Text variant="body" color="secondary">
+            Optional — your coach will work around these.
+          </Text>
+        </View>
       </View>
 
       <TextField
