@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, ListRow, LoadingState, EmptyState } from '../../components/core';
+import { TextField, ListRow, LoadingState, EmptyState, Header, IconButton } from '../../components/core';
 import { useExercises } from '../../services/api/queries/exercises';
 import { useActiveWorkoutStore } from '../../store/activeWorkoutStore';
 import { useWorkoutTemplate, useAddTemplateExercise } from '../../services/api/queries/workoutTemplates';
@@ -31,8 +31,18 @@ export function ExercisePickerScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <View style={{ padding: theme.spacing.lg, gap: theme.spacing.md, flex: 1 }}>
-        <Text variant="title">Exercise Library</Text>
+      <Header
+        title="Exercise Library"
+        right={
+          <IconButton
+            name="plus"
+            variant="ghost"
+            accessibilityLabel="Add your own exercise"
+            onPress={() => navigation.navigate('AddExercise', { selectMode, templateId })}
+          />
+        }
+      />
+      <View style={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg, gap: theme.spacing.md, flex: 1 }}>
         <TextField
           placeholder="Search exercises…"
           value={search}
@@ -46,6 +56,7 @@ export function ExercisePickerScreen() {
           <FlatList
             data={exercises ?? []}
             keyExtractor={item => item.id}
+            keyboardShouldPersistTaps="handled"
             ItemSeparatorComponent={() => (
               <View style={{ height: 1, backgroundColor: theme.colors.border.subtle }} />
             )}
@@ -68,7 +79,7 @@ export function ExercisePickerScreen() {
                     addExercise({
                       exerciseId: item.id,
                       exerciseName: item.name,
-                      metric: unitPref === 'lb' ? 'weight_lb' : 'weight_kg',
+                      metric: item.default_metric ?? (unitPref === 'lb' ? 'weight_lb' : 'weight_kg'),
                     });
                     navigation.goBack();
                   } else {

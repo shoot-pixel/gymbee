@@ -8,11 +8,11 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card, Button, Header, TextField, Icon, VisibilitySelector } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useCreatePhotoPost } from '../../services/api/queries/posts';
-import type { ProgressStackParamList } from '../../navigation/types';
+import type { CommunityStackParamList } from '../../navigation/types';
 import type { PostVisibility } from '../../types/database';
 
-type Route = RouteProp<ProgressStackParamList, 'UploadPhotoPost'>;
-type Nav = NativeStackNavigationProp<ProgressStackParamList>;
+type Route = RouteProp<CommunityStackParamList, 'UploadPhotoPost'>;
+type Nav = NativeStackNavigationProp<CommunityStackParamList>;
 
 type PickedPhoto = { uri: string; contentType: string };
 
@@ -106,7 +106,11 @@ export function UploadPhotoPostScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <Header title={title} />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {isBeforeAfter ? (
           <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
             <View style={{ flex: 1 }}>

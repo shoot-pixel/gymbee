@@ -159,7 +159,11 @@ export function TemplateEditorScreen() {
       {templateId && isLoading ? (
         <LoadingState />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+        <ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           <Card variant="elevated" style={{ gap: theme.spacing.md }}>
             <TextField
               label="Workout Name"

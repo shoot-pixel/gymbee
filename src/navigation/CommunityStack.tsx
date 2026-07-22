@@ -6,6 +6,7 @@ import { CommunityPostsScreen } from '../screens/community/CommunityPostsScreen'
 import { MyPostsScreen } from '../screens/community/MyPostsScreen';
 import { FriendProfileScreen } from '../screens/community/FriendProfileScreen';
 import { PostDetailScreen } from '../screens/community/PostDetailScreen';
+import { UploadPhotoPostScreen } from '../screens/community/UploadPhotoPostScreen';
 
 const Stack = createNativeStackNavigator<CommunityStackParamList>();
 
@@ -17,6 +18,7 @@ export function CommunityStack() {
       <Stack.Screen name="MyPosts" component={MyPostsScreen} />
       <Stack.Screen name="FriendProfile" component={FriendProfileScreen} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} />
+      <Stack.Screen name="UploadPhotoPost" component={UploadPhotoPostScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );
 }

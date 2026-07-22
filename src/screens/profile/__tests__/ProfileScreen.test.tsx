@@ -105,7 +105,7 @@ describe('ProfileScreen', () => {
 
     await fireEvent.press(getByText('Post Progress Photo'));
     expect(mockNavigate).toHaveBeenCalledWith('MainTabs', {
-      screen: 'ProgressTab',
+      screen: 'CommunityTab',
       params: { screen: 'UploadPhotoPost', params: { mode: 'progress' } },
     });
   });
@@ -121,7 +121,7 @@ describe('ProfileScreen', () => {
 
     await fireEvent.press(getByText('Post Before & After'));
     expect(mockNavigate).toHaveBeenCalledWith('MainTabs', {
-      screen: 'ProgressTab',
+      screen: 'CommunityTab',
       params: { screen: 'UploadPhotoPost', params: { mode: 'before_after' } },
     });
   });

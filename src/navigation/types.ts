@@ -33,6 +33,7 @@ export type ProgramsStackParamList = {
   ProgramDetail: { programId: string };
   DayDetail: { programDayId: string };
   ExercisePicker: { selectMode?: boolean; templateId?: string } | undefined;
+  AddExercise: { selectMode?: boolean; templateId?: string } | undefined;
   Library: { pickMode?: boolean } | undefined;
   TemplateEditor: { templateId?: string; scheduleAfterSave?: boolean } | undefined;
   ScheduledWorkoutDetail: { scheduledWorkoutId: string };
@@ -47,6 +48,7 @@ export type LogStackParamList = {
     | { programDayId?: string; scheduledWorkoutId?: string; templateId?: string; variantType?: WorkoutVariantType }
     | undefined;
   ExercisePicker: { selectMode?: boolean; templateId?: string } | undefined;
+  AddExercise: { selectMode?: boolean; templateId?: string } | undefined;
   ExerciseDetail: { exerciseId: string };
   WorkoutSummary: undefined;
   Library: { pickMode?: boolean } | undefined;
@@ -60,7 +62,6 @@ export type ProgressStackParamList = {
   BodyMetrics: undefined;
   WeeklyReview: undefined;
   ProgressTimeline: undefined;
-  UploadPhotoPost: { mode: 'progress' | 'before_after' };
 };
 
 // ---- Community tab ----
@@ -70,6 +71,7 @@ export type CommunityStackParamList = {
   MyPosts: undefined;
   FriendProfile: { userId: string };
   PostDetail: { postId: string };
+  UploadPhotoPost: { mode: 'progress' | 'before_after' };
 };
 
 // ---- Profile (pushed from Today header, not a tab) ----

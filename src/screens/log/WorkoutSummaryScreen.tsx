@@ -157,7 +157,11 @@ export function WorkoutSummaryScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.xl, gap: theme.spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.xl, gap: theme.spacing.lg }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <View>
           <LinearGradient
             colors={[...theme.gradients.accent]}

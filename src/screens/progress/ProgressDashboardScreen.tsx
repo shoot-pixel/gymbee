@@ -47,7 +47,7 @@ export function ProgressDashboardScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}>
-        <Text variant="title">Progress</Text>
+        <Text variant="title">PRs</Text>
 
         {isLoading ? (
           <LoadingState fill={false} />
@@ -138,20 +138,6 @@ export function ProgressDashboardScreen() {
                 title="Progress Timeline"
                 showChevron
                 onPress={() => navigation.navigate('ProgressTimeline')}
-                style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
-              />
-              <ListRow
-                title="Post Progress Photo"
-                icon="camera"
-                showChevron
-                onPress={() => navigation.navigate('UploadPhotoPost', { mode: 'progress' })}
-                style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
-              />
-              <ListRow
-                title="Post Before & After"
-                icon="camera"
-                showChevron
-                onPress={() => navigation.navigate('UploadPhotoPost', { mode: 'before_after' })}
                 style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
               />
             </Card>

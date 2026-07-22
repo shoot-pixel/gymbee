@@ -829,7 +829,6 @@ export function LogWorkoutScreen() {
   const store = useActiveWorkoutStore();
   const startWorkoutLog = useStartWorkoutLog();
   const elapsedLabel = useElapsedLabel(store.startedAt);
-  const [exerciseIndex, setExerciseIndex] = useState(0);
   // Guided workouts (a source is set in params) start as soon as the user
   // taps "Start Workout" elsewhere, so auto-starting here is fine. Freestyle
   // has no such prior intent signal — auto-starting on tab focus would
@@ -906,7 +905,6 @@ export function LogWorkoutScreen() {
           source: routeSource ?? { type: 'freestyle', id: null },
           exercises,
         });
-        setExerciseIndex(0);
       } catch (err) {
         if (cancelled) return;
         Alert.alert(
@@ -948,8 +946,6 @@ export function LogWorkoutScreen() {
 
   const stats = computeWorkoutStats(store.exercises);
   const allComplete = stats.totalExercises > 0 && store.exercises.every(isExerciseComplete);
-  const clampedIndex = Math.min(exerciseIndex, Math.max(store.exercises.length - 1, 0));
-  const currentExercise = store.exercises[clampedIndex];
 
   const onFinish = () => {
     navigation.navigate('WorkoutSummary');
@@ -1100,33 +1096,22 @@ export function LogWorkoutScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}>
-        {currentExercise ? (
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        {store.exercises.map((exercise, index) => (
           <ExerciseFocusCard
-            exercise={currentExercise}
-            exerciseNumber={clampedIndex + 1}
+            key={exercise.exerciseId}
+            exercise={exercise}
+            exerciseNumber={index + 1}
             totalExercises={store.exercises.length}
             readinessBand={readinessBand}
             unitPref={unitPref}
             userId={userId}
           />
-        ) : null}
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.lg }}>
-          <IconButton
-            name="chevronLeft"
-            onPress={() => setExerciseIndex(i => Math.max(0, i - 1))}
-            disabled={clampedIndex === 0}
-          />
-          <Text variant="caption" color="secondary">
-            EXERCISE {clampedIndex + 1} OF {store.exercises.length}
-          </Text>
-          <IconButton
-            name="chevronRight"
-            onPress={() => setExerciseIndex(i => Math.min(store.exercises.length - 1, i + 1))}
-            disabled={clampedIndex >= store.exercises.length - 1}
-          />
-        </View>
+        ))}
 
         <Button
           label="Add Exercise"
@@ -1134,9 +1119,18 @@ export function LogWorkoutScreen() {
           icon="plus"
           onPress={() => navigation.navigate('ExercisePicker', { selectMode: true })}
         />
-
-        <Button label="Finish Workout" onPress={onFinish} disabled={!allComplete} />
       </ScrollView>
+
+      <View
+        style={{
+          padding: theme.spacing.lg,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.border.subtle,
+          backgroundColor: theme.colors.bg.base,
+        }}
+      >
+        <Button label="Finish Workout" onPress={onFinish} disabled={!allComplete} />
+      </View>
     </SafeAreaView>
   );
 }

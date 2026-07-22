@@ -44,11 +44,11 @@ export function ProfileScreen({ navigation }: Props) {
 
   const goToUploadPost = (mode: 'progress' | 'before_after') => {
     setAddPostSheetOpen(false);
-    // UploadPhotoPost lives on the Progress tab's stack, not this one —
+    // UploadPhotoPost lives on the Community tab's stack, not this one —
     // bubbles through the root navigator, same pattern TodayScreen uses
     // for its own cross-tab navigation.
     rootNavigation.navigate('MainTabs', {
-      screen: 'ProgressTab',
+      screen: 'CommunityTab',
       params: { screen: 'UploadPhotoPost', params: { mode } },
     });
   };

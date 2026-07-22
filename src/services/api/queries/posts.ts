@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import RNFS from 'react-native-fs';
+import { decode } from 'base64-arraybuffer';
 import { supabase } from '../supabaseClient';
 import { fetchFriendIds, fetchPublicProfiles } from './community';
 import type { Database, PostVisibility } from '../../../types/database';
@@ -34,11 +36,14 @@ function extensionFromContentType(contentType: string): string {
 
 async function uploadPostPhoto(userId: string, visibility: PostVisibility, photo: PhotoInput): Promise<string> {
   const path = buildPostPhotoPath(userId, visibility, extensionFromContentType(photo.contentType));
-  const response = await fetch(photo.uri);
-  const arrayBuffer = await response.arrayBuffer();
+  // `fetch(uri).arrayBuffer()` on a local file:// URI is unreliable in
+  // release iOS builds — it can reject with "Network request failed" (this
+  // screen's reported bug) or hang indefinitely. Read the file natively
+  // instead, matching the avatar upload fix in profiles.ts.
+  const base64 = await RNFS.readFile(photo.uri, 'base64');
   const { error } = await supabase.storage
     .from('post-photos')
-    .upload(path, arrayBuffer, { contentType: photo.contentType });
+    .upload(path, decode(base64), { contentType: photo.contentType });
   if (error) throw error;
   return path;
 }

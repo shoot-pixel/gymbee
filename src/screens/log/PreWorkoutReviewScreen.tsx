@@ -208,7 +208,11 @@ export function PreWorkoutReviewScreen() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
         <Header title="Readiness Check-In" />
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+        <ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           <Text variant="body" color="secondary">
             A quick check-in helps your coach recommend today's intensity. This is informational, not medical
             advice.

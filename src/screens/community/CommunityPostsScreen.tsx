@@ -59,6 +59,12 @@ export function CommunityPostsScreen() {
         right={
           <View style={{ flexDirection: 'row' }}>
             <IconButton
+              name="plus"
+              variant="ghost"
+              accessibilityLabel="Post a photo"
+              onPress={() => navigation.navigate('UploadPhotoPost', { mode: 'progress' })}
+            />
+            <IconButton
               name="trophy"
               variant="ghost"
               accessibilityLabel="Leaderboard"
@@ -84,7 +90,11 @@ export function CommunityPostsScreen() {
       </View>
 
       {search.trim() ? (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.xs }}>
+        <ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.xs }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           {searching ? (
             <LoadingState fill={false} />
           ) : searchResults?.length === 0 ? (
@@ -116,7 +126,11 @@ export function CommunityPostsScreen() {
           )}
         </ScrollView>
       ) : (
-        <ScrollView contentContainerStyle={{ gap: theme.spacing.lg }}>
+        <ScrollView
+          contentContainerStyle={{ gap: theme.spacing.lg }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           {incomingRequests && incomingRequests.length > 0 ? (
             <Card
               variant="elevated"

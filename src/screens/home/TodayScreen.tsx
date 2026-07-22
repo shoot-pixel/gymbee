@@ -302,6 +302,21 @@ export function TodayScreen() {
           isRestDay={todayPlan.kind === 'rest_day'}
         />
 
+        {!isLoading && program ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+            <ProgressRing progress={weeklyProgress} size={56} strokeWidth={6} centerValue={`${sessionsThisWeek}/${weeklyTarget}`} />
+            <View style={{ flex: 1 }}>
+              <Text variant="subtitle">
+                {sessionsThisWeek >= weeklyTarget && weeklyTarget > 0 ? 'Week complete' : 'On track this week'}
+              </Text>
+              <Text variant="caption" color="tertiary">
+                {Math.max(weeklyTarget - sessionsThisWeek, 0)} session{weeklyTarget - sessionsThisWeek === 1 ? '' : 's'} left
+                {streak > 0 ? ` · ${streak} day streak` : ''}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {isLoading ? (
           <LoadingState fill={false} />
         ) : !program ? (
@@ -431,19 +446,6 @@ export function TodayScreen() {
               onCardPress={onFriendActivityCardPress}
               onViewAllPress={onFriendsActivityViewAll}
             />
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
-              <ProgressRing progress={weeklyProgress} size={56} strokeWidth={6} centerValue={`${sessionsThisWeek}/${weeklyTarget}`} />
-              <View style={{ flex: 1 }}>
-                <Text variant="subtitle">
-                  {sessionsThisWeek >= weeklyTarget && weeklyTarget > 0 ? 'Week complete' : 'On track this week'}
-                </Text>
-                <Text variant="caption" color="tertiary">
-                  {Math.max(weeklyTarget - sessionsThisWeek, 0)} session{weeklyTarget - sessionsThisWeek === 1 ? '' : 's'} left
-                  {streak > 0 ? ` · ${streak} day streak` : ''}
-                </Text>
-              </View>
-            </View>
 
             {activePatterns.length > 0 ? (
               <Card variant="elevated" style={{ gap: theme.spacing.sm }}>

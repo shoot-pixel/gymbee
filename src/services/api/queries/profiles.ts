@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import RNFS from 'react-native-fs';
+import { decode } from 'base64-arraybuffer';
 import { supabase } from '../supabaseClient';
 import type { Database } from '../../../types/database';
 
@@ -53,11 +55,14 @@ export function useUploadAvatar(userId: string | null) {
       const extension = params.contentType.split('/')[1] ?? 'jpg';
       const path = `${userId}/avatar.${extension}`;
 
-      const response = await fetch(params.uri);
-      const arrayBuffer = await response.arrayBuffer();
+      // Reading the picked file via `fetch(uri).arrayBuffer()` is unreliable
+      // on release iOS builds — the promise can hang indefinitely for local
+      // file:// URIs, leaving the UI stuck "uploading" even though nothing
+      // ever reaches the network. Read it natively as base64 instead.
+      const base64 = await RNFS.readFile(params.uri, 'base64');
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(path, arrayBuffer, { contentType: params.contentType, upsert: true });
+        .upload(path, decode(base64), { contentType: params.contentType, upsert: true });
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path);

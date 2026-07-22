@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View } from 'react-native';
+import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -27,56 +27,60 @@ export function ForgotPasswordScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <Header title="" />
-      <View
-        style={{
-          flex: 1,
-          padding: theme.spacing.xl,
-          paddingTop: 0,
-          justifyContent: 'center',
-          gap: theme.spacing.lg,
-        }}
-      >
-        <View>
-          <Text variant="title">Reset your password</Text>
-          <Text variant="body" color="secondary">
-            We'll email you a link to set a new one.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
+        <Header title="" />
+        <View
+          style={{
+            flex: 1,
+            padding: theme.spacing.xl,
+            paddingTop: 0,
+            justifyContent: 'center',
+            gap: theme.spacing.lg,
+          }}
+        >
+          <View>
+            <Text variant="title">Reset your password</Text>
+            <Text variant="body" color="secondary">
+              We'll email you a link to set a new one.
+            </Text>
+          </View>
+
+          {sent ? (
+            <Text variant="body" color="secondary">
+              Check {email} for a reset link.
+            </Text>
+          ) : (
+            <View style={{ gap: theme.spacing.md }}>
+              <TextField
+                label="Email"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                returnKeyType="send"
+                onSubmitEditing={onSubmit}
+              />
+              {error ? (
+                <Text variant="caption" style={{ color: theme.colors.semantic.danger }}>
+                  {error}
+                </Text>
+              ) : null}
+              <Button label="Send Reset Link" onPress={onSubmit} loading={loading} disabled={!email} />
+            </View>
+          )}
+
+          <Text
+            variant="caption"
+            color="secondary"
+            style={{ textAlign: 'center' }}
+            onPress={() => navigation.navigate('SignIn')}
+          >
+            Back to Sign In
           </Text>
         </View>
-
-        {sent ? (
-          <Text variant="body" color="secondary">
-            Check {email} for a reset link.
-          </Text>
-        ) : (
-          <View style={{ gap: theme.spacing.md }}>
-            <TextField
-              label="Email"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-            />
-            {error ? (
-              <Text variant="caption" style={{ color: theme.colors.semantic.danger }}>
-                {error}
-              </Text>
-            ) : null}
-            <Button label="Send Reset Link" onPress={onSubmit} loading={loading} disabled={!email} />
-          </View>
-        )}
-
-        <Text
-          variant="caption"
-          color="secondary"
-          style={{ textAlign: 'center' }}
-          onPress={() => navigation.navigate('SignIn')}
-        >
-          Back to Sign In
-        </Text>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }

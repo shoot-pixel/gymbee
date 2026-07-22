@@ -1,5 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MainTabParamList } from './types';
 import { useTheme } from '../theme/ThemeProvider';
 import { Icon, type IconName } from '../components/core';
@@ -19,8 +20,16 @@ const TAB_ICONS: Record<keyof MainTabParamList, IconName> = {
   CommunityTab: 'trophy',
 };
 
+/** Content height of the tab bar excluding the bottom safe-area inset —
+ * the actual on-screen height is this plus `insets.bottom`. Exported so
+ * ChatFab can sit a consistent distance above the bar on every device
+ * instead of using a magic-number offset that only happened to clear it
+ * on some screen sizes. */
+export const TAB_BAR_CONTENT_HEIGHT = 56;
+
 export function MainTabs() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -32,8 +41,10 @@ export function MainTabs() {
           backgroundColor: theme.colors.bg.surface,
           borderTopColor: theme.colors.border.subtle,
           borderTopWidth: 1,
-          height: 84,
-          paddingTop: 10,
+          height: TAB_BAR_CONTENT_HEIGHT + insets.bottom,
+          paddingTop: 8,
+          paddingBottom: insets.bottom,
+          paddingHorizontal: 0,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' as const, marginTop: 2 },
         tabBarIcon: ({ color, focused }) => (
@@ -56,7 +67,7 @@ export function MainTabs() {
       <Tab.Screen
         name="ProgressTab"
         component={ProgressStack}
-        options={{ tabBarLabel: 'Progress' }}
+        options={{ tabBarLabel: 'PRs' }}
       />
       <Tab.Screen
         name="CommunityTab"

@@ -42,7 +42,11 @@ export function BodyMetricsScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <Header title="Body Metrics" />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {isLoading ? (
           <LoadingState fill={false} />
         ) : (

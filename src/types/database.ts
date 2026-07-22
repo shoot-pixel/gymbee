@@ -26,6 +26,10 @@ export type EquipmentType =
   | 'band'
   | 'other';
 export type DemoMediaType = 'video' | 'image';
+/** Mirrors activeWorkoutStore's `SetMetric` — kept independent (rather than
+ * imported) since database.ts describes wire/DB shapes and the store
+ * imports from here, not the other way around. */
+export type ExerciseDefaultMetric = 'weight_lb' | 'weight_kg' | 'weight_pct' | 'reps' | 'time';
 export type ProgramSource = 'ai_generated' | 'manual' | 'template';
 export type ProgramStatus = 'active' | 'completed' | 'archived';
 export type ChatRole = 'user' | 'assistant';
@@ -151,6 +155,7 @@ export interface Database {
           difficulty: ExerciseDifficulty | null;
           joint_stress: StressLevel | null;
           skill_requirement: StressLevel | null;
+          default_metric: ExerciseDefaultMetric | null;
         };
         Insert: {
           name: string;
@@ -167,6 +172,7 @@ export interface Database {
           difficulty?: ExerciseDifficulty | null;
           joint_stress?: StressLevel | null;
           skill_requirement?: StressLevel | null;
+          default_metric?: ExerciseDefaultMetric | null;
         };
         Update: {
           name?: string;
@@ -180,6 +186,7 @@ export interface Database {
           secondary_muscles?: string[];
           difficulty?: ExerciseDifficulty | null;
           joint_stress?: StressLevel | null;
+          default_metric?: ExerciseDefaultMetric | null;
           skill_requirement?: StressLevel | null;
         };
         Relationships: [];

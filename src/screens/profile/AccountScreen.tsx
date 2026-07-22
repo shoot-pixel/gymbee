@@ -93,6 +93,8 @@ export function AccountScreen(_props: Props) {
             paddingTop: 0,
             gap: theme.spacing.xl,
           }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           <View style={{ gap: theme.spacing.md }}>
             <TextField
