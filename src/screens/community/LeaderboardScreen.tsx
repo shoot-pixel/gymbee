@@ -1,5 +1,5 @@
-import React from 'react';
-import { ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { RefreshControl, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,12 +19,25 @@ export function LeaderboardScreen() {
   const userId = useAuthStore(state => state.userId);
   const unitPref = useUnitPreference();
 
-  const { data: leaderboard, isLoading } = useLeaderboard(userId);
+  const { data: leaderboard, isLoading, refetch } = useLeaderboard(userId);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <Header title="Leaderboard" />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.xs }}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.xs }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+      >
         {isLoading ? (
           <LoadingState fill={false} />
         ) : leaderboard?.length === 1 ? (

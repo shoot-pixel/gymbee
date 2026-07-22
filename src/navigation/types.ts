@@ -79,6 +79,7 @@ export type ProfileStackParamList = {
   Profile: undefined;
   Settings: undefined;
   Account: undefined;
+  Privacy: undefined;
   BlockedUsers: undefined;
   PostDetail: { postId: string };
 };

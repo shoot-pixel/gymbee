@@ -126,7 +126,7 @@ describe('CommunityPostsScreen', () => {
     });
 
     const { getByPlaceholderText, getByText } = await render(<CommunityPostsScreen />);
-    fireEvent.changeText(getByPlaceholderText('Find athletes by name'), 'Jordan');
+    fireEvent.changeText(getByPlaceholderText('Find athletes by name or @handle'), 'Jordan');
 
     await waitFor(() => expect(getByText('Jordan K.')).toBeTruthy());
     await fireEvent.press(getByText('Add Friend'));

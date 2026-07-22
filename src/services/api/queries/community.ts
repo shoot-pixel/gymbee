@@ -5,6 +5,9 @@ export type PublicProfile = {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
+  handle: string | null;
+  hide_stats_from_friends: boolean;
+  hide_photos_from_friends: boolean;
 };
 
 export type LeaderboardEntry = PublicProfile & {
@@ -326,12 +329,25 @@ export function useUnblockUser(userId: string | null) {
 // Search
 // ---------------------------------------------------------------------------
 
+/** Strips characters with special meaning in PostgREST's `.or()` filter
+ * syntax (comma, parens) plus ilike wildcards, so raw user input can never
+ * inject extra filter clauses or wildcards into the query below. */
+function sanitizeSearchTerm(term: string): string {
+  return term.replace(/[,()%_]/g, '');
+}
+
 async function searchProfiles(search: string, excludeUserId: string): Promise<PublicProfile[]> {
+  // A leading "@" signals "search by handle" (e.g. "@sam") but matches
+  // display name too either way — someone typing "@sam" almost certainly
+  // still wants a display-name match named Sam if no handle matches.
+  const term = sanitizeSearchTerm(search.trim().replace(/^@/, ''));
+  if (!term) return [];
+
   const [{ data, error }, blockedIds] = await Promise.all([
     supabase
       .from('public_profiles')
       .select('*')
-      .ilike('display_name', `%${search.trim()}%`)
+      .or(`display_name.ilike.%${term}%,handle.ilike.%${term}%`)
       .neq('id', excludeUserId)
       .limit(20),
     fetchBlockedIds(excludeUserId),

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,6 +7,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Text, TextField, Button, Header, SegmentedControl } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useCreateExercise } from '../../services/api/queries/exercises';
+import { isYoutubeUrl } from '../../utils/youtube';
 import type { ExerciseDefaultMetric } from '../../types/database';
 import type { LogStackParamList, ProgramsStackParamList } from '../../navigation/types';
 
@@ -26,14 +27,22 @@ export function AddExerciseScreen() {
 
   const [name, setName] = useState('');
   const [metric, setMetric] = useState<ExerciseDefaultMetric>('weight_kg');
+  const [videoUrl, setVideoUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const trimmedVideoUrl = videoUrl.trim();
+  const videoUrlInvalid = trimmedVideoUrl.length > 0 && !isYoutubeUrl(trimmedVideoUrl);
+
   const onSave = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+    const trimmedName = name.trim();
+    if (!trimmedName || videoUrlInvalid) return;
     setError(null);
     try {
-      await createExercise.mutateAsync({ name: trimmed, defaultMetric: metric });
+      await createExercise.mutateAsync({
+        name: trimmedName,
+        defaultMetric: metric,
+        demoMediaUrl: trimmedVideoUrl || null,
+      });
       navigation.goBack();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add that exercise. Try again.');
@@ -47,7 +56,11 @@ export function AddExerciseScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={{ flex: 1, padding: theme.spacing.lg, gap: theme.spacing.lg }}>
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, padding: theme.spacing.lg, gap: theme.spacing.lg }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           <TextField
             label="Title"
             value={name}
@@ -63,21 +76,33 @@ export function AddExerciseScreen() {
             <SegmentedControl options={METRIC_OPTIONS} value={metric} onChange={setMetric} />
           </View>
 
+          <TextField
+            label="YouTube link (optional)"
+            value={videoUrl}
+            onChangeText={setVideoUrl}
+            placeholder="https://youtube.com/watch?v=..."
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            returnKeyType="done"
+            error={videoUrlInvalid ? "That doesn't look like a YouTube link." : undefined}
+          />
+
           {error ? (
             <Text variant="caption" style={{ color: theme.colors.semantic.danger }}>
               {error}
             </Text>
           ) : null}
 
-          <View style={{ flex: 1 }} />
+          <View style={{ flex: 1, minHeight: theme.spacing.xl }} />
 
           <Button
             label="Add Exercise"
             onPress={onSave}
-            disabled={!name.trim()}
+            disabled={!name.trim() || videoUrlInvalid}
             loading={createExercise.isPending}
           />
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

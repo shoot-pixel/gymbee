@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ScrollView } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { RefreshControl, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,15 +16,27 @@ export function MyPostsScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
   const userId = useAuthStore(state => state.userId);
-  const { data: posts, isLoading } = useUserPosts(userId);
+  const { data: posts, isLoading, refetch: refetchPosts } = useUserPosts(userId);
 
   const photoPaths = useMemo(() => (posts ?? []).flatMap(postPhotoPaths), [posts]);
-  const { data: photoUrls } = useSignedPhotoUrls(photoPaths);
+  const { data: photoUrls, refetch: refetchPhotoUrls } = useSignedPhotoUrls(photoPaths);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchPosts(), refetchPhotoUrls()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchPosts, refetchPhotoUrls]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <Header title="My Posts" />
-      <ScrollView>
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+      >
         <PostsGrid
           posts={posts ?? []}
           photoUrls={photoUrls ?? {}}

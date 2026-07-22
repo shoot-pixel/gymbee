@@ -97,6 +97,13 @@ export function SettingsScreen({ navigation }: Props) {
           <Card variant="elevated" style={{ gap: 0 }}>
             <ListRow title="Account" icon="user" showChevron onPress={() => navigation.navigate('Account')} />
             <ListRow
+              title="Privacy"
+              icon="lock"
+              showChevron
+              onPress={() => navigation.navigate('Privacy')}
+              style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
+            />
+            <ListRow
               title="Blocked Users"
               icon="circleAlert"
               showChevron

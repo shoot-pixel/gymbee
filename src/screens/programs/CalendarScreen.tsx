@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ScrollView, View, Pressable } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { RefreshControl, ScrollView, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,16 +16,26 @@ const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 export function CalendarScreen() {
   const theme = useTheme();
   const userId = useAuthStore(state => state.userId);
-  const { data: program, isLoading } = useActiveProgramTree(userId);
+  const { data: program, isLoading, refetch: refetchProgram } = useActiveProgramTree(userId);
   const navigation = useNavigation<NativeStackNavigationProp<ProgramsStackParamList>>();
   const todaysDay = getTodayProgramDay(program);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
 
   const today = new Date();
-  const { data: scheduledWorkouts, isLoading: scheduledLoading } = useScheduledWorkouts(userId, {
+  const { data: scheduledWorkouts, isLoading: scheduledLoading, refetch: refetchScheduled } = useScheduledWorkouts(userId, {
     from: format(today, 'yyyy-MM-dd'),
     to: format(addDays(today, 30), 'yyyy-MM-dd'),
   });
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchProgram(), refetchScheduled()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchProgram, refetchScheduled]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
@@ -34,7 +44,10 @@ export function CalendarScreen() {
         showBack={false}
         right={<IconButton name="plus" onPress={() => setAddSheetOpen(true)} />}
       />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+      >
         {scheduledLoading ? null : scheduledWorkouts && scheduledWorkouts.length > 0 ? (
           <View style={{ gap: theme.spacing.sm }}>
             <Text variant="label" color="secondary">

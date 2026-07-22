@@ -39,7 +39,10 @@ export function BottomSheet({ visible, onClose, title, children }: BottomSheetPr
   useEffect(() => {
     if (visible) {
       setRendered(true);
-      translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
+      // Near-critically-damped and stiff: rises fast with essentially no
+      // overshoot/wobble, instead of the slower, bouncier settle the old
+      // (lower stiffness, more underdamped) config produced.
+      translateY.value = withSpring(0, { damping: 40, stiffness: 400, mass: 0.9 });
     } else if (rendered) {
       translateY.value = withTiming(SHEET_MAX_HEIGHT, { duration: 200 }, finished => {
         if (finished) runOnJS(setRendered)(false);
@@ -58,7 +61,7 @@ export function BottomSheet({ visible, onClose, title, children }: BottomSheetPr
       if (shouldDismiss) {
         runOnJS(onClose)();
       } else {
-        translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
+        translateY.value = withSpring(0, { damping: 40, stiffness: 400, mass: 0.9 });
       }
     });
 

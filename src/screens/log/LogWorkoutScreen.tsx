@@ -376,6 +376,7 @@ function ExerciseFocusCard({
   const markSetCompleted = useActiveWorkoutStore(state => state.markSetCompleted);
   const markSetIncomplete = useActiveWorkoutStore(state => state.markSetIncomplete);
   const removeSet = useActiveWorkoutStore(state => state.removeSet);
+  const removeExercise = useActiveWorkoutStore(state => state.removeExercise);
   const setExerciseNotes = useActiveWorkoutStore(state => state.setExerciseNotes);
   const setExerciseMetric = useActiveWorkoutStore(state => state.setExerciseMetric);
   const setExerciseTargetSets = useActiveWorkoutStore(state => state.setExerciseTargetSets);
@@ -462,6 +463,30 @@ function ExerciseFocusCard({
       }
     }
     removeSet(exercise.exerciseId, setRow.id);
+  };
+
+  const onRemoveExercise = () => {
+    const hasData = exercise.sets.some(isSetPopulated);
+    Alert.alert(
+      `Remove ${exercise.exerciseName}?`,
+      hasData
+        ? 'This removes the exercise and every set logged for it from this workout — it can’t be undone.'
+        : 'This removes the exercise from this workout.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const savedSets = exercise.sets.filter(s => s.dbId);
+            await Promise.all(
+              savedSets.map(s => (s.dbId ? deleteSet.mutateAsync(s.dbId).catch(() => undefined) : undefined)),
+            );
+            removeExercise(exercise.exerciseId);
+          },
+        },
+      ],
+    );
   };
 
   const onToggleSet = async (setRow: LoggedSet) => {
@@ -618,14 +643,22 @@ function ExerciseFocusCard({
             </Text>
           ) : null}
         </View>
-        {canSwap ? (
+        <View style={{ flexDirection: 'row' }}>
+          {canSwap ? (
+            <IconButton
+              name="repeat"
+              variant="ghost"
+              accessibilityLabel="Find a substitute exercise"
+              onPress={() => setSwapSheetOpen(true)}
+            />
+          ) : null}
           <IconButton
-            name="repeat"
+            name="trash"
             variant="ghost"
-            accessibilityLabel="Find a substitute exercise"
-            onPress={() => setSwapSheetOpen(true)}
+            accessibilityLabel={`Remove ${exercise.exerciseName} from this workout`}
+            onPress={onRemoveExercise}
           />
-        ) : null}
+        </View>
       </View>
 
       {pending ? (

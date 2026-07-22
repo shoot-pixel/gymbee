@@ -21,6 +21,8 @@ export function AccountScreen(_props: Props) {
   const { signOut, updatePassword, loading: authLoading } = useAuth();
 
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [handle, setHandle] = useState<string | null>(null);
+  const [handleError, setHandleError] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
@@ -32,6 +34,34 @@ export function AccountScreen(_props: Props) {
   const onSaveName = () => {
     if (displayName === null) return;
     updateProfile.mutate({ display_name: displayName });
+  };
+
+  const handleValue = handle ?? profile?.handle ?? '';
+  const handleChanged = handle !== null && handle !== (profile?.handle ?? '');
+  const handleFormatValid = handleValue === '' || /^[a-z0-9_]{3,20}$/.test(handleValue);
+
+  const onChangeHandle = (text: string) => {
+    setHandleError(null);
+    // Handles are always lowercase alnum/underscore — normalize as the
+    // user types rather than rejecting keystrokes with an error.
+    setHandle(text.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+  };
+
+  const onSaveHandle = async () => {
+    if (handle === null || !handleFormatValid) return;
+    setHandleError(null);
+    try {
+      await updateProfile.mutateAsync({ handle: handle || null });
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      setHandleError(
+        code === '23505'
+          ? 'That handle is already taken.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not save your handle.',
+      );
+    }
   };
 
   const onSavePassword = async () => {
@@ -114,6 +144,28 @@ export function AccountScreen(_props: Props) {
               variant="secondary"
               onPress={onSaveName}
               disabled={!nameChanged}
+              loading={updateProfile.isPending}
+            />
+          </View>
+
+          <View style={{ gap: theme.spacing.md }}>
+            <TextField
+              label="Handle"
+              value={handleValue}
+              onChangeText={onChangeHandle}
+              placeholder="e.g. jsmith92"
+              autoCapitalize="none"
+              autoCorrect={false}
+              error={handleError ?? (!handleFormatValid ? '3-20 characters: letters, numbers, underscore.' : undefined)}
+            />
+            <Text variant="caption" color="secondary">
+              Lets friends find you by @{handleValue || 'handle'} in search.
+            </Text>
+            <Button
+              label="Save Handle"
+              variant="secondary"
+              onPress={onSaveHandle}
+              disabled={!handleChanged || !handleFormatValid}
               loading={updateProfile.isPending}
             />
           </View>

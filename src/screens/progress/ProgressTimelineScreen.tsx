@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { FlatList, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -69,10 +69,20 @@ export function ProgressTimelineScreen() {
   const userId = useAuthStore(state => state.userId);
   const unitPref = useUnitPreference();
 
-  const { data: loggedSets, isLoading: setsLoading } = useLoggedSets(userId);
-  const { data: bodyMetrics, isLoading: metricsLoading } = useBodyMetrics(userId);
-  const { data: workoutLogs, isLoading: logsLoading } = useAllWorkoutLogs(userId);
+  const { data: loggedSets, isLoading: setsLoading, refetch: refetchSets } = useLoggedSets(userId);
+  const { data: bodyMetrics, isLoading: metricsLoading, refetch: refetchMetrics } = useBodyMetrics(userId);
+  const { data: workoutLogs, isLoading: logsLoading, refetch: refetchLogs } = useAllWorkoutLogs(userId);
   const isLoading = setsLoading || metricsLoading || logsLoading;
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchSets(), refetchMetrics(), refetchLogs()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchSets, refetchMetrics, refetchLogs]);
 
   const entries = useMemo(() => {
     if (!loggedSets || !bodyMetrics || !workoutLogs) return [];
@@ -86,17 +96,23 @@ export function ProgressTimelineScreen() {
       <Header title="Progress Timeline" />
       {isLoading ? (
         <LoadingState />
-      ) : listItems.length === 0 ? (
-        <EmptyState
-          icon="activity"
-          title="Nothing to show yet"
-          description="PRs, body-weight logs, and completed workouts will show up here over time."
-        />
       ) : (
         <FlatList
           data={listItems}
           keyExtractor={item => item.key}
-          contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingHorizontal: theme.spacing.lg,
+            paddingBottom: theme.spacing.lg,
+          }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+          ListEmptyComponent={
+            <EmptyState
+              icon="activity"
+              title="Nothing to show yet"
+              description="PRs, body-weight logs, and completed workouts will show up here over time."
+            />
+          }
           renderItem={({ item }) => {
             if (item.kind === 'header') {
               return (

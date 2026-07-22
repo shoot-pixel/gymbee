@@ -1,21 +1,40 @@
-import React, { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image, Linking, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Header, ListRow, LoadingState } from '../../components/core';
-import { useExercise, useExercises } from '../../services/api/queries/exercises';
+import {
+  Text,
+  Card,
+  Header,
+  IconButton,
+  Icon,
+  ListRow,
+  LoadingState,
+  BottomSheet,
+  TextField,
+  Button,
+  SegmentedControl,
+} from '../../components/core';
+import { useExercise, useExercises, useUpdateExercise } from '../../services/api/queries/exercises';
 import { useAuthStore } from '../../store/authStore';
 import { useProfile } from '../../services/api/queries/profiles';
 import { coachingEngine } from '../../services/coaching';
 import { exerciseRowToMetadata } from '../../utils/exerciseMetadata';
+import { extractYoutubeVideoId, isYoutubeUrl, youtubeThumbnailUrl } from '../../utils/youtube';
 import type { LogStackParamList, TodayStackParamList } from '../../navigation/types';
-import type { EquipmentType } from '../../types/database';
+import type { EquipmentType, ExerciseDefaultMetric } from '../../types/database';
 
 type Route = RouteProp<LogStackParamList | TodayStackParamList, 'ExerciseDetail'>;
 type Nav = NativeStackNavigationProp<LogStackParamList | TodayStackParamList>;
+
+const METRIC_OPTIONS: { value: ExerciseDefaultMetric; label: string }[] = [
+  { value: 'weight_kg', label: 'Weight' },
+  { value: 'reps', label: 'Reps only' },
+  { value: 'time', label: 'Time' },
+];
 
 export function ExerciseDetailScreen() {
   const theme = useTheme();
@@ -25,6 +44,43 @@ export function ExerciseDetailScreen() {
   const userId = useAuthStore(state => state.userId);
   const { data: profile } = useProfile(userId);
   const { data: allExercises } = useExercises('');
+  const updateExercise = useUpdateExercise();
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editMetric, setEditMetric] = useState<ExerciseDefaultMetric>('weight_kg');
+  const [editVideoUrl, setEditVideoUrl] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const canEdit = exercise != null && exercise.is_custom && exercise.created_by === userId;
+
+  useEffect(() => {
+    if (!exercise) return;
+    setEditName(exercise.name);
+    setEditMetric(exercise.default_metric ?? 'weight_kg');
+    setEditVideoUrl(exercise.demo_media_url ?? '');
+  }, [exercise]);
+
+  const trimmedEditVideoUrl = editVideoUrl.trim();
+  const editVideoUrlInvalid = trimmedEditVideoUrl.length > 0 && !isYoutubeUrl(trimmedEditVideoUrl);
+
+  const onSaveEdit = async () => {
+    if (!exercise || !editName.trim() || editVideoUrlInvalid) return;
+    setEditError(null);
+    try {
+      await updateExercise.mutateAsync({
+        exerciseId: exercise.id,
+        name: editName.trim(),
+        defaultMetric: editMetric,
+        demoMediaUrl: trimmedEditVideoUrl || null,
+      });
+      setEditOpen(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
+    }
+  };
+
+  const videoId = exercise?.demo_media_url ? extractYoutubeVideoId(exercise.demo_media_url) : null;
 
   const alternatives = useMemo(() => {
     if (!exercise || !allExercises) return [];
@@ -42,7 +98,19 @@ export function ExerciseDetailScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <Header title={exercise?.name ?? 'Exercise'} />
+      <Header
+        title={exercise?.name ?? 'Exercise'}
+        right={
+          canEdit ? (
+            <IconButton
+              name="pencil"
+              variant="ghost"
+              accessibilityLabel="Edit exercise"
+              onPress={() => setEditOpen(true)}
+            />
+          ) : undefined
+        }
+      />
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
         {isLoading || !exercise ? (
           <LoadingState fill={false} />
@@ -106,7 +174,51 @@ export function ExerciseDetailScreen() {
               </Text>
             </Card>
 
-            {!exercise.demo_media_url ? (
+            {videoId ? (
+              <Pressable
+                onPress={() => exercise.demo_media_url && Linking.openURL(exercise.demo_media_url)}
+                accessibilityRole="button"
+                accessibilityLabel="Play demo video on YouTube"
+                style={{
+                  width: '100%',
+                  aspectRatio: 16 / 9,
+                  borderRadius: theme.radii.md,
+                  overflow: 'hidden',
+                  backgroundColor: theme.colors.bg.surface,
+                }}
+              >
+                <Image
+                  source={{ uri: youtubeThumbnailUrl(videoId) }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                  accessibilityLabel="YouTube video thumbnail"
+                />
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: theme.radii.pill,
+                      backgroundColor: 'rgba(0,0,0,0.55)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon name="play" size="lg" color={theme.colors.text.onAccent} strokeWidth={2.25} />
+                  </View>
+                </View>
+              </Pressable>
+            ) : !exercise.demo_media_url ? (
               <Text variant="caption" color="tertiary">
                 Demo video/image coming later — this exercise doesn't have one yet.
               </Text>
@@ -154,6 +266,44 @@ export function ExerciseDetailScreen() {
           </>
         )}
       </ScrollView>
+
+      <BottomSheet visible={editOpen} onClose={() => setEditOpen(false)} title="Edit Exercise">
+        <View style={{ gap: theme.spacing.lg }}>
+          <TextField label="Title" value={editName} onChangeText={setEditName} returnKeyType="done" />
+
+          <View style={{ gap: theme.spacing.sm }}>
+            <Text variant="label" color="secondary">
+              UNIT OF MEASURE
+            </Text>
+            <SegmentedControl options={METRIC_OPTIONS} value={editMetric} onChange={setEditMetric} />
+          </View>
+
+          <TextField
+            label="YouTube link (optional)"
+            value={editVideoUrl}
+            onChangeText={setEditVideoUrl}
+            placeholder="https://youtube.com/watch?v=..."
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            returnKeyType="done"
+            error={editVideoUrlInvalid ? "That doesn't look like a YouTube link." : undefined}
+          />
+
+          {editError ? (
+            <Text variant="caption" style={{ color: theme.colors.semantic.danger }}>
+              {editError}
+            </Text>
+          ) : null}
+
+          <Button
+            label="Save Changes"
+            onPress={onSaveEdit}
+            disabled={!editName.trim() || editVideoUrlInvalid}
+            loading={updateExercise.isPending}
+          />
+        </View>
+      </BottomSheet>
     </SafeAreaView>
   );
 }

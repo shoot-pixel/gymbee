@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -26,8 +26,18 @@ export function ProgressDashboardScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
   const userId = useAuthStore(state => state.userId);
-  const { data: sets, isLoading } = useLoggedSets(userId);
+  const { data: sets, isLoading, refetch } = useLoggedSets(userId);
   const unitPref = useUnitPreference();
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const events = useMemo(() => (sets ? computePrEvents(sets) : []), [sets]);
   const weeklyVolume = useMemo(() => (sets ? computeWeeklyVolume(sets) : []), [sets]);
@@ -46,7 +56,10 @@ export function ProgressDashboardScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+      >
         <Text variant="title">PRs</Text>
 
         {isLoading ? (

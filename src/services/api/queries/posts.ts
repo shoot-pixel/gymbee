@@ -154,6 +154,92 @@ export function postPhotoPaths(post: Post): string[] {
   return [post.before_photo_path, post.after_photo_path].filter((p): p is string => p != null);
 }
 
+/** Swaps the `{userId}/{visibility}/{filename}` segment — the visibility
+ * change itself moves the underlying object, since Storage RLS
+ * (post_photos_friends_select) keys off that path segment, not a DB column. */
+function pathWithVisibility(path: string, visibility: PostVisibility): string {
+  const parts = path.split('/');
+  parts[1] = visibility;
+  return parts.join('/');
+}
+
+/** Edits caption and/or visibility on the caller's own post. A visibility
+ * change moves every photo the post references to the matching path
+ * prefix first — Storage access is gated by that path segment, so the DB
+ * row and the file location must never disagree about who can see it. */
+export function useUpdatePost(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { post: Post; caption: string | null; visibility: PostVisibility }) => {
+      if (!userId) throw new Error('Not signed in');
+      const { post } = params;
+      const updates: Database['public']['Tables']['posts']['Update'] = { caption: params.caption };
+
+      if (params.visibility !== post.visibility) {
+        const paths = postPhotoPaths(post);
+        const moved: Record<string, string> = {};
+        try {
+          for (const path of paths) {
+            const newPath = pathWithVisibility(path, params.visibility);
+            const { error } = await supabase.storage.from('post-photos').move(path, newPath);
+            if (error) throw error;
+            moved[path] = newPath;
+          }
+        } catch (err) {
+          // Best-effort rollback of whatever already moved, so a mid-flight
+          // failure can't leave the visibility flag and the file location
+          // disagreeing about who can see the photo.
+          await Promise.all(
+            Object.entries(moved).map(([from, to]) => supabase.storage.from('post-photos').move(to, from)),
+          );
+          throw err;
+        }
+
+        updates.visibility = params.visibility;
+        if (post.post_type === 'progress_photo' && post.photo_path) {
+          updates.photo_path = moved[post.photo_path];
+        } else if (post.post_type === 'before_after_photo') {
+          if (post.before_photo_path) updates.before_photo_path = moved[post.before_photo_path];
+          if (post.after_photo_path) updates.after_photo_path = moved[post.after_photo_path];
+        }
+      }
+
+      const { data, error } = await supabase.from('posts').update(updates).eq('id', post.id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: updated => {
+      queryClient.setQueryData(['post', updated.id], updated);
+      queryClient.invalidateQueries({ queryKey: ['posts', userId] });
+      queryClient.invalidateQueries({ queryKey: ['friendsPosts'] });
+      queryClient.invalidateQueries({ queryKey: ['signedPhotoUrls'] });
+    },
+  });
+}
+
+/** Deletes the caller's own post. Storage cleanup is best-effort — an RLS
+ * failure there shouldn't block removing the post itself, and any orphaned
+ * object stays inaccessible to everyone but its (former) owner regardless. */
+export function useDeletePost(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (post: Post) => {
+      if (!userId) throw new Error('Not signed in');
+      const paths = postPhotoPaths(post);
+      if (paths.length > 0) {
+        await supabase.storage.from('post-photos').remove(paths).catch(() => undefined);
+      }
+      const { error } = await supabase.from('posts').delete().eq('id', post.id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, post) => {
+      queryClient.removeQueries({ queryKey: ['post', post.id] });
+      queryClient.invalidateQueries({ queryKey: ['posts', userId] });
+      queryClient.invalidateQueries({ queryKey: ['friendsPosts'] });
+    },
+  });
+}
+
 async function fetchPost(postId: string): Promise<Post | null> {
   const { data, error } = await supabase.from('posts').select('*').eq('id', postId).maybeSingle();
   if (error) throw error;

@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,6 +13,7 @@ import {
   ListRow,
   LoadingState,
   FriendRequestButton,
+  Avatar,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -37,10 +38,10 @@ export function CommunityPostsScreen() {
   const userId = useAuthStore(state => state.userId);
   const [search, setSearch] = useState('');
 
-  const { data: posts, isLoading } = useFriendsPosts(userId);
+  const { data: posts, isLoading, refetch: refetchPosts } = useFriendsPosts(userId);
   const { data: searchResults, isLoading: searching } = useSearchProfiles(search, userId);
-  const { data: relationships } = useFriendRelationships(userId);
-  const { data: incomingRequests } = useIncomingFriendRequests(userId);
+  const { data: relationships, refetch: refetchRelationships } = useFriendRelationships(userId);
+  const { data: incomingRequests, refetch: refetchIncomingRequests } = useIncomingFriendRequests(userId);
   const sendRequest = useSendFriendRequest(userId);
   const acceptRequest = useAcceptFriendRequest(userId);
   const declineRequest = useDeclineFriendRequest(userId);
@@ -50,7 +51,17 @@ export function CommunityPostsScreen() {
     sendRequest.isPending || acceptRequest.isPending || declineRequest.isPending || removeRequest.isPending;
 
   const photoPaths = useMemo(() => (posts ?? []).flatMap(postPhotoPaths), [posts]);
-  const { data: photoUrls } = useSignedPhotoUrls(photoPaths);
+  const { data: photoUrls, refetch: refetchPhotoUrls } = useSignedPhotoUrls(photoPaths);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchPosts(), refetchRelationships(), refetchIncomingRequests(), refetchPhotoUrls()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchPosts, refetchRelationships, refetchIncomingRequests, refetchPhotoUrls]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
@@ -82,7 +93,7 @@ export function CommunityPostsScreen() {
 
       <View style={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
         <TextField
-          placeholder="Find athletes by name"
+          placeholder="Find athletes by name or @handle"
           value={search}
           onChangeText={setSearch}
           autoCapitalize="none"
@@ -108,6 +119,8 @@ export function CommunityPostsScreen() {
                 <ListRow
                   key={profile.id}
                   title={profile.display_name ?? 'Athlete'}
+                  subtitle={profile.handle ? `@${profile.handle}` : undefined}
+                  leading={<Avatar uri={profile.avatar_url} size={40} />}
                   onPress={() => navigation.navigate('FriendProfile', { userId: profile.id })}
                   trailing={
                     <FriendRequestButton
@@ -130,6 +143,7 @@ export function CommunityPostsScreen() {
           contentContainerStyle={{ gap: theme.spacing.lg }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
         >
           {incomingRequests && incomingRequests.length > 0 ? (
             <Card

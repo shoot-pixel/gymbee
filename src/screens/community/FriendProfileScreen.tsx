@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -43,7 +43,7 @@ export function FriendProfileScreen() {
   const unitPref = useUnitPreference();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const { data: profile, isLoading } = useFriendProfile(params.userId);
+  const { data: profile, isLoading, refetch: refetchProfile } = useFriendProfile(params.userId);
   const { data: relationships } = useFriendRelationships(userId);
   const { data: isBlocked, isLoading: blockedLoading } = useIsBlocked(userId, params.userId);
   const sendRequest = useSendFriendRequest(userId);
@@ -52,9 +52,19 @@ export function FriendProfileScreen() {
   const removeRequest = useRemoveFriendRequest(userId);
   const blockUser = useBlockUser(userId);
 
-  const { data: posts } = useUserPosts(params.userId);
+  const { data: posts, refetch: refetchPosts } = useUserPosts(params.userId);
   const postPaths = useMemo(() => (posts ?? []).flatMap(postPhotoPaths), [posts]);
-  const { data: signedUrls } = useSignedPhotoUrls(postPaths);
+  const { data: signedUrls, refetch: refetchSignedUrls } = useSignedPhotoUrls(postPaths);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchProfile(), refetchPosts(), refetchSignedUrls()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchProfile, refetchPosts, refetchSignedUrls]);
 
   const isSelf = params.userId === userId;
   const { state, requestId } = resolveFriendRequestState(relationships, params.userId);
@@ -105,20 +115,29 @@ export function FriendProfileScreen() {
       {isLoading ? (
         <LoadingState />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+        <ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+        >
           <Text variant="title">{profile?.display_name ?? 'Athlete'}</Text>
 
-          <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-            <View style={{ flex: 1 }}>
-              <StatTile
-                label="Volume This Month"
-                value={`${formatVolume(profile?.volumeThisMonth ?? 0, unitPref)} ${unitLabel(unitPref)}`}
-              />
+          {!isSelf && profile?.hide_stats_from_friends ? (
+            <Text variant="caption" color="tertiary">
+              This athlete has made their stats private.
+            </Text>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <StatTile
+                  label="Volume This Month"
+                  value={`${formatVolume(profile?.volumeThisMonth ?? 0, unitPref)} ${unitLabel(unitPref)}`}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <StatTile label="Workouts This Month" value={profile?.workoutsThisMonth ?? 0} />
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <StatTile label="Workouts This Month" value={profile?.workoutsThisMonth ?? 0} />
-            </View>
-          </View>
+          )}
 
           {!isSelf ? (
             <FriendRequestButton

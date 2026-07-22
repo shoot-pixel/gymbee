@@ -103,6 +103,7 @@ type ActiveWorkoutState = {
   addExercise: (
     exercise: Omit<ActiveExercise, 'sets' | 'notes' | 'metric'> & { metric?: SetMetric },
   ) => void;
+  removeExercise: (exerciseId: string) => void;
   addSet: (exerciseId: string) => void;
   updateSetDraft: (
     exerciseId: string,
@@ -159,6 +160,11 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>((set, get) => ({
         ],
       };
     }),
+
+  removeExercise: exerciseId =>
+    set(state => ({
+      exercises: state.exercises.filter(exercise => exercise.exerciseId !== exerciseId),
+    })),
 
   addSet: exerciseId =>
     set(state => ({

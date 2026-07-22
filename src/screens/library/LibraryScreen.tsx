@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -50,8 +50,18 @@ export function LibraryScreen() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
-  const { data: templates, isLoading: templatesLoading } = useWorkoutTemplates(userId, search);
-  const { data: programDays, isLoading: daysLoading } = useAllProgramDaysWithExercises(userId);
+  const { data: templates, isLoading: templatesLoading, refetch: refetchTemplates } = useWorkoutTemplates(userId, search);
+  const { data: programDays, isLoading: daysLoading, refetch: refetchProgramDays } = useAllProgramDaysWithExercises(userId);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchTemplates(), refetchProgramDays()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchTemplates, refetchProgramDays]);
 
   const deleteTemplate = useDeleteWorkoutTemplate();
   const duplicateTemplate = useDuplicateWorkoutTemplate();
@@ -163,6 +173,7 @@ export function LibraryScreen() {
         contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
       >
         <TextField
           placeholder="Search workouts…"

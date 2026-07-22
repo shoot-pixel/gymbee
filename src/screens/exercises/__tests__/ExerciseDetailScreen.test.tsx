@@ -32,11 +32,13 @@ const EXERCISE = {
   difficulty: 'intermediate',
   joint_stress: 'moderate',
   skill_requirement: 'moderate',
+  default_metric: null,
 };
 
 jest.mock('../../../services/api/queries/exercises', () => ({
   useExercise: jest.fn(() => ({ data: EXERCISE, isLoading: false })),
   useExercises: jest.fn(() => ({ data: [EXERCISE], isLoading: false })),
+  useUpdateExercise: jest.fn(() => ({ mutateAsync: jest.fn(), isPending: false })),
 }));
 
 jest.mock('../../../services/api/queries/profiles', () => ({

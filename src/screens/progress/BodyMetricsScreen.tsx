@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -12,11 +12,21 @@ import { formatWeight, parseWeightInput, unitLabel, kgToLb, roundForDisplay } fr
 export function BodyMetricsScreen() {
   const theme = useTheme();
   const userId = useAuthStore(state => state.userId);
-  const { data: metrics, isLoading } = useBodyMetrics(userId);
+  const { data: metrics, isLoading, refetch } = useBodyMetrics(userId);
   const logMetric = useLogBodyMetric(userId);
   const unitPref = useUnitPreference();
   const [weight, setWeight] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const latest = metrics && metrics.length > 0 ? metrics[metrics.length - 1] : null;
   const first = metrics && metrics.length > 0 ? metrics[0] : null;
@@ -46,6 +56,7 @@ export function BodyMetricsScreen() {
         contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
       >
         {isLoading ? (
           <LoadingState fill={false} />

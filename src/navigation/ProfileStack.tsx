@@ -4,6 +4,7 @@ import type { ProfileStackParamList } from './types';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { SettingsScreen } from '../screens/profile/SettingsScreen';
 import { AccountScreen } from '../screens/profile/AccountScreen';
+import { PrivacyScreen } from '../screens/profile/PrivacyScreen';
 import { BlockedUsersScreen } from '../screens/profile/BlockedUsersScreen';
 import { PostDetailScreen } from '../screens/community/PostDetailScreen';
 
@@ -15,6 +16,7 @@ export function ProfileStack() {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="Account" component={AccountScreen} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} />
     </Stack.Navigator>

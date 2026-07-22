@@ -24,6 +24,8 @@ jest.mock('../../../services/api/queries/posts', () => {
   return {
     ...actual,
     usePost: (...args: unknown[]) => mockUsePost(...args),
+    useUpdatePost: jest.fn(() => ({ mutateAsync: jest.fn(), isPending: false })),
+    useDeletePost: jest.fn(() => ({ mutateAsync: jest.fn(), isPending: false })),
     useSignedPhotoUrls: jest.fn(() => ({
       data: {
         'user-2/friends/progress.jpg': 'https://signed/progress.jpg',

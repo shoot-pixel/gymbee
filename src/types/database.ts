@@ -101,6 +101,7 @@ export interface Database {
           email: string;
           display_name: string | null;
           avatar_url: string | null;
+          handle: string | null;
           experience_level: ExperienceLevel | null;
           goal: TrainingGoal | null;
           days_per_week: number | null;
@@ -108,6 +109,8 @@ export interface Database {
           injuries_notes: string | null;
           unit_preference: UnitPreference;
           onboarding_completed: boolean;
+          hide_stats_from_friends: boolean;
+          hide_photos_from_friends: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -116,6 +119,7 @@ export interface Database {
           email: string;
           display_name?: string | null;
           avatar_url?: string | null;
+          handle?: string | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
           days_per_week?: number | null;
@@ -123,10 +127,13 @@ export interface Database {
           injuries_notes?: string | null;
           unit_preference?: UnitPreference;
           onboarding_completed?: boolean;
+          hide_stats_from_friends?: boolean;
+          hide_photos_from_friends?: boolean;
         };
         Update: {
           display_name?: string | null;
           avatar_url?: string | null;
+          handle?: string | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
           days_per_week?: number | null;
@@ -134,6 +141,8 @@ export interface Database {
           injuries_notes?: string | null;
           unit_preference?: UnitPreference;
           onboarding_completed?: boolean;
+          hide_stats_from_friends?: boolean;
+          hide_photos_from_friends?: boolean;
         };
         Relationships: [];
       };
@@ -617,6 +626,9 @@ export interface Database {
         Update: {
           visibility?: PostVisibility;
           caption?: string | null;
+          photo_path?: string | null;
+          before_photo_path?: string | null;
+          after_photo_path?: string | null;
         };
         Relationships: [];
       };
@@ -814,6 +826,9 @@ export interface Database {
           id: string;
           display_name: string | null;
           avatar_url: string | null;
+          handle: string | null;
+          hide_stats_from_friends: boolean;
+          hide_photos_from_friends: boolean;
         };
         Relationships: [];
       };
