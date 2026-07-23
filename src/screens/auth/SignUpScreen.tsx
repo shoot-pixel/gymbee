@@ -16,7 +16,6 @@ export function SignUpScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [confirmationSent, setConfirmationSent] = useState(false);
 
   const onSubmit = async () => {
     setError(null);
@@ -33,30 +32,18 @@ export function SignUpScreen({ navigation }: Props) {
       setError(result.error);
       return;
     }
-    // The handle_new_user trigger creates the profiles row server-side; if
-    // email confirmation is required the session won't be active yet.
-    setConfirmationSent(true);
+    if (!result.hasSession) {
+      // No confirmation step is expected — the project should have email
+      // confirmation disabled (see supabase/config.toml's [auth.email]
+      // enable_confirmations). Landing here means that setting hasn't been
+      // applied to this Supabase project yet, so surface it rather than
+      // leaving the user stuck on this screen with no signal why.
+      setError('Account created, but sign-in isn’t active yet. Please try signing in — if that fails, email confirmation needs to be disabled for this project.');
+      return;
+    }
+    // On success, supabase.auth.onAuthStateChange (wired in AuthProvider)
+    // flips RootNavigator over to Onboarding — no explicit navigation here.
   };
-
-  if (confirmationSent) {
-    return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          backgroundColor: theme.colors.bg.base,
-          padding: theme.spacing.xl,
-          justifyContent: 'center',
-          gap: theme.spacing.md,
-        }}
-      >
-        <Text variant="title">Check your email</Text>
-        <Text variant="body" color="secondary">
-          We sent a confirmation link to {email}. Confirm it, then sign in.
-        </Text>
-        <Button label="Back to Sign In" onPress={() => navigation.navigate('SignIn')} />
-      </SafeAreaView>
-    );
-  }
 
   return (
     <KeyboardAvoidingView

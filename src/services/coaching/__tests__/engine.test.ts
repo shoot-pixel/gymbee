@@ -78,6 +78,40 @@ describe('LocalCoachingEngine.evaluateReadiness', () => {
     expect(result.recommendedIntensity).toBe('recovery_only');
     expect(result.summary.toLowerCase()).toMatch(/appears|may/);
   });
+
+  it('lowers the score and reports an available wearable_recovery factor when Whoop recovery is poor', () => {
+    const inputs: ReadinessInputs = {
+      checkin: null,
+      wearable: { recoveryScore: 25, sleepPerformancePct: 60, strain: 14 },
+      trainingLoad: { acuteVolumeKg: 0, chronicAvgVolumeKg: 0, loadRatio: null, classification: 'unknown' },
+      daysSinceLastWorkout: null,
+      missedWorkoutsLast14Days: 0,
+    };
+
+    const result = engine.evaluateReadiness(inputs);
+
+    expect(result.score).toBeLessThan(100);
+    const wearableFactor = result.factors.find(f => f.key === 'wearable_recovery');
+    expect(wearableFactor?.available).toBe(true);
+    expect(wearableFactor?.impact).toBe('negative');
+  });
+
+  it('treats a null wearable input as unavailable, not zero', () => {
+    const inputs: ReadinessInputs = {
+      checkin: null,
+      wearable: null,
+      trainingLoad: { acuteVolumeKg: 0, chronicAvgVolumeKg: 0, loadRatio: null, classification: 'unknown' },
+      daysSinceLastWorkout: null,
+      missedWorkoutsLast14Days: 0,
+    };
+
+    const result = engine.evaluateReadiness(inputs);
+
+    const wearableFactor = result.factors.find(f => f.key === 'wearable_recovery');
+    expect(wearableFactor?.available).toBe(false);
+    expect(wearableFactor?.impact).toBe('neutral');
+    expect(result.score).toBe(100);
+  });
 });
 
 describe('LocalCoachingEngine.calculateTrainingLoad', () => {

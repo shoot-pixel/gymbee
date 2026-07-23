@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Image, useWindowDimensions, View } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -17,8 +18,15 @@ const BACKGROUND = require('../assets/branding/loading-screen-bg.png');
 // appearing as an unrelated new element.
 const TRACK_WIDTH_FRACTION = 0.33;
 const TRACK_TOP_FRACTION = 0.676;
-const DOT_SIZE = 10;
 const TRACK_HEIGHT = 2;
+// Fraction of the track's width the glowing streak covers.
+const STREAK_WIDTH_FRACTION = 0.42;
+const STREAK_HEIGHT = 6;
+// One full back-and-forth loop (there and back) takes this long — a single
+// leg (withTiming's own duration) is half of it, since withRepeat's
+// reverse=true plays the timing forward then backward as the two halves
+// of one cycle.
+const CYCLE_DURATION_MS = 3000;
 
 type LoadingScreenProps = {
   /** Also used as the accessibility label for the progress indicator. */
@@ -38,6 +46,7 @@ export function LoadingScreen({ label = 'Loading SoSet' }: LoadingScreenProps) {
   const reducedMotion = useReducedMotion();
   const progress = useSharedValue(0);
   const trackWidth = width * TRACK_WIDTH_FRACTION;
+  const streakWidth = trackWidth * STREAK_WIDTH_FRACTION;
 
   useEffect(() => {
     if (reducedMotion) {
@@ -46,11 +55,18 @@ export function LoadingScreen({ label = 'Loading SoSet' }: LoadingScreenProps) {
       progress.value = 0.5;
       return;
     }
-    progress.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.ease) }), -1, true);
+    // withRepeat's reverse=true plays this timing forward then backward as
+    // the two legs of one loop, so halving the cycle duration here is what
+    // makes a full there-and-back pass take CYCLE_DURATION_MS.
+    progress.value = withRepeat(
+      withTiming(1, { duration: CYCLE_DURATION_MS / 2, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true,
+    );
   }, [reducedMotion, progress]);
 
-  const dotStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: progress.value * (trackWidth - DOT_SIZE) }],
+  const streakStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * (trackWidth - streakWidth) }],
   }));
 
   return (
@@ -62,13 +78,13 @@ export function LoadingScreen({ label = 'Loading SoSet' }: LoadingScreenProps) {
         accessibilityRole="progressbar"
         accessibilityLabel={label}
       >
-        <View style={{ width: trackWidth, height: DOT_SIZE, justifyContent: 'center' }}>
+        <View style={{ width: trackWidth, height: STREAK_HEIGHT, justifyContent: 'center' }}>
           <View
             style={{
               position: 'absolute',
               left: 0,
               right: 0,
-              top: (DOT_SIZE - TRACK_HEIGHT) / 2,
+              top: (STREAK_HEIGHT - TRACK_HEIGHT) / 2,
               height: TRACK_HEIGHT,
               borderRadius: TRACK_HEIGHT / 2,
               backgroundColor: theme.colors.border.default,
@@ -77,19 +93,25 @@ export function LoadingScreen({ label = 'Loading SoSet' }: LoadingScreenProps) {
           <Animated.View
             style={[
               {
-                width: DOT_SIZE,
-                height: DOT_SIZE,
-                borderRadius: DOT_SIZE / 2,
-                backgroundColor: theme.colors.accent.teal,
+                width: streakWidth,
+                height: STREAK_HEIGHT,
+                borderRadius: STREAK_HEIGHT / 2,
                 shadowColor: theme.colors.accent.teal,
                 shadowOpacity: 0.9,
-                shadowRadius: 8,
+                shadowRadius: 10,
                 shadowOffset: { width: 0, height: 0 },
                 elevation: 6,
               },
-              dotStyle,
+              streakStyle,
             ]}
-          />
+          >
+            <LinearGradient
+              colors={['rgba(0,216,180,0)', theme.colors.accent.teal, 'rgba(0,216,180,0)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={{ flex: 1, borderRadius: STREAK_HEIGHT / 2 }}
+            />
+          </Animated.View>
         </View>
       </View>
     </View>

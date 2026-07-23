@@ -4,7 +4,8 @@ import type { LogStackParamList } from './types';
 import { LogLandingScreen } from '../screens/log/LogLandingScreen';
 import { PreWorkoutReviewScreen } from '../screens/log/PreWorkoutReviewScreen';
 import { ChooseVariantScreen } from '../screens/log/ChooseVariantScreen';
-import { LogWorkoutScreen } from '../screens/log/LogWorkoutScreen';
+import { ActiveWorkoutOverviewScreen } from '../screens/log/ActiveWorkoutOverviewScreen';
+import { ActiveExerciseScreen } from '../screens/log/ActiveExerciseScreen';
 import { ExercisePickerScreen } from '../screens/log/ExercisePickerScreen';
 import { AddExerciseScreen } from '../screens/log/AddExerciseScreen';
 import { ExerciseDetailScreen } from '../screens/exercises/ExerciseDetailScreen';
@@ -20,9 +21,10 @@ export function LogStack() {
       <Stack.Screen name="LogLanding" component={LogLandingScreen} />
       <Stack.Screen name="PreWorkoutReview" component={PreWorkoutReviewScreen} />
       <Stack.Screen name="ChooseVariant" component={ChooseVariantScreen} />
-      <Stack.Screen name="LogWorkout" component={LogWorkoutScreen} />
+      <Stack.Screen name="ActiveWorkoutOverview" component={ActiveWorkoutOverviewScreen} />
+      <Stack.Screen name="ActiveExercise" component={ActiveExerciseScreen} />
       <Stack.Screen name="ExercisePicker" component={ExercisePickerScreen} />
-      <Stack.Screen name="AddExercise" component={AddExerciseScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="AddExercise" component={AddExerciseScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
       <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} />
       <Stack.Screen name="Library" component={LibraryScreen} />

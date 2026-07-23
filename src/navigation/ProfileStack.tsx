@@ -6,7 +6,9 @@ import { SettingsScreen } from '../screens/profile/SettingsScreen';
 import { AccountScreen } from '../screens/profile/AccountScreen';
 import { PrivacyScreen } from '../screens/profile/PrivacyScreen';
 import { BlockedUsersScreen } from '../screens/profile/BlockedUsersScreen';
+import { IntegrationsScreen } from '../screens/profile/IntegrationsScreen';
 import { PostDetailScreen } from '../screens/community/PostDetailScreen';
+import { FriendsListScreen } from '../screens/community/FriendsListScreen';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
@@ -18,7 +20,9 @@ export function ProfileStack() {
       <Stack.Screen name="Account" component={AccountScreen} />
       <Stack.Screen name="Privacy" component={PrivacyScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
+      <Stack.Screen name="Integrations" component={IntegrationsScreen} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} />
+      <Stack.Screen name="FriendsList" component={FriendsListScreen} />
     </Stack.Navigator>
   );
 }

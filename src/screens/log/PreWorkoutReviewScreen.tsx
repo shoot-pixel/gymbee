@@ -169,7 +169,7 @@ export function PreWorkoutReviewScreen() {
   };
 
   const goToLogWorkout = () => {
-    logNavigation.replace('LogWorkout', {
+    logNavigation.replace('ActiveWorkoutOverview', {
       programDayId: params.programDayId,
       scheduledWorkoutId: params.scheduledWorkoutId,
     });

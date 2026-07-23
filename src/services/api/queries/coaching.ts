@@ -7,7 +7,9 @@ import { useActiveProgramTree } from './programs';
 import { walkScheduledDays } from '../../../utils/trainingScheduleWalk';
 import { useWorkoutLogsInRange } from './workoutLogs';
 import { useLoggedSets, estimateOneRepMax } from './progress';
+import { useWhoopMetrics } from './whoop';
 import { coachingEngine } from '../../coaching';
+import { featureFlags } from '../../../config/featureFlags';
 import type {
   AdaptationChange,
   ExerciseSubstitution,
@@ -148,8 +150,9 @@ export function useReadinessContext(userId: string | null) {
   const { data: workoutLogs, isLoading: logsLoading } = useWorkoutLogsInRange(userId, { from, to });
   const { data: loggedSets, isLoading: setsLoading } = useLoggedSets(userId);
   const { data: checkin, isLoading: checkinLoading } = useReadinessCheckin(userId, todayKey());
+  const { data: whoopMetrics, isLoading: whoopLoading } = useWhoopMetrics(userId);
 
-  const isLoading = programLoading || logsLoading || setsLoading || checkinLoading;
+  const isLoading = programLoading || logsLoading || setsLoading || checkinLoading || whoopLoading;
 
   const inputs = useMemo<ReadinessInputs>(() => {
     const completedDates = new Set((workoutLogs ?? []).map(log => log.completedAt.slice(0, 10)));
@@ -177,12 +180,19 @@ export function useReadinessContext(userId: string | null) {
 
     return {
       checkin: checkinRowToInput(checkin),
-      wearable: null,
+      wearable:
+        featureFlags.wearableIntegrations && whoopMetrics?.score_state === 'SCORED' && whoopMetrics.recovery_score != null
+          ? {
+              recoveryScore: whoopMetrics.recovery_score,
+              sleepPerformancePct: whoopMetrics.sleep_performance_pct,
+              strain: whoopMetrics.strain,
+            }
+          : null,
       trainingLoad,
       daysSinceLastWorkout,
       missedWorkoutsLast14Days,
     };
-  }, [workoutLogs, program, loggedSets, checkin, today]);
+  }, [workoutLogs, program, loggedSets, checkin, whoopMetrics, today]);
 
   return { isLoading, inputs, hasCheckin: checkin != null, checkinId: checkin?.id ?? null };
 }

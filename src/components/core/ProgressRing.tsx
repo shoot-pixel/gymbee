@@ -12,6 +12,10 @@ type ProgressRingProps = {
   strokeWidth?: number;
   label?: string;
   centerValue?: string;
+  /** Gradient stops for the filled arc — defaults to the brand green-teal
+   * sweep. Pass a different token (e.g. theme.gradients.sleep) when several
+   * rings appear together and need to read as distinct metrics. */
+  colors?: readonly [string, string];
 };
 
 export function ProgressRing({
@@ -20,6 +24,7 @@ export function ProgressRing({
   strokeWidth = 10,
   label,
   centerValue,
+  colors,
 }: ProgressRingProps) {
   const theme = useTheme();
   const radius = (size - strokeWidth) / 2;
@@ -27,14 +32,15 @@ export function ProgressRing({
   const clamped = Math.max(0, Math.min(1, progress));
   const dashOffset = circumference * (1 - clamped);
   const gradientId = 'progressRingGradient';
+  const [stopStart, stopEnd] = colors ?? theme.gradients.accent;
 
   return (
     <View style={{ alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size}>
         <Defs>
           <LinearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor={theme.gradients.accent[0]} />
-            <Stop offset="100%" stopColor={theme.gradients.accent[1]} />
+            <Stop offset="0%" stopColor={stopStart} />
+            <Stop offset="100%" stopColor={stopEnd} />
           </LinearGradient>
         </Defs>
         <Circle

@@ -18,7 +18,7 @@ export type FeatureFlags = {
 export const featureFlags: FeatureFlags = {
   aiCoaching: true,
   recoveryAdaptation: true,
-  wearableIntegrations: false,
+  wearableIntegrations: true,
   videoAnalysis: false,
   voiceCoaching: false,
   predictivePersonalRecords: true,

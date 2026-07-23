@@ -6,6 +6,7 @@ export type PublicProfile = {
   display_name: string | null;
   avatar_url: string | null;
   handle: string | null;
+  bio: string | null;
   hide_stats_from_friends: boolean;
   hide_photos_from_friends: boolean;
 };
@@ -116,6 +117,30 @@ export function resolveFriendRequestState(
   const incomingId = relationships.incomingByRequester.get(otherUserId);
   if (incomingId) return { state: 'incoming', requestId: incomingId };
   return { state: 'none', requestId: null };
+}
+
+/** Followers/following are shown as the same list under two labels — the
+ * relationship model is mutual "Friends", not an asymmetric follow graph
+ * (see fetchFriendIds's own comment above). */
+export function useFriendCount(userId: string | null) {
+  return useQuery({
+    queryKey: ['friendCount', userId],
+    queryFn: async () => (await fetchFriendIds(userId as string)).length,
+    enabled: userId != null,
+  });
+}
+
+async function fetchFriendsList(userId: string): Promise<PublicProfile[]> {
+  const friendIds = await fetchFriendIds(userId);
+  return fetchPublicProfiles(friendIds);
+}
+
+export function useFriendsList(userId: string | null) {
+  return useQuery({
+    queryKey: ['friendsList', userId],
+    queryFn: () => fetchFriendsList(userId as string),
+    enabled: userId != null,
+  });
 }
 
 export type IncomingFriendRequest = PublicProfile & { requestId: string; createdAt: string };

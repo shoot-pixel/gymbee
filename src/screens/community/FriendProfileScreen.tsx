@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -14,6 +14,7 @@ import {
   BottomSheet,
   ListRow,
   PostThumbnail,
+  Avatar,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -26,6 +27,7 @@ import {
   useRemoveFriendRequest,
   useIsBlocked,
   useBlockUser,
+  useFriendCount,
 } from '../../services/api/queries/community';
 import { useUserPosts, useSignedPhotoUrls, postPhotoPaths } from '../../services/api/queries/posts';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
@@ -44,6 +46,7 @@ export function FriendProfileScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const { data: profile, isLoading, refetch: refetchProfile } = useFriendProfile(params.userId);
+  const { data: friendCount } = useFriendCount(params.userId);
   const { data: relationships } = useFriendRelationships(userId);
   const { data: isBlocked, isLoading: blockedLoading } = useIsBlocked(userId, params.userId);
   const sendRequest = useSendFriendRequest(userId);
@@ -119,7 +122,42 @@ export function FriendProfileScreen() {
           contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
         >
-          <Text variant="title">{profile?.display_name ?? 'Athlete'}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+            <Avatar uri={profile?.avatar_url} size={72} />
+            <View style={{ flex: 1 }}>
+              <Text variant="title">{profile?.display_name ?? 'Athlete'}</Text>
+              {profile?.handle ? (
+                <Text variant="body" color="secondary">
+                  @{profile.handle}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          {profile?.bio ? <Text variant="body">{profile.bio}</Text> : null}
+
+          <View style={{ flexDirection: 'row', gap: theme.spacing.lg }}>
+            <Pressable
+              onPress={() => navigation.navigate('FriendsList', { userId: params.userId, title: 'Followers' })}
+            >
+              <Text variant="body">
+                <Text variant="body" style={{ fontWeight: '700' }}>
+                  {friendCount ?? 0}
+                </Text>{' '}
+                Followers
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => navigation.navigate('FriendsList', { userId: params.userId, title: 'Following' })}
+            >
+              <Text variant="body">
+                <Text variant="body" style={{ fontWeight: '700' }}>
+                  {friendCount ?? 0}
+                </Text>{' '}
+                Following
+              </Text>
+            </Pressable>
+          </View>
 
           {!isSelf && profile?.hide_stats_from_friends ? (
             <Text variant="caption" color="tertiary">

@@ -5,7 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { addDays, endOfWeek, format, isFuture, isSameDay, isToday as isDateToday, startOfWeek } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, ProgressRing, ListRow, LoadingState, Icon, Avatar, IconButton, type IconName } from '../../components/core';
+import { Text, Card, Button, ProgressRing, ListRow, LoadingState, Icon, Avatar, IconButton, StatTile, type IconName } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
   useActiveProgramTree,
@@ -27,6 +27,8 @@ import type { TodayPlanContext, TrainingPatternType } from '../../services/coach
 import { computeStreak } from '../../utils/streak';
 import { estimateWorkoutMinutes } from '../../utils/workoutTiming';
 import { navigateToStartWorkout } from '../../navigation/startWorkoutFlow';
+import { useUnitPreference } from '../../hooks/useUnitPreference';
+import { formatVolume, unitLabel } from '../../utils/units';
 import { WeekTimeline } from './WeekTimeline';
 import { AiSummaryCard } from './AiSummaryCard';
 import { FriendsActivitySection } from './FriendsActivitySection';
@@ -76,6 +78,7 @@ export function TodayScreen() {
   // bubbles up to find it since 'Profile' isn't a route in this navigator.
   const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const todayNavigation = useNavigation<NativeStackNavigationProp<TodayStackParamList>>();
+  const unitPref = useUnitPreference();
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
 
@@ -189,6 +192,35 @@ export function TodayScreen() {
   const isSelectedCompleted = completedDates.has(dateKey(selectedDate));
   const isSelectedToday = isDateToday(selectedDate);
   const isSelectedFuture = isFuture(selectedDate) && !isSelectedToday;
+  const isSelectedPr = prDates.has(dateKey(selectedDate));
+
+  // Real summary for the completed-day card below — sourced from the same
+  // workoutLogs/loggedSets queries already fetched on this screen, filtered
+  // to the selected date. No separate per-workout query exists yet, so
+  // duration comes from summing every workout_log completed that day and
+  // set stats come from every logged set with a matching logged_at date.
+  const selectedDaySummary = useMemo(() => {
+    if (!isSelectedCompleted) return null;
+    const dayKey = dateKey(selectedDate);
+    const logsForDay = (workoutLogs ?? []).filter(log => dateKey(new Date(log.completedAt)) === dayKey);
+    const setsForDay = (loggedSets ?? []).filter(s => dateKey(new Date(s.loggedAt)) === dayKey);
+
+    const durationMinutes = logsForDay.reduce((sum, log) => {
+      const minutes = (new Date(log.completedAt).getTime() - new Date(log.startedAt).getTime()) / 60_000;
+      return sum + Math.max(0, minutes);
+    }, 0);
+    const totalReps = setsForDay.reduce((sum, s) => sum + s.reps, 0);
+    const totalVolumeKg = setsForDay.reduce((sum, s) => sum + (s.loadKg ?? 0) * s.reps, 0);
+    const exerciseCount = new Set(setsForDay.map(s => s.exerciseId)).size;
+
+    return {
+      durationMinutes: Math.round(durationMinutes),
+      totalSets: setsForDay.length,
+      totalReps,
+      totalVolumeKg,
+      exerciseCount,
+    };
+  }, [isSelectedCompleted, selectedDate, workoutLogs, loggedSets]);
 
   const firstName = profile?.display_name?.trim().split(/\s+/)[0];
 
@@ -302,6 +334,42 @@ export function TodayScreen() {
           isRestDay={todayPlan.kind === 'rest_day'}
         />
 
+        {activePatterns.length > 0 ? (
+          <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
+            <Text variant="subtitle">Coach Insight</Text>
+            {activePatterns.slice(0, MAX_INSIGHTS_SHOWN).map((pattern, index) => (
+              <View
+                key={pattern.id}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  gap: theme.spacing.sm,
+                  paddingTop: index > 0 ? theme.spacing.sm : 0,
+                  borderTopWidth: index > 0 ? 1 : 0,
+                  borderTopColor: theme.colors.border.subtle,
+                }}
+              >
+                <Icon name={PATTERN_ICON[pattern.pattern_type]} size="sm" color={theme.colors.accent.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="body" style={{ fontWeight: '700' }}>
+                    {pattern.title}
+                  </Text>
+                  <Text variant="caption" color="secondary">
+                    {pattern.detail}
+                  </Text>
+                </View>
+                <IconButton
+                  name="x"
+                  variant="ghost"
+                  size={28}
+                  accessibilityLabel="Dismiss insight"
+                  onPress={() => userId && dismissPattern.mutate({ id: pattern.id, userId })}
+                />
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
         {!isLoading && program ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
             <ProgressRing progress={weeklyProgress} size={56} strokeWidth={6} centerValue={`${sessionsThisWeek}/${weeklyTarget}`} />
@@ -340,14 +408,58 @@ export function TodayScreen() {
             />
 
             {isSelectedCompleted ? (
-              <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl }}>
-                <Icon name="circleCheck" size="lg" color={theme.colors.accent.primary} />
-                <Text variant="subtitle">
-                  {isSelectedToday ? "Today's workout is done" : `${format(selectedDate, 'EEEE')}'s workout is done`}
-                </Text>
-                <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
-                  {resolvedSelected?.day.title ?? scheduledSelected?.name ?? 'Nice work.'}
-                </Text>
+              <Card variant="elevated" style={{ gap: theme.spacing.md }}>
+                <View style={{ alignItems: 'center', gap: theme.spacing.sm }}>
+                  <Icon name="circleCheck" size="lg" color={theme.colors.accent.primary} />
+                  <Text variant="subtitle">
+                    {isSelectedToday ? "Today's workout is done" : `${format(selectedDate, 'EEEE')}'s workout is done`}
+                  </Text>
+                  <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
+                    {resolvedSelected?.day.title ?? scheduledSelected?.name ?? 'Nice work.'}
+                  </Text>
+                  {isSelectedPr ? (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: theme.spacing.xxs,
+                        backgroundColor: theme.colors.accent.subtle,
+                        borderRadius: theme.radii.pill,
+                        paddingHorizontal: theme.spacing.sm,
+                        paddingVertical: theme.spacing.xxs,
+                      }}
+                    >
+                      <Icon name="trophy" size="sm" color={theme.colors.accent.primary} />
+                      <Text variant="caption" style={{ color: theme.colors.accent.primary, fontWeight: '700' }}>
+                        New PR
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {selectedDaySummary ? (
+                  <View style={{ gap: theme.spacing.sm }}>
+                    <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+                      <View style={{ flex: 1 }}>
+                        <StatTile label="Duration" value={`${selectedDaySummary.durationMinutes} min`} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <StatTile label="Exercises" value={selectedDaySummary.exerciseCount} />
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+                      <View style={{ flex: 1 }}>
+                        <StatTile label="Sets" value={selectedDaySummary.totalSets} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <StatTile
+                          label="Volume"
+                          value={`${formatVolume(selectedDaySummary.totalVolumeKg, unitPref)} ${unitLabel(unitPref)}`}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
               </Card>
             ) : resolvedSelected?.day.is_rest_day ? (
               <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl }}>
@@ -446,42 +558,6 @@ export function TodayScreen() {
               onCardPress={onFriendActivityCardPress}
               onViewAllPress={onFriendsActivityViewAll}
             />
-
-            {activePatterns.length > 0 ? (
-              <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
-                <Text variant="subtitle">Coach Insight</Text>
-                {activePatterns.slice(0, MAX_INSIGHTS_SHOWN).map((pattern, index) => (
-                  <View
-                    key={pattern.id}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'flex-start',
-                      gap: theme.spacing.sm,
-                      paddingTop: index > 0 ? theme.spacing.sm : 0,
-                      borderTopWidth: index > 0 ? 1 : 0,
-                      borderTopColor: theme.colors.border.subtle,
-                    }}
-                  >
-                    <Icon name={PATTERN_ICON[pattern.pattern_type]} size="sm" color={theme.colors.accent.primary} />
-                    <View style={{ flex: 1 }}>
-                      <Text variant="body" style={{ fontWeight: '700' }}>
-                        {pattern.title}
-                      </Text>
-                      <Text variant="caption" color="secondary">
-                        {pattern.detail}
-                      </Text>
-                    </View>
-                    <IconButton
-                      name="x"
-                      variant="ghost"
-                      size={28}
-                      accessibilityLabel="Dismiss insight"
-                      onPress={() => userId && dismissPattern.mutate({ id: pattern.id, userId })}
-                    />
-                  </View>
-                ))}
-              </Card>
-            ) : null}
           </>
         )}
       </ScrollView>

@@ -34,6 +34,11 @@ const PROFILE = {
 jest.mock('../../../services/api/queries/profiles', () => ({
   useProfile: jest.fn(() => ({ data: PROFILE, isLoading: false })),
   useUploadAvatar: jest.fn(() => ({ mutateAsync: jest.fn() })),
+  useUpdateProfile: jest.fn(() => ({ mutateAsync: jest.fn(), isPending: false })),
+}));
+
+jest.mock('../../../services/api/queries/community', () => ({
+  useFriendCount: jest.fn(() => ({ data: 3 })),
 }));
 
 const mockUseUserPosts = jest.fn();

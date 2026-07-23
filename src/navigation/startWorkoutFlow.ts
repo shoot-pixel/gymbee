@@ -7,7 +7,7 @@ type Source = { programDayId?: string; scheduledWorkoutId?: string };
 /**
  * Single entry point for "start this workout" across Today/DayDetail/
  * ScheduledWorkoutDetail — routes through the readiness/adaptation review
- * when AI coaching is enabled, otherwise goes straight to LogWorkout
+ * when AI coaching is enabled, otherwise goes straight to ActiveWorkoutOverview
  * (today's pre-coaching behavior, unchanged).
  */
 export function navigateToStartWorkout(
@@ -17,7 +17,7 @@ export function navigateToStartWorkout(
   if (!featureFlags.aiCoaching) {
     rootNavigation.navigate('MainTabs', {
       screen: 'LogTab',
-      params: { screen: 'LogWorkout', params: source },
+      params: { screen: 'ActiveWorkoutOverview', params: source },
     });
     return;
   }

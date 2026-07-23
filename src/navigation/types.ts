@@ -44,9 +44,10 @@ export type LogStackParamList = {
   LogLanding: undefined;
   PreWorkoutReview: { programDayId?: string; scheduledWorkoutId?: string };
   ChooseVariant: { programDayId?: string; scheduledWorkoutId?: string };
-  LogWorkout:
+  ActiveWorkoutOverview:
     | { programDayId?: string; scheduledWorkoutId?: string; templateId?: string; variantType?: WorkoutVariantType }
     | undefined;
+  ActiveExercise: { exerciseId: string };
   ExercisePicker: { selectMode?: boolean; templateId?: string } | undefined;
   AddExercise: { selectMode?: boolean; templateId?: string } | undefined;
   ExerciseDetail: { exerciseId: string };
@@ -72,6 +73,9 @@ export type CommunityStackParamList = {
   FriendProfile: { userId: string };
   PostDetail: { postId: string };
   UploadPhotoPost: { mode: 'progress' | 'before_after' };
+  /** Followers and Following render the same list (mutual friends) under
+   * two labels — see FriendsListScreen. */
+  FriendsList: { userId: string; title: 'Followers' | 'Following' };
 };
 
 // ---- Profile (pushed from Today header, not a tab) ----
@@ -81,7 +85,14 @@ export type ProfileStackParamList = {
   Account: undefined;
   Privacy: undefined;
   BlockedUsers: undefined;
+  /** status/message are only ever populated when this screen is reached via
+   * the soset://whoop-callback deep link — see RootNavigator's `linking`
+   * config. The Integrations screen still re-derives the real connection
+   * state from the database on focus; these params only drive the one-time
+   * confirmation toast. */
+  Integrations: { status?: 'success' | 'error'; message?: string } | undefined;
   PostDetail: { postId: string };
+  FriendsList: { userId: string; title: 'Followers' | 'Following' };
 };
 
 export type MainTabParamList = {

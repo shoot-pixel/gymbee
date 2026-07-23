@@ -132,7 +132,7 @@ describe('PreWorkoutReviewScreen', () => {
     expect(getAllByText(/Readiness appears lower than usual today/).length).toBeGreaterThan(0);
   });
 
-  it('rejecting the adaptation and starting the workout saves it as rejected, then navigates to LogWorkout', async () => {
+  it('rejecting the adaptation and starting the workout saves it as rejected, then navigates to ActiveWorkoutOverview', async () => {
     const { getByText } = await render(<PreWorkoutReviewScreen />);
 
     await fireEvent.press(getByText('Reject'));
@@ -142,7 +142,7 @@ describe('PreWorkoutReviewScreen', () => {
 
     const call = mockMutateAsyncSave.mock.calls[0][0];
     expect(call.decisions).toEqual([{ change: PROPOSED_ADAPTATION, accepted: false }]);
-    expect(mockReplace).toHaveBeenCalledWith('LogWorkout', { programDayId: 'day-1', scheduledWorkoutId: undefined });
+    expect(mockReplace).toHaveBeenCalledWith('ActiveWorkoutOverview', { programDayId: 'day-1', scheduledWorkoutId: undefined });
   });
 
   it('defaults to accepting the proposed adaptation when the user does not change it', async () => {

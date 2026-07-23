@@ -46,6 +46,7 @@ jest.mock('../../../services/api/queries/community', () => {
   return {
     ...actual,
     useFriendProfile: jest.fn(() => ({ data: PROFILE, isLoading: false })),
+    useFriendCount: jest.fn(() => ({ data: 2 })),
     useFriendRelationships: (...args: unknown[]) => mockUseFriendRelationships(...args),
     useIsBlocked: (...args: unknown[]) => mockUseIsBlocked(...args),
     useSendFriendRequest: jest.fn(() => ({ mutate: mockSendMutate, isPending: false })),

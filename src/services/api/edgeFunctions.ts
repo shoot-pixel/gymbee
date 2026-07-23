@@ -38,9 +38,42 @@ export function deleteAccount(): Promise<void> {
   return invokeFunction('delete-account', {});
 }
 
+/** `today` must be the caller's own local-device date (format(new Date(),
+ * 'yyyy-MM-dd')) — the edge function runs in UTC with no idea what timezone
+ * the athlete is in, and needs a trusted "today" to resolve relative dates
+ * ("tomorrow", "this Friday") onto the same scheduled_date convention the
+ * rest of the app already uses. */
 export function sendChatMessage(
   conversationId: string,
   message: string,
+  today: string,
 ): Promise<{ message_id: string }> {
-  return invokeFunction('chat-coach', { conversation_id: conversationId, message });
+  return invokeFunction('chat-coach', { conversation_id: conversationId, message, today });
+}
+
+/** Mints a one-time OAuth state token server-side and returns WHOOP's
+ * authorization URL — see supabase/functions/whoop-oauth-start. */
+export function startWhoopConnect(): Promise<{ url: string }> {
+  return invokeFunction('whoop-oauth-start', {});
+}
+
+export type WhoopSyncResult = {
+  cycle_date: string;
+  whoop_cycle_id: string;
+  score_state: 'SCORED' | 'PENDING_SCORE' | 'UNSCORABLE';
+  recovery_score: number | null;
+  sleep_performance_pct: number | null;
+  strain: number | null;
+  hrv_ms: number | null;
+  resting_heart_rate: number | null;
+  synced_at: string;
+};
+
+/** Pulls the caller's latest recovery/sleep/strain from WHOOP and upserts it
+ * into whoop_metrics server-side — see supabase/functions/whoop-sync. Only
+ * call this when the user is already known to be connected (see
+ * useIntegrationConnections); the real read path for display is
+ * useWhoopMetrics's direct table read, not this function's response. */
+export function syncWhoopMetrics(): Promise<WhoopSyncResult> {
+  return invokeFunction('whoop-sync', {});
 }

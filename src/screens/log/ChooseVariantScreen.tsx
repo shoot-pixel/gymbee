@@ -67,7 +67,7 @@ export function ChooseVariantScreen() {
       navigateToStartWorkout(rootNavigation, params);
       return;
     }
-    logNavigation.replace('LogWorkout', { ...params, variantType });
+    logNavigation.replace('ActiveWorkoutOverview', { ...params, variantType });
   };
 
   return (

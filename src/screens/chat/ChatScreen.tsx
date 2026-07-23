@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, TextField, Button, Card, Icon, LoadingState, EmptyState } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
@@ -21,12 +23,14 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export function ChatScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const userId = useAuthStore(state => state.userId);
   const { data: conversation } = useConversation(userId);
   const conversationId = conversation?.id ?? null;
   const { data: messages, isLoading } = useMessages(conversationId);
   const invalidateMessages = useInvalidateMessages(conversationId);
+  const queryClient = useQueryClient();
 
   const streamingBuffer = useChatUiStore(state => state.streamingBuffer);
   const appendToken = useChatUiStore(state => state.appendToken);
@@ -51,6 +55,12 @@ export function ChatScreen() {
         setPendingUserText(null);
         setSending(false);
         invalidateMessages();
+        // Cheap no-op if the coach didn't touch the schedule this turn — but
+        // if it did (removed/curated/scheduled a workout via a tool call),
+        // this is what makes Today/Calendar/Library reflect it right away
+        // instead of waiting out the normal staleTime.
+        queryClient.invalidateQueries({ queryKey: ['scheduledWorkouts'] });
+        queryClient.invalidateQueries({ queryKey: ['workoutTemplates'] });
       })
       .subscribe();
 
@@ -69,7 +79,7 @@ export function ChatScreen() {
     setError(null);
     resetStreamingBuffer();
     try {
-      await sendChatMessage(conversationId, text);
+      await sendChatMessage(conversationId, text, format(new Date(), 'yyyy-MM-dd'));
     } catch (err) {
       setSending(false);
       setPendingUserText(null);
@@ -78,19 +88,28 @@ export function ChatScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
+    // Top inset is applied explicitly below rather than left to SafeAreaView's
+    // automatic edge — this screen is presented as a fullScreenModal (covers
+    // the true top of the display, status bar included), and the collapse
+    // button needs a guaranteed floor of clearance on every device regardless
+    // of what the native modal-presentation layer reports for insets.top.
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['left', 'right', 'bottom']}>
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: theme.spacing.lg,
+          paddingTop: Math.max(insets.top, theme.spacing.lg) + theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
+          paddingBottom: theme.spacing.lg,
         }}
       >
         <Text variant="title">Coach</Text>
         <Pressable
           onPress={() => navigation.goBack()}
           hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Collapse chat"
           style={{
             width: theme.sizes.iconButton,
             height: theme.sizes.iconButton,
@@ -100,7 +119,7 @@ export function ChatScreen() {
             justifyContent: 'center',
           }}
         >
-          <Icon name="x" size="sm" color={theme.colors.text.secondary} />
+          <Icon name="chevronDown" size="sm" color={theme.colors.text.secondary} />
         </Pressable>
       </View>
 
@@ -115,6 +134,8 @@ export function ChatScreen() {
             ref={scrollRef}
             contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.sm }}
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
           >
             {messages?.length === 0 && !pendingUserText ? (
               <EmptyState

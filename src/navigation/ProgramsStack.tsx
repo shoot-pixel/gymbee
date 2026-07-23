@@ -19,7 +19,7 @@ export function ProgramsStack() {
       <Stack.Screen name="ProgramDetail" component={ProgramDetailScreen} />
       <Stack.Screen name="DayDetail" component={DayDetailScreen} />
       <Stack.Screen name="ExercisePicker" component={ExercisePickerScreen} />
-      <Stack.Screen name="AddExercise" component={AddExerciseScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="AddExercise" component={AddExerciseScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="Library" component={LibraryScreen} />
       <Stack.Screen name="TemplateEditor" component={TemplateEditorScreen} />
       <Stack.Screen name="ScheduledWorkoutDetail" component={ScheduledWorkoutDetailScreen} />

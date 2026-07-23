@@ -19,6 +19,7 @@ import { coachingEngine } from '../../services/coaching';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, formatWeight, unitLabel } from '../../utils/units';
 import type { ProgressStackParamList } from '../../navigation/types';
+import { WhoopMetricsSection } from './WhoopMetricsSection';
 
 type Nav = NativeStackNavigationProp<ProgressStackParamList>;
 
@@ -60,7 +61,9 @@ export function ProgressDashboardScreen() {
         contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
       >
-        <Text variant="title">PRs</Text>
+        <Text variant="title">Stats</Text>
+
+        <WhoopMetricsSection userId={userId} />
 
         {isLoading ? (
           <LoadingState fill={false} />

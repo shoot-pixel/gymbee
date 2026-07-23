@@ -1,20 +1,26 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import { LogWorkoutScreen } from '../LogWorkoutScreen';
+import { ActiveExerciseScreen } from '../ActiveExerciseScreen';
 import { useActiveWorkoutStore } from '../../../store/activeWorkoutStore';
 
 const mockNavigate = jest.fn();
-const mockUseRoute = jest.fn(
-  (): { params: { programDayId?: string; scheduledWorkoutId?: string; variantType?: string } } => ({
-    params: { programDayId: 'day-1' },
-  }),
-);
+const mockGoBack = jest.fn();
+const mockSetParams = jest.fn();
+const mockUseRoute = jest.fn((): { params: { exerciseId: string } } => ({
+  params: { exerciseId: 'ex1' },
+}));
 
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {
     ...actual,
-    useNavigation: () => ({ navigate: mockNavigate, canGoBack: () => false }),
+    useNavigation: () => ({
+      navigate: mockNavigate,
+      goBack: mockGoBack,
+      setParams: mockSetParams,
+      canGoBack: () => true,
+    }),
     useRoute: () => mockUseRoute(),
   };
 });
@@ -25,36 +31,6 @@ jest.mock('../../../store/authStore', () => ({
 
 jest.mock('../../../hooks/useUnitPreference', () => ({
   useUnitPreference: () => 'kg',
-}));
-
-const PROGRAM_DAY_WITH_TARGETS = {
-  id: 'day-1',
-  title: 'Push Day',
-  program_exercises: [
-    {
-      id: 'pe-1',
-      exercise_id: 'ex1',
-      exercises: { id: 'ex1', name: 'Bench Press' },
-      target_sets: 3,
-      target_reps_min: 8,
-      target_reps_max: 10,
-      target_load_kg: 60,
-      target_rpe: 8,
-      rest_seconds: 90,
-    },
-  ],
-};
-
-jest.mock('../../../services/api/queries/programs', () => ({
-  useProgramDay: jest.fn(() => ({ data: { id: 'day-1', title: 'Push Day' }, isLoading: false })),
-}));
-
-jest.mock('../../../services/api/queries/scheduledWorkouts', () => ({
-  useScheduledWorkout: jest.fn(() => ({ data: undefined, isLoading: false })),
-}));
-
-jest.mock('../../../services/api/queries/workoutTemplates', () => ({
-  useWorkoutTemplate: jest.fn(() => ({ data: undefined, isLoading: false })),
 }));
 
 const EXERCISE_LIBRARY = [
@@ -108,20 +84,28 @@ jest.mock('../../../services/api/queries/profiles', () => ({
 }));
 
 const mockLogSetMutateAsync = jest.fn().mockResolvedValue({ id: 'dbset-1' });
-const mockStartWorkoutLogMutateAsync = jest.fn().mockResolvedValue({ id: 'wl-1' });
+const mockUpdateSetMutate = jest.fn();
+const mockUpdateSetMutateAsync = jest.fn();
+const mockDeleteSetMutateAsync = jest.fn();
 
 jest.mock('../../../services/api/queries/workoutLogs', () => ({
-  useStartWorkoutLog: jest.fn(() => ({ mutateAsync: mockStartWorkoutLogMutateAsync })),
   useLogSet: jest.fn(() => ({ mutateAsync: mockLogSetMutateAsync })),
-  useUpdateSet: jest.fn(() => ({ mutate: jest.fn(), mutateAsync: jest.fn() })),
-  useDeleteSet: jest.fn(() => ({ mutateAsync: jest.fn() })),
+  useUpdateSet: jest.fn(() => ({ mutate: mockUpdateSetMutate, mutateAsync: mockUpdateSetMutateAsync })),
+  useDeleteSet: jest.fn(() => ({ mutateAsync: mockDeleteSetMutateAsync })),
 }));
+
+jest.mock('../../../services/api/queries/progress', () => {
+  const actual = jest.requireActual('../../../services/api/queries/progress');
+  return {
+    ...actual,
+    useLoggedSets: jest.fn(() => ({ data: [], isLoading: false })),
+  };
+});
 
 const mockSaveRecommendationMutate = jest.fn();
 const mockSaveSubstitutionMutate = jest.fn();
 
 jest.mock('../../../services/api/queries/coaching', () => ({
-  useWorkoutAdaptations: jest.fn(() => ({ data: [], isLoading: false })),
   useReadinessContext: jest.fn(() => ({
     isLoading: false,
     inputs: {
@@ -174,17 +158,13 @@ jest.mock('../../../services/coaching', () => ({
     })),
     recommendNextSet: jest.fn(() => RECOMMENDATION),
     recommendExerciseSubstitution: jest.fn(() => [SUBSTITUTION]),
-    generateWorkoutVariant: jest.fn(),
   },
 }));
 
 import { coachingEngine } from '../../../services/coaching';
-import { useProgramDay } from '../../../services/api/queries/programs';
 
 const mockedRecommendNextSet = coachingEngine.recommendNextSet as jest.Mock;
 const mockedRecommendExerciseSubstitution = coachingEngine.recommendExerciseSubstitution as jest.Mock;
-const mockedGenerateWorkoutVariant = coachingEngine.generateWorkoutVariant as jest.Mock;
-const mockedUseProgramDay = useProgramDay as jest.Mock;
 
 function seedActiveWorkout() {
   useActiveWorkoutStore.setState({
@@ -217,17 +197,15 @@ function seedActiveWorkout() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockLogSetMutateAsync.mockResolvedValue({ id: 'dbset-1' });
-  mockStartWorkoutLogMutateAsync.mockResolvedValue({ id: 'wl-1' });
-  mockUseRoute.mockReturnValue({ params: { programDayId: 'day-1' } });
-  mockedUseProgramDay.mockReturnValue({ data: { id: 'day-1', title: 'Push Day' }, isLoading: false });
+  mockUseRoute.mockReturnValue({ params: { exerciseId: 'ex1' } });
   mockedRecommendNextSet.mockReturnValue(RECOMMENDATION);
   mockedRecommendExerciseSubstitution.mockReturnValue([SUBSTITUTION]);
   seedActiveWorkout();
 });
 
-describe('LogWorkoutScreen — live set recommendations', () => {
+describe('ActiveExerciseScreen — live set recommendations', () => {
   it('shows a recommendation after completing a set, and applies it to the next set on accept', async () => {
-    const { getByLabelText, getByText, queryByText } = await render(<LogWorkoutScreen />);
+    const { getByLabelText, getByText, queryByText } = await render(<ActiveExerciseScreen />);
 
     await fireEvent.press(getByLabelText('Set 1 incomplete'));
 
@@ -252,7 +230,7 @@ describe('LogWorkoutScreen — live set recommendations', () => {
   });
 
   it('dismisses the recommendation without changing the next set when ignored', async () => {
-    const { getByLabelText, getByText, queryByText } = await render(<LogWorkoutScreen />);
+    const { getByLabelText, getByText, queryByText } = await render(<ActiveExerciseScreen />);
 
     await fireEvent.press(getByLabelText('Set 1 incomplete'));
     await waitFor(() => expect(getByText(RECOMMENDATION.reason)).toBeTruthy());
@@ -266,13 +244,35 @@ describe('LogWorkoutScreen — live set recommendations', () => {
     expect(secondSet.loadKg).toBe(60);
     expect(queryByText(RECOMMENDATION.reason)).toBeNull();
   });
+
+  it('keeps a completed set editable and pushes edits back to the persisted set', async () => {
+    useActiveWorkoutStore.setState(state => ({
+      exercises: state.exercises.map(exercise => ({
+        ...exercise,
+        sets: exercise.sets.map((s, i) => (i === 0 ? { ...s, completed: true, dbId: 'dbset-1' } : s)),
+      })),
+    }));
+
+    const { getAllByPlaceholderText } = await render(<ActiveExerciseScreen />);
+
+    const repsInput = getAllByPlaceholderText('Reps')[0];
+    expect(repsInput.props.editable).not.toBe(false);
+
+    await fireEvent.changeText(repsInput, '9');
+
+    expect(useActiveWorkoutStore.getState().exercises[0].sets[0].reps).toBe(9);
+    await waitFor(() =>
+      expect(mockUpdateSetMutate).toHaveBeenCalledWith(expect.objectContaining({ id: 'dbset-1', reps: 9 })),
+    );
+  });
 });
 
-describe('LogWorkoutScreen — exercise substitution', () => {
-  it('swaps the exercise for this workout only, without touching the user\'s equipment', async () => {
-    const { getByLabelText, getByText } = await render(<LogWorkoutScreen />);
+describe('ActiveExerciseScreen — exercise substitution', () => {
+  it('swaps the exercise for this workout only and follows it to the new identity', async () => {
+    const { getByLabelText, getByText } = await render(<ActiveExerciseScreen />);
 
-    await fireEvent.press(getByLabelText('Find a substitute exercise'));
+    await fireEvent.press(getByLabelText('Exercise options'));
+    await fireEvent.press(getByText('Find a substitute exercise'));
     await waitFor(() => expect(getByText('Dumbbell Bench Press')).toBeTruthy());
     await fireEvent.press(getByText('Dumbbell Bench Press'));
     await fireEvent.press(getByText('Swap for this workout'));
@@ -291,12 +291,14 @@ describe('LogWorkoutScreen — exercise substitution', () => {
     expect(swappedExercise.exerciseName).toBe('Dumbbell Bench Press');
     expect(swappedExercise.targetLoadKg).toBeNull();
     expect(swappedExercise.sets.every(s => !s.completed && s.dbId === null)).toBe(true);
+    expect(mockSetParams).toHaveBeenCalledWith({ exerciseId: 'ex2' });
   });
 
   it('permanently removes the original equipment from the profile when that scope is chosen', async () => {
-    const { getByLabelText, getByText } = await render(<LogWorkoutScreen />);
+    const { getByLabelText, getByText } = await render(<ActiveExerciseScreen />);
 
-    await fireEvent.press(getByLabelText('Find a substitute exercise'));
+    await fireEvent.press(getByLabelText('Exercise options'));
+    await fireEvent.press(getByText('Find a substitute exercise'));
     await waitFor(() => expect(getByText('Dumbbell Bench Press')).toBeTruthy());
     await fireEvent.press(getByText('Dumbbell Bench Press'));
     await fireEvent.press(getByText('Swap + remove barbell from my equipment'));
@@ -306,7 +308,7 @@ describe('LogWorkoutScreen — exercise substitution', () => {
     expect(mockUpdateProfileMutate).toHaveBeenCalledWith({ equipment_access: ['dumbbell'] });
   });
 
-  it('hides the swap button once the exercise has a completed set', async () => {
+  it('hides the swap option once the exercise has a completed set', async () => {
     useActiveWorkoutStore.setState(state => ({
       exercises: state.exercises.map(exercise => ({
         ...exercise,
@@ -314,64 +316,36 @@ describe('LogWorkoutScreen — exercise substitution', () => {
       })),
     }));
 
-    const { queryByLabelText } = await render(<LogWorkoutScreen />);
+    const { getByLabelText, queryByText } = await render(<ActiveExerciseScreen />);
 
-    expect(queryByLabelText('Find a substitute exercise')).toBeNull();
+    await fireEvent.press(getByLabelText('Exercise options'));
+    expect(queryByText('Find a substitute exercise')).toBeNull();
   });
 });
 
-describe('LogWorkoutScreen — workout variants', () => {
-  const VARIANT_RESULT = {
-    variantType: 'bodyweight' as const,
-    label: 'Bodyweight Version',
-    summary: 'Swapped every exercise for a bodyweight-only version.',
-    estimatedMinutes: 20,
-    exercises: [
-      {
-        exerciseId: 'ex2',
-        exerciseName: 'Push-Up',
-        targetSets: 3,
-        targetRepsMin: 8,
-        targetRepsMax: 10,
-        targetLoadKg: null,
-        targetRpe: 8,
-        restSeconds: 90,
-      },
-    ],
-    changes: [
-      {
-        exerciseId: 'ex1',
-        type: 'substituted' as const,
-        reason: 'Same push horizontal pattern — uses bodyweight instead of barbell.',
-      },
-    ],
-  };
+describe('ActiveExerciseScreen — navigation', () => {
+  it('the down-chevron returns to the overview without touching workout state', async () => {
+    const { getByLabelText } = await render(<ActiveExerciseScreen />);
 
-  it('applies a chosen variant when starting a fresh session and shows it was applied', async () => {
-    useActiveWorkoutStore.setState({
-      workoutLogId: null,
-      source: null,
-      exercises: [],
-      startedAt: null,
-      restSecondsRemaining: 0,
-      restRunning: false,
+    await fireEvent.press(getByLabelText('Back to workout overview'));
+
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+    expect(useActiveWorkoutStore.getState().workoutLogId).toBe('wl-1');
+  });
+
+  it('removing the exercise returns to the overview', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      const removeButton = buttons?.find(b => b.text === 'Remove');
+      removeButton?.onPress?.();
     });
-    mockUseRoute.mockReturnValue({ params: { programDayId: 'day-1', variantType: 'bodyweight' } });
-    mockedUseProgramDay.mockReturnValue({ data: PROGRAM_DAY_WITH_TARGETS, isLoading: false });
-    mockedGenerateWorkoutVariant.mockReturnValue(VARIANT_RESULT);
 
-    const { getByText } = await render(<LogWorkoutScreen />);
+    const { getByLabelText, getByText } = await render(<ActiveExerciseScreen />);
 
-    await waitFor(() => expect(mockedGenerateWorkoutVariant).toHaveBeenCalledTimes(1));
-    expect(mockedGenerateWorkoutVariant.mock.calls[0][0]).toMatchObject({ variantType: 'bodyweight' });
-    expect(mockStartWorkoutLogMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ variantType: 'bodyweight' }));
+    await fireEvent.press(getByLabelText('Exercise options'));
+    await fireEvent.press(getByText('Remove exercise from workout'));
 
-    await waitFor(() => expect(getByText('Variant: Bodyweight Version — tap to view changes')).toBeTruthy());
-
-    const state = useActiveWorkoutStore.getState();
-    expect(state.exercises).toHaveLength(1);
-    expect(state.exercises[0].exerciseId).toBe('ex2');
-    expect(state.exercises[0].exerciseName).toBe('Push-Up');
-    expect(state.exercises[0].targetLoadKg).toBeNull();
+    await waitFor(() => expect(useActiveWorkoutStore.getState().exercises).toHaveLength(0));
+    expect(mockGoBack).toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 });

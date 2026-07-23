@@ -134,13 +134,13 @@ describe('ChooseVariantScreen', () => {
     expect(mockedGenerateWorkoutVariant).toHaveBeenCalledTimes(10);
   });
 
-  it('navigates directly to LogWorkout with the chosen variantType, skipping PreWorkoutReview', async () => {
+  it('navigates directly to ActiveWorkoutOverview with the chosen variantType, skipping PreWorkoutReview', async () => {
     const { getAllByText } = await render(<ChooseVariantScreen />);
 
     const chooseButtons = getAllByText('Choose this');
     await fireEvent.press(chooseButtons[VARIANT_ORDER.indexOf('time_30')]);
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('LogWorkout', { programDayId: 'day-1', variantType: 'time_30' }));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('ActiveWorkoutOverview', { programDayId: 'day-1', variantType: 'time_30' }));
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

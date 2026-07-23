@@ -20,7 +20,8 @@ export type ReadinessFactorKey =
   | 'pain'
   | 'training_load'
   | 'time_since_last_workout'
-  | 'missed_workouts';
+  | 'missed_workouts'
+  | 'wearable_recovery';
 
 export type ReadinessFactor = {
   key: ReadinessFactorKey;
@@ -77,10 +78,16 @@ export type ReadinessCheckinInput = {
   painNotes: string | null;
 } | null;
 
+export type WearableReadinessInput = {
+  /** 0-100, Whoop's own recovery score. */
+  recoveryScore: number;
+  sleepPerformancePct: number | null;
+  strain: number | null;
+} | null;
+
 export type ReadinessInputs = {
   checkin: ReadinessCheckinInput;
-  /** Reserved — always null until wearable sync ships. */
-  wearable: null;
+  wearable: WearableReadinessInput;
   trainingLoad: TrainingLoadResult;
   daysSinceLastWorkout: number | null;
   missedWorkoutsLast14Days: number;

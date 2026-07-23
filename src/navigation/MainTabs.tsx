@@ -67,7 +67,7 @@ export function MainTabs() {
       <Tab.Screen
         name="ProgressTab"
         component={ProgressStack}
-        options={{ tabBarLabel: 'PRs' }}
+        options={{ tabBarLabel: 'Stats' }}
       />
       <Tab.Screen
         name="CommunityTab"

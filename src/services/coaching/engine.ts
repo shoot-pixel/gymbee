@@ -282,6 +282,37 @@ export class LocalCoachingEngine implements CoachingEngine {
       available: checkin != null,
     });
 
+    // Wearable recovery (Whoop). Thresholds mirror Whoop's own red/yellow/
+    // green recovery bands so the language stays recognizable to Whoop
+    // users. Max deduction (30) is in the same range as the pain factor's
+    // max (35) — an objective physiological signal should move the needle
+    // meaningfully without swamping every self-reported factor combined.
+    if (inputs.wearable != null) {
+      const recovery = inputs.wearable.recoveryScore;
+      let wearableDeduction = 0;
+      if (recovery < 33) wearableDeduction = 30;
+      else if (recovery < 66) wearableDeduction = 15;
+      else if (recovery >= 90) wearableDeduction = -5;
+      deduction += wearableDeduction;
+      factors.push({
+        key: 'wearable_recovery',
+        label: 'Whoop recovery',
+        impact: wearableDeduction > 0 ? 'negative' : wearableDeduction < 0 ? 'positive' : 'neutral',
+        weight: clamp(Math.abs(wearableDeduction) / 100, 0, 1),
+        detail: `Whoop recovery is ${recovery}% today.`,
+        available: true,
+      });
+    } else {
+      factors.push({
+        key: 'wearable_recovery',
+        label: 'Whoop recovery',
+        impact: 'neutral',
+        weight: 0,
+        detail: 'No Whoop data available today.',
+        available: false,
+      });
+    }
+
     // Training load.
     const loadDeductionMap: Record<TrainingLoadResult['classification'], number> = {
       low: -5,

@@ -110,6 +110,13 @@ export function SettingsScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('BlockedUsers')}
               style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
             />
+            <ListRow
+              title="Integrations"
+              icon="repeat"
+              showChevron
+              onPress={() => navigation.navigate('Integrations')}
+              style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
+            />
           </Card>
         </ScrollView>
       )}

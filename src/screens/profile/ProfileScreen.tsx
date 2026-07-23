@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -19,12 +19,16 @@ import {
   VisibilityBadge,
   EmptyState,
   BottomSheet,
+  TextField,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
-import { useProfile, useUploadAvatar } from '../../services/api/queries/profiles';
+import { useProfile, useUpdateProfile, useUploadAvatar } from '../../services/api/queries/profiles';
+import { useFriendCount } from '../../services/api/queries/community';
 import { useUserPosts, useSignedPhotoUrls, postPhotoPaths } from '../../services/api/queries/posts';
 import { useAuth } from '../../hooks/useAuth';
 import type { ProfileStackParamList, RootStackParamList } from '../../navigation/types';
+
+const BIO_MAX_LENGTH = 150;
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Profile'>;
 
@@ -33,10 +37,14 @@ export function ProfileScreen({ navigation }: Props) {
   const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const userId = useAuthStore(state => state.userId);
   const { data: profile, isLoading } = useProfile(userId);
+  const { data: friendCount } = useFriendCount(userId);
   const { signOut, loading: signingOut } = useAuth();
   const uploadAvatar = useUploadAvatar(userId);
+  const updateProfile = useUpdateProfile(userId);
   const [uploading, setUploading] = useState(false);
   const [addPostSheetOpen, setAddPostSheetOpen] = useState(false);
+  const [bioSheetOpen, setBioSheetOpen] = useState(false);
+  const [bioDraft, setBioDraft] = useState('');
 
   const { data: posts } = useUserPosts(userId);
   const postPaths = useMemo(() => (posts ?? []).flatMap(postPhotoPaths), [posts]);
@@ -51,6 +59,15 @@ export function ProfileScreen({ navigation }: Props) {
       screen: 'CommunityTab',
       params: { screen: 'UploadPhotoPost', params: { mode } },
     });
+  };
+
+  const onSaveBio = async () => {
+    try {
+      await updateProfile.mutateAsync({ bio: bioDraft.trim() || null });
+      setBioSheetOpen(false);
+    } catch (err) {
+      Alert.alert('Could not save bio', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   const onChangePhoto = async () => {
@@ -112,6 +129,41 @@ export function ProfileScreen({ navigation }: Props) {
                 </Text>
               </View>
             </View>
+
+            <Pressable
+              onPress={() => {
+                setBioDraft(profile?.bio ?? '');
+                setBioSheetOpen(true);
+              }}
+            >
+              <Text variant="body" color={profile?.bio ? 'primary' : 'tertiary'}>
+                {profile?.bio ?? 'Add a bio'}
+              </Text>
+            </Pressable>
+
+            <View style={{ flexDirection: 'row', gap: theme.spacing.lg }}>
+              <Pressable
+                onPress={() => userId && navigation.navigate('FriendsList', { userId, title: 'Followers' })}
+              >
+                <Text variant="body">
+                  <Text variant="body" style={{ fontWeight: '700' }}>
+                    {friendCount ?? 0}
+                  </Text>{' '}
+                  Followers
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => userId && navigation.navigate('FriendsList', { userId, title: 'Following' })}
+              >
+                <Text variant="body">
+                  <Text variant="body" style={{ fontWeight: '700' }}>
+                    {friendCount ?? 0}
+                  </Text>{' '}
+                  Following
+                </Text>
+              </Pressable>
+            </View>
+
             <View style={{ flexDirection: 'row', gap: theme.spacing.lg, marginTop: theme.spacing.sm }}>
               <View>
                 <Text variant="label" color="secondary">
@@ -196,6 +248,19 @@ export function ProfileScreen({ navigation }: Props) {
       <BottomSheet visible={addPostSheetOpen} onClose={() => setAddPostSheetOpen(false)}>
         <ListRow title="Post Progress Photo" icon="camera" onPress={() => goToUploadPost('progress')} />
         <ListRow title="Post Before & After" icon="camera" onPress={() => goToUploadPost('before_after')} />
+      </BottomSheet>
+
+      <BottomSheet visible={bioSheetOpen} onClose={() => setBioSheetOpen(false)} title="Edit Bio">
+        <View style={{ gap: theme.spacing.lg }}>
+          <TextField
+            value={bioDraft}
+            onChangeText={setBioDraft}
+            placeholder="Tell friends about yourself"
+            multiline
+            maxLength={BIO_MAX_LENGTH}
+          />
+          <Button label="Save" onPress={onSaveBio} loading={updateProfile.isPending} />
+        </View>
       </BottomSheet>
     </SafeAreaView>
   );

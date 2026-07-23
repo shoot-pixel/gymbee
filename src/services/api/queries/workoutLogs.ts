@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
 import type { Database } from '../../../types/database';
 
@@ -163,6 +163,7 @@ export function useDeleteSet() {
 }
 
 export function useCompleteWorkoutLog() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
       workoutLogId: string;
@@ -183,6 +184,15 @@ export function useCompleteWorkoutLog() {
         .single();
       if (error) throw error;
       return data;
+    },
+    // Every screen that shows "is today done" or a completed-day summary
+    // (Today, streak/weekly-progress, Progress) reads from these two query
+    // families with a 30s staleTime — without invalidating them here, a
+    // freshly-completed workout doesn't visibly appear as done until that
+    // window lapses or something else happens to trigger a refetch.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workoutLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['loggedSets'] });
     },
   });
 }

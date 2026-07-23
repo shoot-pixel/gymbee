@@ -28,6 +28,7 @@ import {
   useDeletePost,
 } from '../../services/api/queries/posts';
 import { useFriendProfile } from '../../services/api/queries/community';
+import { useComments, useCreateComment, useDeleteComment } from '../../services/api/queries/comments';
 import type { CommunityStackParamList, ProfileStackParamList } from '../../navigation/types';
 import type { PostVisibility } from '../../types/database';
 
@@ -44,6 +45,11 @@ export function PostDetailScreen() {
   const { data: owner } = useFriendProfile(post?.user_id ?? null);
   const updatePost = useUpdatePost(userId);
   const deletePost = useDeletePost(userId);
+
+  const { data: comments } = useComments(params.postId);
+  const createComment = useCreateComment(params.postId, userId);
+  const deleteComment = useDeleteComment(params.postId);
+  const [commentDraft, setCommentDraft] = useState('');
 
   const photoPaths = useMemo(() => (post ? postPhotoPaths(post) : []), [post]);
   const { data: signedUrls } = useSignedPhotoUrls(photoPaths);
@@ -85,6 +91,24 @@ export function PostDetailScreen() {
     } catch (err) {
       setEditError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
+  };
+
+  const onPostComment = async () => {
+    const body = commentDraft.trim();
+    if (!body) return;
+    try {
+      await createComment.mutateAsync(body);
+      setCommentDraft('');
+    } catch (err) {
+      Alert.alert('Could not post comment', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const onDeleteComment = (commentId: string) => {
+    Alert.alert('Delete comment?', "This can't be undone.", [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteComment.mutate(commentId) },
+    ]);
   };
 
   const onDelete = () => {
@@ -190,6 +214,55 @@ export function PostDetailScreen() {
               {post.caption}
             </Text>
           ) : null}
+
+          <View style={{ gap: theme.spacing.md }}>
+            <Text variant="label" color="secondary">
+              {comments && comments.length > 0 ? `${comments.length} COMMENTS` : 'COMMENTS'}
+            </Text>
+            {(comments ?? []).map(comment => (
+              <View key={comment.id} style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+                <Avatar uri={comment.avatarUrl} size={32} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="body" style={{ fontWeight: '600' }}>
+                    {comment.displayName ?? 'Athlete'}
+                  </Text>
+                  <Text variant="body" color="secondary">
+                    {comment.body}
+                  </Text>
+                  <Text variant="caption" color="tertiary">
+                    {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                  </Text>
+                </View>
+                {comment.user_id === userId || isSelf ? (
+                  <IconButton
+                    name="trash"
+                    variant="ghost"
+                    size={20}
+                    accessibilityLabel="Delete comment"
+                    onPress={() => onDeleteComment(comment.id)}
+                  />
+                ) : null}
+              </View>
+            ))}
+            <View style={{ flexDirection: 'row', gap: theme.spacing.sm, alignItems: 'flex-end' }}>
+              <View style={{ flex: 1 }}>
+                <TextField
+                  value={commentDraft}
+                  onChangeText={setCommentDraft}
+                  placeholder="Add a comment..."
+                  multiline
+                  maxLength={500}
+                />
+              </View>
+              <Button
+                label="Post"
+                size="sm"
+                onPress={onPostComment}
+                loading={createComment.isPending}
+                disabled={commentDraft.trim().length === 0}
+              />
+            </View>
+          </View>
         </ScrollView>
       )}
 

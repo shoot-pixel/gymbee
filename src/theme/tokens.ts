@@ -95,6 +95,11 @@ export const gradients = {
   /** The brand's signature green-to-teal sweep — buttons, the logo mark, celebratory moments. */
   accent: ['#00E38E', '#00D8B4'] as const,
   surface: ['#1D222C', '#171B23'] as const,
+  /** Wearable metric rings (Stats tab) — one distinct sweep per metric so
+   * three rings shown side by side read as separate things, not variants of
+   * the same accent. Recovery uses the default `accent` sweep above. */
+  sleep: ['#00BFFF', '#0090C7'] as const,
+  strain: ['#FF8A3D', '#FF6A00'] as const,
 } as const;
 
 export const sizes = {

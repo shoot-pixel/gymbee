@@ -23,7 +23,7 @@ function dateKey(date: Date): string {
  * program-day/scheduled-workout context of its own (unlike "Start Workout"
  * on Today/DayDetail/ScheduledWorkoutDetail, which always knows one) — this
  * screen resolves today's workout the same way Today does and forwards
- * straight into the normal PreWorkoutReview/LogWorkout flow, or falls back
+ * straight into the normal PreWorkoutReview/ActiveWorkoutOverview flow, or falls back
  * to a plain "nothing to log" state with a way out when there isn't one.
  */
 export function LogLandingScreen() {
@@ -53,7 +53,7 @@ export function LogLandingScreen() {
     if (featureFlags.aiCoaching) {
       navigation.replace('PreWorkoutReview', source);
     } else {
-      navigation.replace('LogWorkout', source);
+      navigation.replace('ActiveWorkoutOverview', source);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, hasTarget]);

@@ -91,6 +91,7 @@ export type TrainingPatternStatus = 'active' | 'dismissed' | 'resolved';
 export type FriendRequestStatus = 'pending' | 'accepted' | 'declined';
 export type PostType = 'progress_photo' | 'before_after_photo';
 export type PostVisibility = 'private' | 'friends';
+export type IntegrationProvider = 'whoop';
 
 export interface Database {
   public: {
@@ -102,6 +103,7 @@ export interface Database {
           display_name: string | null;
           avatar_url: string | null;
           handle: string | null;
+          bio: string | null;
           experience_level: ExperienceLevel | null;
           goal: TrainingGoal | null;
           days_per_week: number | null;
@@ -120,6 +122,7 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           handle?: string | null;
+          bio?: string | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
           days_per_week?: number | null;
@@ -134,6 +137,7 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           handle?: string | null;
+          bio?: string | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
           days_per_week?: number | null;
@@ -632,6 +636,22 @@ export interface Database {
         };
         Relationships: [];
       };
+      post_comments: {
+        Row: {
+          id: string;
+          post_id: string;
+          user_id: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          post_id: string;
+          user_id: string;
+          body: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
       readiness_checkins: {
         Row: {
           id: string;
@@ -819,6 +839,71 @@ export interface Database {
         };
         Relationships: [];
       };
+      integration_connections: {
+        Row: {
+          id: string;
+          user_id: string;
+          provider: IntegrationProvider;
+          client_id: string | null;
+          client_secret: string | null;
+          access_token: string | null;
+          refresh_token: string | null;
+          token_expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          provider: IntegrationProvider;
+          client_id?: string | null;
+          client_secret?: string | null;
+          access_token?: string | null;
+          refresh_token?: string | null;
+          token_expires_at?: string | null;
+        };
+        Update: {
+          client_id?: string | null;
+          client_secret?: string | null;
+          access_token?: string | null;
+          refresh_token?: string | null;
+          token_expires_at?: string | null;
+        };
+        Relationships: [];
+      };
+      oauth_states: {
+        Row: {
+          state: string;
+          user_id: string;
+          provider: IntegrationProvider;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          provider: IntegrationProvider;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      whoop_metrics: {
+        Row: {
+          id: string;
+          user_id: string;
+          cycle_date: string;
+          whoop_cycle_id: string | null;
+          score_state: 'SCORED' | 'PENDING_SCORE' | 'UNSCORABLE';
+          recovery_score: number | null;
+          sleep_performance_pct: number | null;
+          strain: number | null;
+          hrv_ms: number | null;
+          resting_heart_rate: number | null;
+          synced_at: string;
+        };
+        // Client is select-only (RLS has no insert/update policy) — all
+        // writes go through whoop-sync's service-role client.
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -827,6 +912,7 @@ export interface Database {
           display_name: string | null;
           avatar_url: string | null;
           handle: string | null;
+          bio: string | null;
           hide_stats_from_friends: boolean;
           hide_photos_from_friends: boolean;
         };
@@ -877,6 +963,7 @@ export interface Database {
       friend_request_status: FriendRequestStatus;
       post_type: PostType;
       post_visibility: PostVisibility;
+      integration_provider: IntegrationProvider;
     };
   };
 }
