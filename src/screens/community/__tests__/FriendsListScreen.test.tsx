@@ -9,7 +9,7 @@ jest.mock('@react-navigation/native', () => {
   return {
     ...actual,
     useNavigation: () => ({ navigate: mockNavigate, canGoBack: () => false }),
-    useRoute: () => ({ params: { userId: 'user-1', title: 'Followers' } }),
+    useRoute: () => ({ params: { userId: 'user-1', title: 'Friends' } }),
   };
 });
 

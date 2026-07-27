@@ -109,9 +109,10 @@ export function WorkoutSummaryScreen() {
       readiness,
       trainingLoad: readinessContext.inputs.trainingLoad,
       painRisk,
+      unitPref,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loggedSets, previousPerformance, readinessContext.isLoading, readinessContext.inputs]);
+  }, [loggedSets, previousPerformance, readinessContext.isLoading, readinessContext.inputs, unitPref]);
 
   const onSave = async () => {
     if (!store.workoutLogId) return;

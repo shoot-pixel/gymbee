@@ -1,18 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, Button, Card, Icon, LoadingState, EmptyState } from '../../components/core';
+import {
+  Text,
+  TextField,
+  Button,
+  Card,
+  Icon,
+  IconButton,
+  BottomSheet,
+  ListRow,
+  LoadingState,
+  EmptyState,
+} from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useChatUiStore } from '../../store/chatUiStore';
 import {
   useConversation,
   useMessages,
   useInvalidateMessages,
+  useClearChat,
 } from '../../services/api/queries/chat';
 import { sendChatMessage } from '../../services/api/edgeFunctions';
 import { supabase } from '../../services/api/supabaseClient';
@@ -30,6 +42,7 @@ export function ChatScreen() {
   const conversationId = conversation?.id ?? null;
   const { data: messages, isLoading } = useMessages(conversationId);
   const invalidateMessages = useInvalidateMessages(conversationId);
+  const clearChat = useClearChat(conversationId);
   const queryClient = useQueryClient();
 
   const streamingBuffer = useChatUiStore(state => state.streamingBuffer);
@@ -40,7 +53,29 @@ export function ChatScreen() {
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  const onClearChat = () => {
+    setOptionsSheetOpen(false);
+    Alert.alert('Clear this chat?', "This can't be undone — your coach won't remember this conversation.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          resetStreamingBuffer();
+          setPendingUserText(null);
+          setError(null);
+          try {
+            await clearChat.mutateAsync();
+          } catch (err) {
+            Alert.alert('Could not clear chat', err instanceof Error ? err.message : 'Please try again.');
+          }
+        },
+      },
+    ]);
+  };
 
   useEffect(() => {
     if (!conversationId) return;
@@ -105,22 +140,30 @@ export function ChatScreen() {
         }}
       >
         <Text variant="title">Coach</Text>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Collapse chat"
-          style={{
-            width: theme.sizes.iconButton,
-            height: theme.sizes.iconButton,
-            borderRadius: theme.radii.pill,
-            backgroundColor: theme.colors.bg.surfaceElevated,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Icon name="chevronDown" size="sm" color={theme.colors.text.secondary} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+          <IconButton
+            name="moreVertical"
+            variant="ghost"
+            accessibilityLabel="Chat options"
+            onPress={() => setOptionsSheetOpen(true)}
+          />
+          <Pressable
+            onPress={() => navigation.goBack()}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Collapse chat"
+            style={{
+              width: theme.sizes.iconButton,
+              height: theme.sizes.iconButton,
+              borderRadius: theme.radii.pill,
+              backgroundColor: theme.colors.bg.surfaceElevated,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Icon name="chevronDown" size="sm" color={theme.colors.text.secondary} />
+          </Pressable>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -182,6 +225,10 @@ export function ChatScreen() {
           <Button label="Send" onPress={onSend} disabled={!input.trim() || sending} loading={sending} />
         </View>
       </KeyboardAvoidingView>
+
+      <BottomSheet visible={optionsSheetOpen} onClose={() => setOptionsSheetOpen(false)}>
+        <ListRow title="Clear Chat" icon="trash" onPress={onClearChat} />
+      </BottomSheet>
     </SafeAreaView>
   );
 }

@@ -184,6 +184,18 @@ Design their program now.`;
     // deno-lint-ignore no-explicit-any
     const plan = JSON.parse(textBlock.text) as any;
 
+    // Only one program can be `active` at a time (enforced by a partial
+    // unique index, migration 0029) - archive whatever's currently active
+    // first. Generation used to run exactly once per user, atomically tied
+    // to finishing onboarding, so this was never reachable before; it's now
+    // a repeatable, user-triggered action from the Programs tab.
+    const { error: archiveError } = await admin
+      .from('programs')
+      .update({ status: 'archived' })
+      .eq('user_id', userId)
+      .eq('status', 'active');
+    if (archiveError) throw archiveError;
+
     const { data: program, error: programError } = await admin
       .from('programs')
       .insert({
@@ -197,6 +209,11 @@ Design their program now.`;
       })
       .select()
       .single();
+    // 23505 = unique_violation - a race with another generate/create call
+    // landed first, not a real server error.
+    if (programError?.code === '23505') {
+      return json({ error: 'You already have an active program.' }, 409);
+    }
     if (programError) throw programError;
 
     const trainingDaysOfWeek = WEEKDAY_PATTERNS[daysPerWeek] ?? WEEKDAY_PATTERNS[3];

@@ -7,6 +7,7 @@ import type {
   MovementPattern,
   SetRecommendationType,
   StressLevel,
+  UnitPreference,
   WorkoutVariantType,
 } from '../../types/database';
 
@@ -297,8 +298,20 @@ export type GenerateTodayFocusSummaryParams = {
   /** null only when there's not enough signal to evaluate readiness at all. */
   readiness: ReadinessResult | null;
   plan: TodayPlanContext;
-  recentPr: { exerciseName: string; loadKg: number; reps: number } | null;
+  /** daysAgo is 0 for a PR logged today, 1 for yesterday, etc. — the summary
+   * text needs this to avoid claiming "today" for a PR that actually
+   * happened earlier in the lookback window (see recentPr's computation in
+   * TodayScreen, which looks back up to 6 days). sameCalendarWeek is a
+   * separate check (Sun-Sat, matching WeekTimeline/streak elsewhere) since
+   * "6 days ago" and "this calendar week" aren't the same thing — a PR from
+   * 6 days ago can easily be last week, not this one, and the summary
+   * shouldn't claim otherwise. */
+  recentPr: { exerciseName: string; loadKg: number; reps: number; daysAgo: number; sameCalendarWeek: boolean } | null;
   missedYesterday: boolean;
+  /** Whether a workout was logged yesterday — feeds the "recovered well"
+   * remark, distinct from `missedYesterday` (which only fires when
+   * yesterday was a required training day that got skipped). */
+  completedYesterday: boolean;
   isMilestoneWeek: boolean;
   currentWeekNumber: number | null;
   weeksCount: number;
@@ -324,6 +337,10 @@ export type GeneratePostWorkoutSummaryParams = {
   readiness: ReadinessResult | null;
   trainingLoad: TrainingLoadResult;
   painRisk: PainRiskAssessment;
+  /** Every weight figure worked into `summary`/`shareableSummary` text
+   * converts through this — the engine's own inputs/outputs otherwise stay
+   * in kg (its one internal unit), same as the rest of the app. */
+  unitPref: UnitPreference;
 };
 
 export type MuscleGroupVolume = { muscle: string; volumeKg: number };
@@ -397,6 +414,9 @@ export type GenerateWeeklyReviewParams = {
   weekPrEvents: PrEvent[];
   checkins: WeeklyCheckinInput[];
   trainingLoad: TrainingLoadResult;
+  /** Converts every weight figure worked into `summary`/`shareableSummary`/
+   * `habitObservation` text — see GeneratePostWorkoutSummaryParams. */
+  unitPref: UnitPreference;
 };
 
 export type TrainingPatternType =
@@ -464,6 +484,8 @@ export type PredictPersonalRecordsParams = {
   exerciseHistories: ExerciseE1rmHistory[];
   /** ISO date (yyyy-MM-dd) to project forward from — explicit for determinism, not `new Date()` inside the engine. */
   asOf: string;
+  /** Converts the projected e1RM worked into each prediction's `summary` text. */
+  unitPref: UnitPreference;
 };
 
 export type ExerciseExplanationResult = {

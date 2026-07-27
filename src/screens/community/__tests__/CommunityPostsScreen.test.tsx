@@ -27,6 +27,14 @@ jest.mock('../../../services/api/queries/posts', () => {
   };
 });
 
+jest.mock('../../../services/api/queries/likes', () => ({
+  useLikeCounts: jest.fn(() => ({ data: {}, refetch: jest.fn() })),
+}));
+
+jest.mock('../../../services/api/queries/comments', () => ({
+  useCommentCounts: jest.fn(() => ({ data: {}, refetch: jest.fn() })),
+}));
+
 const mockUseSearchProfiles = jest.fn();
 const mockUseIncomingFriendRequests = jest.fn();
 const mockAcceptMutate = jest.fn();
@@ -49,6 +57,21 @@ jest.mock('../../../services/api/queries/community', () => {
   };
 });
 
+const mockUseProfile = jest.fn();
+
+jest.mock('../../../services/api/queries/profiles', () => ({
+  useProfile: (...args: unknown[]) => mockUseProfile(...args),
+}));
+
+const mockMarkMessagesSeenMutate = jest.fn();
+const mockMarkActivitySeenMutate = jest.fn();
+
+jest.mock('../../../services/api/queries/notifications', () => ({
+  useNotificationBadges: jest.fn(() => ({ hasUnreadMessages: false, hasUnseenActivity: false })),
+  useMarkMessagesSeen: jest.fn(() => ({ mutate: mockMarkMessagesSeenMutate })),
+  useMarkActivitySeen: jest.fn(() => ({ mutate: mockMarkActivitySeenMutate })),
+}));
+
 const FRIEND_POST = {
   id: 'post-1',
   user_id: 'friend-1',
@@ -68,6 +91,10 @@ beforeEach(() => {
   mockUseFriendsPosts.mockReturnValue({ data: [], isLoading: false });
   mockUseSearchProfiles.mockReturnValue({ data: [], isLoading: false });
   mockUseIncomingFriendRequests.mockReturnValue({ data: [] });
+  mockUseProfile.mockReturnValue({ data: { avatar_url: null, messages_seen_at: '2026-01-01T00:00:00.000Z', activity_seen_at: '2026-01-01T00:00:00.000Z' }, isLoading: false });
+  jest
+    .requireMock('../../../services/api/queries/notifications')
+    .useNotificationBadges.mockReturnValue({ hasUnreadMessages: false, hasUnseenActivity: false });
 });
 
 describe('CommunityPostsScreen', () => {
@@ -93,15 +120,26 @@ describe('CommunityPostsScreen', () => {
     await waitFor(() => expect(getByText('No posts yet')).toBeTruthy());
   });
 
-  it('navigates to MyPosts and Leaderboard from the header buttons', async () => {
+  it('navigates to My Profile and Leaderboard from the hub row', async () => {
     const { getByLabelText } = await render(<CommunityPostsScreen />);
-    await waitFor(() => expect(getByLabelText('My Posts')).toBeTruthy());
+    await waitFor(() => expect(getByLabelText('My Profile')).toBeTruthy());
 
-    await fireEvent.press(getByLabelText('My Posts'));
-    expect(mockNavigate).toHaveBeenCalledWith('MyPosts');
+    await fireEvent.press(getByLabelText('My Profile'));
+    expect(mockNavigate).toHaveBeenCalledWith('FriendProfile', { userId: 'user-1' });
 
     await fireEvent.press(getByLabelText('Leaderboard'));
     expect(mockNavigate).toHaveBeenCalledWith('Leaderboard');
+
+    await fireEvent.press(getByLabelText('At My Gym'));
+    expect(mockNavigate).toHaveBeenCalledWith('AtMyGym');
+  });
+
+  it('navigates to Settings from the header avatar, same as every other tab', async () => {
+    const { getByLabelText } = await render(<CommunityPostsScreen />);
+    await waitFor(() => expect(getByLabelText('Settings')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Settings'));
+    expect(mockNavigate).toHaveBeenCalledWith('Profile', { screen: 'Profile' });
   });
 
   it('shows an incoming friend-request card and lets you accept/decline', async () => {
@@ -117,6 +155,43 @@ describe('CommunityPostsScreen', () => {
 
     await fireEvent.press(getByText('Decline'));
     expect(mockDeclineMutate).toHaveBeenCalledWith('req-1');
+  });
+
+  it('marks messages as seen when opening Messages, only when there was something unread', async () => {
+    const { useNotificationBadges } = jest.requireMock('../../../services/api/queries/notifications');
+    (useNotificationBadges as jest.Mock).mockReturnValue({ hasUnreadMessages: true, hasUnseenActivity: false });
+
+    const { getByLabelText } = await render(<CommunityPostsScreen />);
+    await waitFor(() => expect(getByLabelText('Messages')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Messages'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('Messages');
+    expect(mockMarkMessagesSeenMutate).toHaveBeenCalled();
+  });
+
+  it('does not call mark-as-seen when opening Messages/Profile with nothing unread', async () => {
+    const { getByLabelText } = await render(<CommunityPostsScreen />);
+    await waitFor(() => expect(getByLabelText('Messages')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Messages'));
+    await fireEvent.press(getByLabelText('My Profile'));
+
+    expect(mockMarkMessagesSeenMutate).not.toHaveBeenCalled();
+    expect(mockMarkActivitySeenMutate).not.toHaveBeenCalled();
+  });
+
+  it('marks activity as seen when opening My Profile, only when there was something unseen', async () => {
+    const { useNotificationBadges } = jest.requireMock('../../../services/api/queries/notifications');
+    (useNotificationBadges as jest.Mock).mockReturnValue({ hasUnreadMessages: false, hasUnseenActivity: true });
+
+    const { getByLabelText } = await render(<CommunityPostsScreen />);
+    await waitFor(() => expect(getByLabelText('My Profile')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('My Profile'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('FriendProfile', { userId: 'user-1' });
+    expect(mockMarkActivitySeenMutate).toHaveBeenCalled();
   });
 
   it('searches for athletes and sends a friend request from the results', async () => {

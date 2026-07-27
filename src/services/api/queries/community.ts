@@ -9,6 +9,7 @@ export type PublicProfile = {
   bio: string | null;
   hide_stats_from_friends: boolean;
   hide_photos_from_friends: boolean;
+  is_private: boolean;
 };
 
 export type LeaderboardEntry = PublicProfile & {

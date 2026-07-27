@@ -48,3 +48,15 @@ export function formatVolume(kg: number, pref: UnitPreference): string {
   const converted = pref === 'kg' ? kg : kgToLb(kg);
   return Math.round(converted).toLocaleString();
 }
+
+const CM_PER_INCH = 2.54;
+
+export function feetInchesToCm(feet: number, inches: number): number {
+  return (feet * 12 + inches) * CM_PER_INCH;
+}
+
+/** Canonical cm storage -> whole feet/inches for display (onboarding, profile). */
+export function cmToFeetInches(cm: number): { feet: number; inches: number } {
+  const totalInches = Math.round(cm / CM_PER_INCH);
+  return { feet: Math.floor(totalInches / 12), inches: totalInches % 12 };
+}

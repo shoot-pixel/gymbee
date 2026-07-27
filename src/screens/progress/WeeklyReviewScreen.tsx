@@ -9,6 +9,7 @@ import { useWeeklyReviewData } from '../../services/api/queries/weeklyReview';
 import { coachingEngine } from '../../services/coaching';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, unitLabel } from '../../utils/units';
+import { formatEnumLabel } from '../../utils/exerciseMetadata';
 
 export function WeeklyReviewScreen() {
   const theme = useTheme();
@@ -24,7 +25,7 @@ export function WeeklyReviewScreen() {
     };
   }, [weekOffset]);
 
-  const { isLoading, params } = useWeeklyReviewData(userId, weekStart, weekEnd);
+  const { isLoading, params } = useWeeklyReviewData(userId, weekStart, weekEnd, unitPref);
   const review = useMemo(() => (params ? coachingEngine.generateWeeklyReview(params) : null), [params]);
 
   const onShare = () => {
@@ -105,7 +106,7 @@ export function WeeklyReviewScreen() {
                 review.volumeByMuscleGroup.map((entry, index) => (
                   <ListRow
                     key={entry.muscle}
-                    title={entry.muscle}
+                    title={formatEnumLabel(entry.muscle)}
                     trailing={
                       <Text variant="body" color="secondary">
                         {formatVolume(entry.volumeKg, unitPref)} {unitLabel(unitPref)}

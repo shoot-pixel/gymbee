@@ -11,6 +11,7 @@ import {
   useLoggedSets,
   computePrEvents,
   computeWeeklyVolume,
+  computeDailyVolume,
   computeE1rmHistories,
   totalVolumeThisMonth,
   prsThisMonth,
@@ -19,6 +20,8 @@ import { coachingEngine } from '../../services/coaching';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, formatWeight, unitLabel } from '../../utils/units';
 import type { ProgressStackParamList } from '../../navigation/types';
+import { useIntegrationConnections } from '../../services/api/queries/integrations';
+import { useSyncWhoopMetrics } from '../../services/api/queries/whoop';
 import { WhoopMetricsSection } from './WhoopMetricsSection';
 
 type Nav = NativeStackNavigationProp<ProgressStackParamList>;
@@ -29,19 +32,36 @@ export function ProgressDashboardScreen() {
   const userId = useAuthStore(state => state.userId);
   const { data: sets, isLoading, refetch } = useLoggedSets(userId);
   const unitPref = useUnitPreference();
+  const { data: integrationConnections } = useIntegrationConnections(userId);
+  const isWhoopConnected = integrationConnections?.some(c => c.provider === 'whoop' && c.access_token != null) ?? false;
+  const syncWhoopMetrics = useSyncWhoopMetrics();
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    // Fire-and-forget, same as WhoopMetricsSection's own focus-triggered
+    // sync — a slow or failed Whoop round-trip shouldn't hold up the rest of
+    // the pull-to-refresh. Its onSuccess invalidates the whoopMetrics query,
+    // which WhoopMetricsSection reads from.
+    if (isWhoopConnected && userId) {
+      syncWhoopMetrics.mutate(userId);
+    }
     try {
       await refetch();
     } finally {
       setRefreshing(false);
     }
-  }, [refetch]);
+  }, [refetch, isWhoopConnected, userId, syncWhoopMetrics]);
 
   const events = useMemo(() => (sets ? computePrEvents(sets) : []), [sets]);
   const weeklyVolume = useMemo(() => (sets ? computeWeeklyVolume(sets) : []), [sets]);
+  // A brand-new (or lightly-tested) account's sets rarely span two calendar
+  // weeks yet — computeWeeklyVolume needs at least two week-buckets to draw
+  // a line, so fall back to daily buckets rather than showing an empty
+  // trend for someone who has, in fact, already logged a few workouts.
+  const dailyVolume = useMemo(() => (sets ? computeDailyVolume(sets) : []), [sets]);
+  const hasWeeklyTrend = weeklyVolume.length >= 2;
+  const strengthTrendPoints = (hasWeeklyTrend ? weeklyVolume : dailyVolume).map(w => w.volume);
   const volumeThisMonth = sets ? totalVolumeThisMonth(sets) : 0;
   const prCountThisMonth = prsThisMonth(events);
   const recentPrs = [...events].reverse().slice(0, 5);
@@ -51,9 +71,10 @@ export function ProgressDashboardScreen() {
     const predictions = coachingEngine.predictPersonalRecords({
       exerciseHistories: computeE1rmHistories(sets),
       asOf: format(new Date(), 'yyyy-MM-dd'),
+      unitPref,
     });
     return predictions[0] ?? null;
-  }, [sets]);
+  }, [sets, unitPref]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
@@ -84,11 +105,13 @@ export function ProgressDashboardScreen() {
             <Card variant="elevated">
               <Text variant="subtitle">Strength trend</Text>
               <Text variant="caption" color="secondary" style={{ marginTop: 2 }}>
-                Weekly training volume, last {weeklyVolume.length || 8} weeks
+                {hasWeeklyTrend
+                  ? `Weekly training volume, last ${weeklyVolume.length} weeks`
+                  : `Training volume, last ${dailyVolume.length || 14} days`}
               </Text>
               <View style={{ marginTop: theme.spacing.md }}>
                 <TrendChart
-                  points={weeklyVolume.map(w => w.volume)}
+                  points={strengthTrendPoints}
                   emptyLabel="Log a few workouts to see your trend"
                 />
               </View>

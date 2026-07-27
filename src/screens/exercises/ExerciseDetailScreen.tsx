@@ -22,7 +22,7 @@ import { useExercise, useExercises, useUpdateExercise } from '../../services/api
 import { useAuthStore } from '../../store/authStore';
 import { useProfile } from '../../services/api/queries/profiles';
 import { coachingEngine } from '../../services/coaching';
-import { exerciseRowToMetadata } from '../../utils/exerciseMetadata';
+import { exerciseRowToMetadata, formatEnumLabel } from '../../utils/exerciseMetadata';
 import { extractYoutubeVideoId, isYoutubeUrl, youtubeThumbnailUrl } from '../../utils/youtube';
 import type { LogStackParamList, TodayStackParamList } from '../../navigation/types';
 import type { EquipmentType, ExerciseDefaultMetric } from '../../types/database';
@@ -121,26 +121,26 @@ export function ExerciseDetailScreen() {
                 <Text variant="label" color="secondary">
                   CATEGORY
                 </Text>
-                <Text variant="body">{exercise.category}</Text>
+                <Text variant="body">{formatEnumLabel(exercise.category)}</Text>
               </View>
               <View>
                 <Text variant="label" color="secondary">
                   EQUIPMENT
                 </Text>
-                <Text variant="body">{exercise.equipment}</Text>
+                <Text variant="body">{formatEnumLabel(exercise.equipment)}</Text>
               </View>
               <View>
                 <Text variant="label" color="secondary">
                   MUSCLE
                 </Text>
-                <Text variant="body">{exercise.primary_muscle}</Text>
+                <Text variant="body">{formatEnumLabel(exercise.primary_muscle)}</Text>
               </View>
               {exercise.movement_pattern ? (
                 <View>
                   <Text variant="label" color="secondary">
                     PATTERN
                   </Text>
-                  <Text variant="body">{exercise.movement_pattern.replace('_', ' ')}</Text>
+                  <Text variant="body">{formatEnumLabel(exercise.movement_pattern)}</Text>
                 </View>
               ) : null}
               {exercise.difficulty ? (
@@ -148,7 +148,7 @@ export function ExerciseDetailScreen() {
                   <Text variant="label" color="secondary">
                     DIFFICULTY
                   </Text>
-                  <Text variant="body">{exercise.difficulty}</Text>
+                  <Text variant="body">{formatEnumLabel(exercise.difficulty)}</Text>
                 </View>
               ) : null}
               {exercise.joint_stress ? (
@@ -156,14 +156,14 @@ export function ExerciseDetailScreen() {
                   <Text variant="label" color="secondary">
                     JOINT STRESS
                   </Text>
-                  <Text variant="body">{exercise.joint_stress}</Text>
+                  <Text variant="body">{formatEnumLabel(exercise.joint_stress)}</Text>
                 </View>
               ) : null}
             </View>
 
             {exercise.secondary_muscles.length > 0 ? (
               <Text variant="caption" color="tertiary">
-                Also works: {exercise.secondary_muscles.join(', ')}
+                Also works: {exercise.secondary_muscles.map(formatEnumLabel).join(', ')}
               </Text>
             ) : null}
 

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, Pressable } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Numeral, Icon } from '../../components/core';
@@ -6,26 +6,14 @@ import { useActiveWorkoutStore } from '../../store/activeWorkoutStore';
 
 const REST_PRESETS_SECONDS = [60, 90, 120];
 
-/** Ticks the shared rest-timer countdown every second while it's running. */
-function useRestTimerTicker() {
-  const restRunning = useActiveWorkoutStore(state => state.restRunning);
-  const tickRestTimer = useActiveWorkoutStore(state => state.tickRestTimer);
-
-  useEffect(() => {
-    if (!restRunning) return;
-    const interval = setInterval(tickRestTimer, 1000);
-    return () => clearInterval(interval);
-  }, [restRunning, tickRestTimer]);
-}
-
 /**
- * Persistent rest control — lives in the active workout's sticky header so it
- * survives navigating between exercises. Shows quick-start presets when
- * idle, or the running countdown with a skip action.
+ * Rest control for the exercise currently in view. The countdown itself
+ * ticks in activeWorkoutStore (a single, store-owned interval) rather than
+ * here — this component only displays state and dispatches start/skip, so
+ * navigating away and back never spins up a second ticker.
  */
 export function RestTimerBanner() {
   const theme = useTheme();
-  useRestTimerTicker();
   const restRunning = useActiveWorkoutStore(state => state.restRunning);
   const restSecondsRemaining = useActiveWorkoutStore(state => state.restSecondsRemaining);
   const startRestTimer = useActiveWorkoutStore(state => state.startRestTimer);

@@ -5,7 +5,7 @@ import type { Database } from '../../../types/database';
 
 type WhoopMetricsRow = Database['public']['Tables']['whoop_metrics']['Row'];
 
-async function fetchLatestWhoopMetrics(userId: string): Promise<WhoopMetricsRow | null> {
+export async function fetchLatestWhoopMetrics(userId: string): Promise<WhoopMetricsRow | null> {
   const { data, error } = await supabase
     .from('whoop_metrics')
     .select('*')

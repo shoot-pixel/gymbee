@@ -23,7 +23,7 @@ const WEEKS_PAST = 13; // ~90 days back, matches the streak/log query window
 const WEEKS_FUTURE = 3;
 const DOW_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-type DayStatus = 'done' | 'rest' | 'missed' | 'scheduled' | 'none';
+type DayStatus = 'done' | 'cardio' | 'rest' | 'missed' | 'scheduled';
 
 function dateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd');
@@ -33,24 +33,40 @@ function statusFor(
   date: Date,
   program: ProgramTree | null | undefined,
   completedDates: Set<string>,
+  cardioDates: Set<string>,
   scheduledDates: Set<string>,
+  weeklyScheduleDaysOfWeek: Set<number>,
 ): DayStatus {
   const key = dateKey(date);
-  if (completedDates.has(key)) return 'done';
+  if (completedDates.has(key)) return cardioDates.has(key) ? 'cardio' : 'done';
 
   const resolved = getProgramDayForDate(program, date);
-  const isRestDay = resolved?.day.is_rest_day ?? false;
-  const hasPlan = resolved != null || scheduledDates.has(key);
+  // A recurring weekly_schedule assignment for this weekday always counts as
+  // a real training day, even on a date the AI program calls a rest day.
+  // Deliberate v1 simplification: unlike getProgramDayForDate (anchored to
+  // program.start_date), this set applies uniformly across the whole
+  // displayed window with no anchor to when the assignment was created —
+  // assigning "Wednesday = Core Day" today retroactively marks past
+  // Wednesdays as missed rather than blank/none. Accepted rather than
+  // plumbing created_at through this per-cell calculation.
+  const hasWeeklyPlan = weeklyScheduleDaysOfWeek.has(date.getDay());
+  const isProgramRestDay = (resolved?.day.is_rest_day ?? false) && !hasWeeklyPlan;
+  const hasPlan = resolved != null || scheduledDates.has(key) || hasWeeklyPlan;
 
-  if (isRestDay) return 'rest';
-  if (!hasPlan) return 'none';
+  // A day with nothing assigned at all reads as "rest" here too, matching
+  // the Training tab (dayPlan.ts's resolveDayPlan folds 'programRest' and
+  // 'none' into the same "Rest" label/moon icon there) — from the athlete's
+  // perspective, no plan for the day *is* a rest day, not a blank cell.
+  if (isProgramRestDay || !hasPlan) return 'rest';
   return isDateFuture(date) || isDateToday(date) ? 'scheduled' : 'missed';
 }
 
 type WeekTimelineProps = {
   program: ProgramTree | null | undefined;
   completedDates: Set<string>;
+  cardioDates: Set<string>;
   scheduledDates: Set<string>;
+  weeklyScheduleDaysOfWeek: Set<number>;
   prDates: Set<string>;
   streak: number;
   selectedDate: Date;
@@ -60,7 +76,9 @@ type WeekTimelineProps = {
 export function WeekTimeline({
   program,
   completedDates,
+  cardioDates,
   scheduledDates,
+  weeklyScheduleDaysOfWeek,
   prDates,
   streak,
   selectedDate,
@@ -161,7 +179,7 @@ export function WeekTimeline({
         {weekStarts.map((weekStart, weekIndex) => (
           <View key={weekIndex} style={{ width: containerWidth || undefined, flexDirection: 'row', gap: theme.spacing.xs }}>
             {Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map(date => {
-              const status = statusFor(date, program, completedDates, scheduledDates);
+              const status = statusFor(date, program, completedDates, cardioDates, scheduledDates, weeklyScheduleDaysOfWeek);
               const isToday = isDateToday(date);
               const isSelected = isSameDay(date, selectedDate);
               const hasPr = prDates.has(dateKey(date));
@@ -189,7 +207,7 @@ export function WeekTimeline({
                       variant="body"
                       style={{
                         fontWeight: '700',
-                        color: status === 'none' || status === 'rest' ? theme.colors.text.tertiary : theme.colors.text.primary,
+                        color: status === 'rest' ? theme.colors.text.tertiary : theme.colors.text.primary,
                       }}
                     >
                       {format(date, 'd')}
@@ -272,12 +290,14 @@ export function WeekTimeline({
 
 function StatusMark({ status }: { status: DayStatus }) {
   const theme = useTheme();
-  if (status === 'none') return <View style={{ width: 6, height: 6 }} />;
   if (status === 'rest') {
-    return <View style={{ width: 8, height: 2, borderRadius: 1, backgroundColor: theme.colors.text.tertiary }} />;
+    return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent.purple }} />;
   }
   if (status === 'done') {
     return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent.primary }} />;
+  }
+  if (status === 'cardio') {
+    return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent.orange }} />;
   }
   if (status === 'missed') {
     return (

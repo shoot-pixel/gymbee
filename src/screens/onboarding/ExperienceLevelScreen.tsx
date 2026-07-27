@@ -26,7 +26,7 @@ export function ExperienceLevelScreen({ navigation }: Props) {
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
       <View style={{ gap: theme.spacing.md }}>
-        <StepProgress step={2} total={5} />
+        <StepProgress step={3} total={6} />
         <Text variant="title">Experience level</Text>
       </View>
 

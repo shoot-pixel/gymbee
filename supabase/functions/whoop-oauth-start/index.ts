@@ -33,7 +33,7 @@ const WHOOP_AUTHORIZE_URL = 'https://api.prod.whoop.com/oauth/oauth2/auth';
 // `offline` is required to receive a refresh_token alongside the access_token.
 // read:profile deliberately omitted — this WHOOP app registration isn't
 // authorized for it (confirmed via a live invalid_scope rejection), and
-// nothing in SoSet reads profile data today anyway. Add it back only after
+// nothing in SetSocial reads profile data today anyway. Add it back only after
 // enabling it for this app in the WHOOP Developer Dashboard.
 // read:cycles is required for strain (Cycle.score.strain) — the Stats tab's
 // WHOOP rings need it alongside recovery/sleep. See whoop-sync.

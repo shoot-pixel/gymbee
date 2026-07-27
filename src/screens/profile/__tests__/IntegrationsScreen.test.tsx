@@ -34,11 +34,13 @@ jest.mock('../../../store/authStore', () => ({
 const mockUseIntegrationConnections = jest.fn();
 const mockRefetch = jest.fn();
 const mockStartConnectMutateAsync = jest.fn();
+const mockStartSpotifyConnectMutateAsync = jest.fn();
 const mockDisconnectMutate = jest.fn();
 
 jest.mock('../../../services/api/queries/integrations', () => ({
   useIntegrationConnections: (...args: unknown[]) => mockUseIntegrationConnections(...args),
   useStartWhoopConnect: jest.fn(() => ({ mutateAsync: mockStartConnectMutateAsync, isPending: false })),
+  useStartSpotifyConnect: jest.fn(() => ({ mutateAsync: mockStartSpotifyConnectMutateAsync, isPending: false })),
   useDisconnectIntegration: jest.fn(() => ({ mutate: mockDisconnectMutate, isPending: false })),
 }));
 
@@ -52,9 +54,29 @@ beforeEach(() => {
 
 describe('IntegrationsScreen', () => {
   it('shows Whoop as not connected when there is no stored connection', async () => {
-    const { getByText } = await render(<IntegrationsScreen />);
+    const { getByText, getAllByText } = await render(<IntegrationsScreen />);
     await waitFor(() => expect(getByText('Whoop')).toBeTruthy());
-    expect(getByText('Not connected')).toBeTruthy();
+    // Spotify is also unconnected in this default mock, so both cards show
+    // the pill — asserting there are two rather than picking one apart.
+    expect(getAllByText('Not connected')).toHaveLength(2);
+  });
+
+  it('lists Spotify alongside Whoop and starts its own OAuth flow independently', async () => {
+    mockStartSpotifyConnectMutateAsync.mockResolvedValue({
+      url: 'https://accounts.spotify.com/authorize?state=abc',
+    });
+
+    const { getByText } = await render(<IntegrationsScreen />);
+    await waitFor(() => expect(getByText('Spotify')).toBeTruthy());
+    await fireEvent.press(getByText('Spotify'));
+    await fireEvent.press(getByText('Connect Spotify'));
+
+    await waitFor(() => expect(mockStartSpotifyConnectMutateAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(Linking.openURL).toHaveBeenCalledWith('https://accounts.spotify.com/authorize?state=abc'),
+    );
+    // Whoop's own connect mutation is untouched by a Spotify-card tap.
+    expect(mockStartConnectMutateAsync).not.toHaveBeenCalled();
   });
 
   it('does not render any client id/secret input fields', async () => {
@@ -164,7 +186,7 @@ describe('IntegrationsScreen', () => {
       const { getByText } = await render(<IntegrationsScreen />);
 
       await waitFor(() =>
-        expect(alertSpy).toHaveBeenCalledWith('Whoop connected', 'Your Whoop account is now connected to SoSet.'),
+        expect(alertSpy).toHaveBeenCalledWith('Whoop connected', 'Your Whoop account is now connected to SetSocial.'),
       );
       // Auto-expanded — no tap on "Whoop" needed to reveal the card body.
       expect(getByText('Connect Whoop')).toBeTruthy();

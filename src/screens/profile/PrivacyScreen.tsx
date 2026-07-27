@@ -47,6 +47,7 @@ export function PrivacyScreen(_props: Props) {
   const { data: profile, isLoading } = useProfile(userId);
   const updateProfile = useUpdateProfile(userId);
 
+  const isPrivateAccount = profile?.is_private ?? true;
   const hideStats = profile?.hide_stats_from_friends ?? false;
   const hidePhotos = profile?.hide_photos_from_friends ?? false;
   const isFullyPrivate = hideStats && hidePhotos;
@@ -65,6 +66,24 @@ export function PrivacyScreen(_props: Props) {
         <ScrollView
           contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.xl }}
         >
+          <View style={{ gap: theme.spacing.sm }}>
+            <Text variant="label" color="secondary">
+              ACCOUNT
+            </Text>
+            <Card variant="elevated" style={{ gap: 0 }}>
+              <PrivacyToggleRow
+                title="Private account"
+                description={
+                  isPrivateAccount
+                    ? 'People must send a friend request that you approve before you’re connected.'
+                    : 'Anyone can add you as a friend instantly — no request or approval needed.'
+                }
+                value={isPrivateAccount}
+                onChange={value => updateProfile.mutate({ is_private: value })}
+              />
+            </Card>
+          </View>
+
           <Card variant="elevated" style={{ gap: 0 }}>
             <PrivacyToggleRow
               title="Fully private"

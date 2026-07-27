@@ -1,46 +1,53 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Button } from '../../components/core';
-import { useOnboardingStore } from '../../store/onboardingStore';
 import { useAuthStore } from '../../store/authStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import { generateProgram } from '../../services/api/edgeFunctions';
+import type { ProgramsStackParamList } from '../../navigation/types';
+import type { EquipmentType } from '../../types/database';
 
-export function GeneratingProgramScreen() {
+type Nav = NativeStackNavigationProp<ProgramsStackParamList>;
+
+/** User-triggered AI generation, reachable from the Programs tab's empty
+ * state — adapted from the onboarding flow's old auto-triggered version,
+ * but sourced from the persisted profile (onboarding already saved these
+ * fields directly) rather than the transient onboarding store, since
+ * generation is no longer tied to finishing onboarding. */
+export function GenerateProgramScreen() {
   const theme = useTheme();
+  const navigation = useNavigation<Nav>();
   const userId = useAuthStore(state => state.userId);
-  const setSession = useAuthStore(state => state.setSession);
-  const { goal, experienceLevel, daysPerWeek, equipment, injuriesNotes, reset } =
-    useOnboardingStore();
+  const { data: profile } = useProfile(userId);
 
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   const run = useCallback(async () => {
-    if (!userId || !goal || !experienceLevel || !daysPerWeek) {
-      setError('Missing onboarding answers — please go back and complete every step.');
+    if (!userId || !profile?.goal || !profile.experience_level || !profile.days_per_week) {
+      setError('Missing profile info — set your goal, experience, and days per week in Settings first.');
       return;
     }
     setError(null);
     try {
-      await generateProgram({
-        goal,
-        experience_level: experienceLevel,
-        days_per_week: daysPerWeek,
-        equipment,
-        injuries_notes: injuriesNotes,
+      const { program_id } = await generateProgram({
+        goal: profile.goal,
+        experience_level: profile.experience_level,
+        days_per_week: profile.days_per_week,
+        equipment: profile.equipment_access as EquipmentType[],
+        injuries_notes: profile.injuries_notes ?? '',
       });
-      reset();
-      // Flips RootNavigator from Onboarding to MainTabs — the edge function
-      // already set profiles.onboarding_completed = true server-side.
-      setSession({ userId, onboardingCompleted: true });
+      navigation.replace('ProgramDetail', { programId: program_id });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong generating your program.');
     }
     // Re-run only when the user explicitly retries (attempt changes).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
+  }, [attempt, userId, profile]);
 
   useEffect(() => {
     run();

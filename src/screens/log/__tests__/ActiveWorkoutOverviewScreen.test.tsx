@@ -1,9 +1,11 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { ActiveWorkoutOverviewScreen } from '../ActiveWorkoutOverviewScreen';
 import { useActiveWorkoutStore } from '../../../store/activeWorkoutStore';
 
 const mockNavigate = jest.fn();
+const mockPopToTop = jest.fn();
 const mockUseRoute = jest.fn(
   (): { params: { programDayId?: string; scheduledWorkoutId?: string; variantType?: string } } => ({
     params: { programDayId: 'day-1' },
@@ -14,7 +16,7 @@ jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {
     ...actual,
-    useNavigation: () => ({ navigate: mockNavigate, canGoBack: () => false }),
+    useNavigation: () => ({ navigate: mockNavigate, popToTop: mockPopToTop, canGoBack: () => false }),
     useRoute: () => mockUseRoute(),
   };
 });
@@ -49,8 +51,11 @@ jest.mock('../../../services/api/queries/programs', () => ({
   useProgramDay: jest.fn(() => ({ data: { id: 'day-1', title: 'Push Day' }, isLoading: false })),
 }));
 
+const mockDeleteScheduledWorkoutMutate = jest.fn();
+
 jest.mock('../../../services/api/queries/scheduledWorkouts', () => ({
   useScheduledWorkout: jest.fn(() => ({ data: undefined, isLoading: false })),
+  useDeleteScheduledWorkout: jest.fn(() => ({ mutate: mockDeleteScheduledWorkoutMutate })),
 }));
 
 jest.mock('../../../services/api/queries/workoutTemplates', () => ({
@@ -87,9 +92,11 @@ jest.mock('../../../services/api/queries/profiles', () => ({
 }));
 
 const mockStartWorkoutLogMutateAsync = jest.fn().mockResolvedValue({ id: 'wl-1' });
+const mockDeleteWorkoutLogMutateAsync = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../../services/api/queries/workoutLogs', () => ({
   useStartWorkoutLog: jest.fn(() => ({ mutateAsync: mockStartWorkoutLogMutateAsync })),
+  useDeleteWorkoutLog: jest.fn(() => ({ mutateAsync: mockDeleteWorkoutLogMutateAsync })),
 }));
 
 jest.mock('../../../services/api/queries/coaching', () => ({
@@ -128,8 +135,8 @@ function seedActiveWorkout() {
         metric: 'weight_kg',
         notes: '',
         sets: [
-          { id: 'set-1', dbId: 'dbset-1', setNumber: 1, reps: 8, loadKg: 60, rpe: null, isWarmup: false, completed: true },
-          { id: 'set-2', dbId: null, setNumber: 2, reps: 8, loadKg: 60, rpe: null, isWarmup: false, completed: false },
+          { id: 'set-1', dbId: 'dbset-1', setNumber: 1, reps: 8, loadKg: 60, rpe: null, durationSeconds: null, timerStartedAt: null, isWarmup: false, completed: true },
+          { id: 'set-2', dbId: null, setNumber: 2, reps: 8, loadKg: 60, rpe: null, durationSeconds: null, timerStartedAt: null, isWarmup: false, completed: false },
         ],
       },
     ],
@@ -176,6 +183,81 @@ describe('ActiveWorkoutOverviewScreen — exercise list', () => {
     await fireEvent.press(getByText('Finish Workout'));
 
     expect(mockNavigate).toHaveBeenCalledWith('WorkoutSummary');
+  });
+});
+
+describe('ActiveWorkoutOverviewScreen — delete workout', () => {
+  it('offers Delete Workout in the options menu, confirms before deleting, and resets the session on confirm', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      const deleteButton = buttons?.find(b => b.text === 'Delete');
+      deleteButton?.onPress?.();
+    });
+
+    const { getByText, getByLabelText } = await render(<ActiveWorkoutOverviewScreen />);
+
+    await fireEvent.press(getByLabelText('Workout options'));
+    expect(getByText('Browse Exercise Library')).toBeTruthy();
+    await fireEvent.press(getByText('Delete Workout'));
+
+    expect(alertSpy).toHaveBeenCalled();
+    await waitFor(() => expect(mockDeleteWorkoutLogMutateAsync).toHaveBeenCalledWith('wl-1'));
+    expect(useActiveWorkoutStore.getState().workoutLogId).toBeNull();
+    expect(mockNavigate).toHaveBeenCalledWith('MainTabs', { screen: 'TodayTab', params: { screen: 'Today' } });
+    expect(mockPopToTop).toHaveBeenCalled();
+
+    // Regression: the bottom-tab navigator doesn't unmount this screen just
+    // because the tab focus switched away, and the route's programDayId is
+    // still present — a resetting store used to be read as "no session yet
+    // for this target" and silently auto-started a brand new one.
+    expect(mockStartWorkoutLogMutateAsync).not.toHaveBeenCalled();
+
+    alertSpy.mockRestore();
+  });
+
+  it('does not delete the underlying scheduled workout when the session came from a recurring program day', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find(b => b.text === 'Delete')?.onPress?.();
+    });
+
+    const { getByLabelText, getByText } = await render(<ActiveWorkoutOverviewScreen />);
+    await fireEvent.press(getByLabelText('Workout options'));
+    await fireEvent.press(getByText('Delete Workout'));
+
+    await waitFor(() => expect(mockDeleteWorkoutLogMutateAsync).toHaveBeenCalledWith('wl-1'));
+    expect(mockDeleteScheduledWorkoutMutate).not.toHaveBeenCalled();
+
+    alertSpy.mockRestore();
+  });
+
+  it('also deletes the underlying scheduled workout when the deleted session was a one-off scheduled workout', async () => {
+    mockUseRoute.mockReturnValue({ params: { scheduledWorkoutId: 'sw-1' } });
+    useActiveWorkoutStore.setState({ source: { type: 'scheduledWorkout', id: 'sw-1' } });
+
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find(b => b.text === 'Delete')?.onPress?.();
+    });
+
+    const { getByLabelText, getByText } = await render(<ActiveWorkoutOverviewScreen />);
+    await fireEvent.press(getByLabelText('Workout options'));
+    await fireEvent.press(getByText('Delete Workout'));
+
+    await waitFor(() => expect(mockDeleteWorkoutLogMutateAsync).toHaveBeenCalledWith('wl-1'));
+    expect(mockDeleteScheduledWorkoutMutate).toHaveBeenCalledWith('sw-1');
+
+    alertSpy.mockRestore();
+  });
+
+  it('does not delete when the confirmation is cancelled', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    const { getByLabelText, getByText } = await render(<ActiveWorkoutOverviewScreen />);
+    await fireEvent.press(getByLabelText('Workout options'));
+    await fireEvent.press(getByText('Delete Workout'));
+
+    expect(mockDeleteWorkoutLogMutateAsync).not.toHaveBeenCalled();
+    expect(useActiveWorkoutStore.getState().workoutLogId).toBe('wl-1');
+
+    alertSpy.mockRestore();
   });
 });
 

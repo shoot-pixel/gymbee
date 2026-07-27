@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer, DarkTheme, Theme as NavTheme, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './types';
 import { useAuthStore } from '../store/authStore';
 import { useTheme } from '../theme/ThemeProvider';
-import { LoadingScreen } from '../screens/LoadingScreen';
+import { useAppBootstrap } from '../hooks/useAppBootstrap';
+import { LoadingScreen, MIN_DISPLAY_DURATION_MS } from '../screens/LoadingScreen';
 import { AuthStack } from './AuthStack';
 import { OnboardingStack } from './OnboardingStack';
 import { AppShell } from './AppShell';
@@ -13,18 +14,24 @@ import { ChatScreen } from '../screens/chat/ChatScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Only the WHOOP connect callback uses this today — soset://whoop-callback
-// (with optional ?status=success|error&message=...) routes straight to the
-// Integrations screen. See supabase/functions/whoop-oauth-callback for the
-// page that sends the user back here, and Info.plist / AndroidManifest.xml
-// for where the `soset` scheme itself is registered.
+// Only the WHOOP and Spotify connect callbacks use this today —
+// soset://whoop-callback and soset://spotify-callback (each with optional
+// ?status=success|error&message=...) route straight to the Integrations
+// screen. See supabase/functions/whoop-oauth-callback and
+// supabase/functions/spotify-oauth-callback for the pages that send the
+// user back here, and Info.plist / AndroidManifest.xml for where the
+// `soset` scheme itself is registered.
+//
+// `alias` is how React Navigation maps a second path to the same screen —
+// a bare array isn't a valid config value here, only a string or an object
+// with `path`/`alias`/`screens`.
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ['soset://'],
   config: {
     screens: {
       Profile: {
         screens: {
-          Integrations: 'whoop-callback',
+          Integrations: { path: 'whoop-callback', alias: ['spotify-callback'] },
         },
       },
     },
@@ -33,9 +40,23 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export function RootNavigator() {
   const theme = useTheme();
-  const { hydrated, isAuthenticated, onboardingCompleted } = useAuthStore();
+  const { hydrated, isAuthenticated, onboardingCompleted, userId } = useAuthStore();
+  // Once a user is authenticated and onboarded, keep the splash up a little
+  // longer to warm the query cache for Today's screen — everywhere else
+  // (Auth/Onboarding) this is a no-op and reports ready immediately.
+  const needsBootstrap = hydrated && isAuthenticated && onboardingCompleted;
+  const { ready: bootstrapped } = useAppBootstrap({ enabled: needsBootstrap, userId });
 
-  if (!hydrated) {
+  // Splash always stays up for MIN_DISPLAY_DURATION_MS, regardless of how
+  // fast hydration/bootstrap resolve, so its animation is always seen
+  // through rather than flashing past on a fast launch.
+  const [minDurationElapsed, setMinDurationElapsed] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setMinDurationElapsed(true), MIN_DISPLAY_DURATION_MS);
+    return () => clearTimeout(id);
+  }, []);
+
+  if (!hydrated || (needsBootstrap && !bootstrapped) || !minDurationElapsed) {
     return <LoadingScreen />;
   }
 

@@ -2,7 +2,8 @@ import { addDays, differenceInCalendarDays, format, subDays } from 'date-fns';
 import { estimateOneRepMax } from '../api/queries/progress';
 import type { LoggedSet, PrEvent } from '../api/queries/progress';
 import { estimateWorkoutMinutes } from '../../utils/workoutTiming';
-import type { EquipmentType, ExerciseCategory, MovementPattern, WorkoutVariantType } from '../../types/database';
+import { formatVolume, formatWeight, unitLabel } from '../../utils/units';
+import type { EquipmentType, ExerciseCategory, MovementPattern, UnitPreference, WorkoutVariantType } from '../../types/database';
 import type {
   AdaptationChange,
   AdaptationExerciseTarget,
@@ -288,18 +289,27 @@ export class LocalCoachingEngine implements CoachingEngine {
     // max (35) — an objective physiological signal should move the needle
     // meaningfully without swamping every self-reported factor combined.
     if (inputs.wearable != null) {
-      const recovery = inputs.wearable.recoveryScore;
+      const { recoveryScore: recovery, sleepPerformancePct, strain } = inputs.wearable;
       let wearableDeduction = 0;
       if (recovery < 33) wearableDeduction = 30;
       else if (recovery < 66) wearableDeduction = 15;
       else if (recovery >= 90) wearableDeduction = -5;
       deduction += wearableDeduction;
+      // Always the full picture (recovery + sleep + strain when present), not
+      // just recovery — this is what lets the today-focus summary surface
+      // real Whoop numbers even on a good day, when recovery alone wouldn't
+      // otherwise earn a mention as a "main factor" (see
+      // buildTodayFocusSummaryText, which appends this detail unconditionally
+      // whenever available rather than only when it's a top negative).
+      const detailBits = [`Whoop recovery is ${recovery}% today`];
+      if (sleepPerformancePct != null) detailBits.push(`sleep performance ${sleepPerformancePct}%`);
+      if (strain != null) detailBits.push(`strain ${strain.toFixed(1)}`);
       factors.push({
         key: 'wearable_recovery',
         label: 'Whoop recovery',
         impact: wearableDeduction > 0 ? 'negative' : wearableDeduction < 0 ? 'positive' : 'neutral',
         weight: clamp(Math.abs(wearableDeduction) / 100, 0, 1),
-        detail: `Whoop recovery is ${recovery}% today.`,
+        detail: `${detailBits.join(', ')}.`,
         available: true,
       });
     } else {
@@ -1027,8 +1037,7 @@ export class LocalCoachingEngine implements CoachingEngine {
   }
 
   generateTodayFocusSummary(params: GenerateTodayFocusSummaryParams): TodayFocusSummaryResult {
-    const { readiness, plan, recentPr, missedYesterday, isMilestoneWeek, currentWeekNumber, weeksCount, streak } =
-      params;
+    const { readiness, plan } = params;
 
     const headline =
       plan.kind === 'rest_day'
@@ -1039,16 +1048,7 @@ export class LocalCoachingEngine implements CoachingEngine {
               readiness.band
             ];
 
-    const summary = buildTodayFocusSummaryText({
-      readiness,
-      plan,
-      recentPr,
-      missedYesterday,
-      isMilestoneWeek,
-      currentWeekNumber,
-      weeksCount,
-      streak,
-    });
+    const summary = buildTodayFocusSummaryText(params);
 
     return { headline, summary, band: readiness?.band ?? null };
   }
@@ -1061,6 +1061,7 @@ export class LocalCoachingEngine implements CoachingEngine {
     readiness,
     trainingLoad,
     painRisk,
+    unitPref,
   }: GeneratePostWorkoutSummaryParams): PostWorkoutSummaryResult {
     let totalVolumeKg = 0;
     let bestSet: PostWorkoutBestSet | null = null;
@@ -1188,6 +1189,7 @@ export class LocalCoachingEngine implements CoachingEngine {
       declinedExercises,
       estimatedRecoveryNeeds,
       painOrFatigueConcern,
+      unitPref,
     });
 
     return {
@@ -1217,6 +1219,7 @@ export class LocalCoachingEngine implements CoachingEngine {
     weekPrEvents,
     checkins,
     trainingLoad,
+    unitPref,
   }: GenerateWeeklyReviewParams): WeeklyReviewResult {
     const totalPlanned = workoutsCompleted + workoutsMissed;
     const consistencyPercent = totalPlanned > 0 ? (workoutsCompleted / totalPlanned) * 100 : null;
@@ -1271,7 +1274,7 @@ export class LocalCoachingEngine implements CoachingEngine {
             mostInconsistentExercise = {
               exerciseId,
               exerciseName,
-              detail: `Load varied notably across sets this week (${Math.round(Math.min(...loads))}-${Math.round(Math.max(...loads))}kg).`,
+              detail: `Load varied notably across sets this week (${formatWeight(Math.min(...loads), unitPref)}-${formatWeight(Math.max(...loads), unitPref)}${unitLabel(unitPref)}).`,
             };
           }
         }
@@ -1307,12 +1310,14 @@ export class LocalCoachingEngine implements CoachingEngine {
       weekPrEvents,
       mostImprovedExercise,
       habitObservation,
+      unitPref,
     });
     const shareableSummary = buildShareableWeeklySummary({
       workoutsCompleted,
       totalVolumeKg,
       prCount: weekPrEvents.length,
       consistencyPercent,
+      unitPref,
     });
 
     return {
@@ -1359,7 +1364,7 @@ export class LocalCoachingEngine implements CoachingEngine {
       .sort((a, b) => b.confidence - a.confidence);
   }
 
-  predictPersonalRecords({ exerciseHistories, asOf }: PredictPersonalRecordsParams): PrPrediction[] {
+  predictPersonalRecords({ exerciseHistories, asOf, unitPref }: PredictPersonalRecordsParams): PrPrediction[] {
     const asOfDate = new Date(asOf);
     const lookbackStart = subDays(asOfDate, PREDICTION_LOOKBACK_DAYS);
     const targetDate = format(addDays(asOfDate, PREDICTION_HORIZON_DAYS), 'yyyy-MM-dd');
@@ -1393,7 +1398,7 @@ export class LocalCoachingEngine implements CoachingEngine {
         predictedE1rm,
         targetDate,
         confidence: clamp(r2, 0, 1),
-        summary: buildPrPredictionSummary({ exerciseName: history.exerciseName, predictedE1rm, targetDate }),
+        summary: buildPrPredictionSummary({ exerciseName: history.exerciseName, predictedE1rm, targetDate, unitPref }),
       });
     }
 
@@ -1514,9 +1519,60 @@ function buildSuggestedNextAction(input: {
   return 'Right on track — keep progressing as planned.';
 }
 
+/** Picks one of several equivalent phrasings for an earned coaching remark,
+ * deterministic on the fact it's reporting (exercise name, streak length,
+ * etc.) rather than the clock — the same PR or streak count always reads
+ * the same way (no flaky tests, no line changing on every re-render), but
+ * different PRs/streaks land on different phrasing instead of the exact
+ * same sentence firing every time it's earned. */
+function pickPhrasing(variants: string[], seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return variants[hash % variants.length];
+}
+
+/** `daysAgo` and `sameCalendarWeek` keep this honest about *when* the PR
+ * actually happened — the lookback window it's drawn from (see recentPr in
+ * TodayScreen) reaches back up to 6 days, so unconditionally saying "today"
+ * (or "this week") would misdescribe a PR from earlier as having just
+ * happened. The lookback never exceeds 6 days, so a PR that isn't in the
+ * current calendar week is necessarily in the immediately preceding one —
+ * "last week" is always accurate here, not just a guess. */
+function recentPrPhrasings(exerciseName: string, daysAgo: number, sameCalendarWeek: boolean): string[] {
+  const when = daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : sameCalendarWeek ? 'this week' : 'last week';
+  return [
+    `You set a PR on ${exerciseName} ${when} — nice momentum.`,
+    `That ${exerciseName} PR ${when} wasn't luck.`,
+    `New best on ${exerciseName} ${when} — you're building real momentum.`,
+  ];
+}
+
+function streakPhrasings(streak: number): string[] {
+  return [
+    `You're on a ${streak}-day streak.`,
+    `${streak} days in a row — you've been showing up consistently, and it's paying off.`,
+    `You've shown great consistency lately — ${streak} days and counting.`,
+  ];
+}
+
+const RECOVERED_WELL_PHRASINGS = [
+  "You recovered well after yesterday's workout.",
+  "Your effort yesterday is setting you up for a strong session today.",
+  "Nice bounce-back from yesterday's session.",
+];
+
 function buildTodayFocusSummaryText(input: GenerateTodayFocusSummaryParams): string {
-  const { readiness, plan, recentPr, missedYesterday, isMilestoneWeek, currentWeekNumber, weeksCount, streak } =
-    input;
+  const {
+    readiness,
+    plan,
+    recentPr,
+    missedYesterday,
+    completedYesterday,
+    isMilestoneWeek,
+    currentWeekNumber,
+    weeksCount,
+    streak,
+  } = input;
   const parts: string[] = [];
 
   switch (plan.kind) {
@@ -1545,12 +1601,33 @@ function buildTodayFocusSummaryText(input: GenerateTodayFocusSummaryParams): str
       const [lo, hi] = readiness.recommendedRpeRange;
       parts.push(`Aim for RPE ${lo}-${hi} today.`);
     }
+    // readiness.summary only names a factor when it's among the top negative
+    // contributors to the score — a good/neutral Whoop day would otherwise
+    // never get mentioned at all, even though the athlete is connected and
+    // it's right there. Surface it unconditionally whenever available so
+    // "connected + scored" always means "shows up in today's summary."
+    const wearableFactor = readiness.factors.find(f => f.key === 'wearable_recovery');
+    if (wearableFactor?.available) {
+      parts.push(wearableFactor.detail);
+    }
   }
 
   if (missedYesterday) {
     parts.push("Yesterday's session is still open — jump back in when you're ready.");
   } else if (recentPr) {
-    parts.push(`You just set a PR on ${recentPr.exerciseName} — nice momentum.`);
+    parts.push(
+      pickPhrasing(
+        recentPrPhrasings(recentPr.exerciseName, recentPr.daysAgo, recentPr.sameCalendarWeek),
+        recentPr.exerciseName,
+      ),
+    );
+  } else if (
+    completedYesterday &&
+    readiness &&
+    (readiness.band === 'high' || readiness.band === 'moderate') &&
+    (plan.kind === 'training_day' || plan.kind === 'scheduled')
+  ) {
+    parts.push(pickPhrasing(RECOVERED_WELL_PHRASINGS, `${readiness.band}-${streak}`));
   } else if (isMilestoneWeek && currentWeekNumber != null) {
     parts.push(
       currentWeekNumber === weeksCount
@@ -1558,7 +1635,7 @@ function buildTodayFocusSummaryText(input: GenerateTodayFocusSummaryParams): str
         : `Week ${currentWeekNumber} of ${weeksCount} — right on schedule.`,
     );
   } else if (streak > 2) {
-    parts.push(`You're on a ${streak}-day streak.`);
+    parts.push(pickPhrasing(streakPhrasings(streak), String(streak)));
   }
 
   return parts.join(' ');
@@ -1572,19 +1649,32 @@ function buildPostWorkoutSummaryText(input: {
   declinedExercises: ExercisePerformanceDelta[];
   estimatedRecoveryNeeds: RecoveryNeed;
   painOrFatigueConcern: string | null;
+  unitPref: UnitPreference;
 }): string {
   const parts: string[] = [];
 
-  let volumeSentence = `You moved ${Math.round(input.totalVolumeKg).toLocaleString()}kg of total volume today`;
+  let volumeSentence = `You moved ${formatVolume(input.totalVolumeKg, input.unitPref)}${unitLabel(input.unitPref)} of total volume today`;
   if (input.volumeChangePercent != null) {
     const direction = input.volumeChangePercent >= 0 ? 'up' : 'down';
     volumeSentence += `, ${direction} ${Math.abs(Math.round(input.volumeChangePercent))}% from last time`;
   }
   parts.push(`${volumeSentence}.`);
 
-  if (input.sessionPrEvents.length > 0) {
+  if (input.sessionPrEvents.length === 1) {
+    const prName = input.sessionPrEvents[0].exerciseName;
     parts.push(
-      `You set ${input.sessionPrEvents.length} new personal record${input.sessionPrEvents.length === 1 ? '' : 's'} — nice work.`,
+      pickPhrasing(
+        [
+          `That ${prName} PR wasn't luck.`,
+          `You just set a PR on ${prName} — nice work.`,
+          `New best on ${prName} today — that's real progress.`,
+        ],
+        prName,
+      ),
+    );
+  } else if (input.sessionPrEvents.length > 1) {
+    parts.push(
+      `You set ${input.sessionPrEvents.length} new personal records today — you're building real momentum.`,
     );
   }
 
@@ -1661,12 +1751,13 @@ function buildWeeklyReviewSummary(input: {
   weekPrEvents: PrEvent[];
   mostImprovedExercise: ExerciseImprovement | null;
   habitObservation: string | null;
+  unitPref: UnitPreference;
 }): string {
   const parts: string[] = [];
   parts.push(
     `You completed ${input.workoutsCompleted} workout${input.workoutsCompleted === 1 ? '' : 's'} this week` +
       (input.workoutsMissed > 0 ? ` and missed ${input.workoutsMissed}` : '') +
-      `, moving ${Math.round(input.totalVolumeKg).toLocaleString()}kg of total volume.`,
+      `, moving ${formatVolume(input.totalVolumeKg, input.unitPref)}${unitLabel(input.unitPref)} of total volume.`,
   );
   if (input.weekPrEvents.length > 0) {
     parts.push(
@@ -1689,10 +1780,11 @@ function buildShareableWeeklySummary(input: {
   totalVolumeKg: number;
   prCount: number;
   consistencyPercent: number | null;
+  unitPref: UnitPreference;
 }): string {
   const parts: string[] = [
     `${input.workoutsCompleted} workout${input.workoutsCompleted === 1 ? '' : 's'} completed this week`,
-    `${Math.round(input.totalVolumeKg).toLocaleString()}kg total volume`,
+    `${formatVolume(input.totalVolumeKg, input.unitPref)}${unitLabel(input.unitPref)} total volume`,
   ];
   if (input.prCount > 0) {
     parts.push(`${input.prCount} new PR${input.prCount === 1 ? '' : 's'}`);
@@ -1876,10 +1968,15 @@ function linearRegression(points: Array<{ x: number; y: number }>): { slope: num
   return { slope, intercept, r2 };
 }
 
-function buildPrPredictionSummary(input: { exerciseName: string; predictedE1rm: number; targetDate: string }): string {
+function buildPrPredictionSummary(input: {
+  exerciseName: string;
+  predictedE1rm: number;
+  targetDate: string;
+  unitPref: UnitPreference;
+}): string {
   const formattedDate = format(new Date(input.targetDate), 'MMM d');
   return (
-    `At this pace, your ${input.exerciseName} could reach ~${Math.round(input.predictedE1rm)}kg by ${formattedDate}` +
+    `At this pace, your ${input.exerciseName} could reach ~${formatWeight(input.predictedE1rm, input.unitPref)}${unitLabel(input.unitPref)} by ${formattedDate}` +
     ' — a rough projection based on your recent trend, not a guarantee.'
   );
 }

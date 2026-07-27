@@ -1,4 +1,4 @@
-import { computeE1rmHistories, type LoggedSet } from '../progress';
+import { computeE1rmHistories, computeDailyVolume, computeWeeklyVolume, type LoggedSet } from '../progress';
 
 function loggedSet(overrides: Partial<LoggedSet>): LoggedSet {
   return {
@@ -48,5 +48,35 @@ describe('computeE1rmHistories', () => {
   it('ignores sets with no recorded load', () => {
     const histories = computeE1rmHistories([loggedSet({ loadKg: null })]);
     expect(histories).toHaveLength(0);
+  });
+});
+
+describe('computeDailyVolume', () => {
+  it('buckets same-day sets together and returns chronological daily totals', () => {
+    const daily = computeDailyVolume([
+      loggedSet({ id: 's1', loggedAt: '2024-01-02T09:00:00.000Z', loadKg: 100, reps: 5 }),
+      loggedSet({ id: 's2', loggedAt: '2024-01-02T09:30:00.000Z', loadKg: 100, reps: 5 }),
+      loggedSet({ id: 's3', loggedAt: '2024-01-01T09:00:00.000Z', loadKg: 50, reps: 10 }),
+    ]);
+
+    expect(daily).toEqual([
+      { date: '2024-01-01', volume: 500 },
+      { date: '2024-01-02', volume: 1000 },
+    ]);
+  });
+
+  it('ignores sets with no recorded load', () => {
+    expect(computeDailyVolume([loggedSet({ loadKg: null })])).toHaveLength(0);
+  });
+
+  it('gives a multi-point trend for a few sessions logged within the same calendar week, unlike computeWeeklyVolume', () => {
+    const sets = [
+      loggedSet({ id: 's1', loggedAt: '2024-01-01T09:00:00.000Z', loadKg: 100, reps: 5 }),
+      loggedSet({ id: 's2', loggedAt: '2024-01-03T09:00:00.000Z', loadKg: 100, reps: 5 }),
+      loggedSet({ id: 's3', loggedAt: '2024-01-05T09:00:00.000Z', loadKg: 100, reps: 5 }),
+    ];
+
+    expect(computeWeeklyVolume(sets)).toHaveLength(1);
+    expect(computeDailyVolume(sets)).toHaveLength(3);
   });
 });

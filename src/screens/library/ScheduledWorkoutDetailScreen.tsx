@@ -1,12 +1,12 @@
 import React from 'react';
-import { ScrollView } from 'react-native';
+import { Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, Header, LoadingState } from '../../components/core';
-import { useScheduledWorkout } from '../../services/api/queries/scheduledWorkouts';
+import { Text, Card, Button, Header, IconButton, LoadingState } from '../../components/core';
+import { useScheduledWorkout, useDeleteScheduledWorkout } from '../../services/api/queries/scheduledWorkouts';
 import { navigateToStartWorkout, navigateToChooseVariant } from '../../navigation/startWorkoutFlow';
 import { featureFlags } from '../../config/featureFlags';
 import type { RootStackParamList, ProgramsStackParamList } from '../../navigation/types';
@@ -19,10 +19,37 @@ export function ScheduledWorkoutDetailScreen() {
   const rootNavigation = useNavigation<RootNav>();
   const { params } = useRoute<Route>();
   const { data: scheduled, isLoading } = useScheduledWorkout(params.scheduledWorkoutId);
+  const deleteScheduledWorkout = useDeleteScheduledWorkout();
+
+  const onDelete = () => {
+    if (!scheduled) return;
+    Alert.alert('Delete this workout?', "This can't be undone.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteScheduledWorkout.mutateAsync(scheduled.id);
+            rootNavigation.goBack();
+          } catch (err) {
+            Alert.alert('Could not delete workout', err instanceof Error ? err.message : 'Please try again.');
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <Header title={scheduled?.name ?? 'Workout'} />
+      <Header
+        title={scheduled?.name ?? 'Workout'}
+        right={
+          scheduled ? (
+            <IconButton name="trash" variant="ghost" accessibilityLabel="Delete workout" onPress={onDelete} />
+          ) : undefined
+        }
+      />
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.md }}>
         {isLoading || !scheduled ? (
           <LoadingState fill={false} />

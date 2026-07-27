@@ -7,7 +7,7 @@ import type { Database } from '../../../types/database';
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProfileUpdate = Database['public']['Tables']['profiles']['Update'];
 
-async function fetchProfile(userId: string): Promise<ProfileRow> {
+export async function fetchProfile(userId: string): Promise<ProfileRow> {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')

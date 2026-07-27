@@ -1,15 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { Alert, FlatList, RefreshControl, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Header, ListRow, LoadingState, EmptyState, type IconName } from '../../components/core';
+import { Text, Header, ListRow, IconButton, LoadingState, EmptyState, type IconName } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useLoggedSets, computePrEvents } from '../../services/api/queries/progress';
 import { useBodyMetrics } from '../../services/api/queries/bodyMetrics';
-import { useAllWorkoutLogs } from '../../services/api/queries/workoutLogs';
+import { useAllWorkoutLogs, useDeleteWorkoutLog } from '../../services/api/queries/workoutLogs';
 import { buildProgressTimeline, type TimelineEntry } from '../../utils/progressTimeline';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatWeight, unitLabel } from '../../utils/units';
@@ -73,6 +73,14 @@ export function ProgressTimelineScreen() {
   const { data: bodyMetrics, isLoading: metricsLoading, refetch: refetchMetrics } = useBodyMetrics(userId);
   const { data: workoutLogs, isLoading: logsLoading, refetch: refetchLogs } = useAllWorkoutLogs(userId);
   const isLoading = setsLoading || metricsLoading || logsLoading;
+  const deleteWorkoutLog = useDeleteWorkoutLog();
+
+  const onDeleteWorkout = (workoutLogId: string) => {
+    Alert.alert('Delete this workout?', "This can't be undone.", [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteWorkoutLog.mutate(workoutLogId) },
+    ]);
+  };
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -133,7 +141,28 @@ export function ProgressTimelineScreen() {
                   icon={icon}
                   title={title}
                   subtitle={format(new Date(entry.date), 'MMM d')}
-                  trailing={trailing ? <Text variant="body" color="secondary">{trailing}</Text> : undefined}
+                  trailing={
+                    entry.type === 'workout_completed' ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+                        {trailing ? (
+                          <Text variant="body" color="secondary">
+                            {trailing}
+                          </Text>
+                        ) : null}
+                        <IconButton
+                          name="trash"
+                          variant="ghost"
+                          size={20}
+                          accessibilityLabel="Delete workout"
+                          onPress={() => onDeleteWorkout(entry.id)}
+                        />
+                      </View>
+                    ) : trailing ? (
+                      <Text variant="body" color="secondary">
+                        {trailing}
+                      </Text>
+                    ) : undefined
+                  }
                   showChevron={entry.type === 'pr'}
                   onPress={
                     entry.type === 'pr' ? () => navigation.navigate('PRDetail', { exerciseId: entry.exerciseId }) : undefined

@@ -35,6 +35,7 @@ export function Header({ title, showBack = true, onBack, right }: HeaderProps) {
           <IconButton
             name="chevronLeft"
             variant="ghost"
+            accessibilityLabel="Back"
             onPress={onBack ?? (() => navigation.goBack())}
           />
         ) : null}

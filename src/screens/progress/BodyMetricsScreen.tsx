@@ -6,6 +6,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card, StatTile, Button, TextField, TrendChart, Header, LoadingState } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useBodyMetrics, useLogBodyMetric } from '../../services/api/queries/bodyMetrics';
+import { useProfile } from '../../services/api/queries/profiles';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatWeight, parseWeightInput, unitLabel, kgToLb, roundForDisplay } from '../../utils/units';
 
@@ -13,6 +14,7 @@ export function BodyMetricsScreen() {
   const theme = useTheme();
   const userId = useAuthStore(state => state.userId);
   const { data: metrics, isLoading, refetch } = useBodyMetrics(userId);
+  const { data: profile } = useProfile(userId);
   const logMetric = useLogBodyMetric(userId);
   const unitPref = useUnitPreference();
   const [weight, setWeight] = useState('');
@@ -33,6 +35,9 @@ export function BodyMetricsScreen() {
   const hasTrend = latest != null && first != null && latest.id !== first.id;
   const trendKg = hasTrend ? latest.weight_kg - first.weight_kg : 0;
   const trendDisplay = unitPref === 'kg' ? trendKg : kgToLb(trendKg);
+
+  const heightCm = profile?.height_cm ?? null;
+  const bmi = latest != null && heightCm != null ? latest.weight_kg / (heightCm / 100) ** 2 : null;
 
   const onLog = async () => {
     const value = parseWeightInput(weight, unitPref);
@@ -62,18 +67,27 @@ export function BodyMetricsScreen() {
           <LoadingState fill={false} />
         ) : (
           <>
-            <StatTile
-              label="Current Weight"
-              value={latest ? `${formatWeight(latest.weight_kg, unitPref)} ${unitLabel(unitPref)}` : '—'}
-              trend={
-                hasTrend
-                  ? {
-                      direction: trendKg > 0 ? 'up' : trendKg < 0 ? 'down' : 'flat',
-                      label: `${roundForDisplay(Math.abs(trendDisplay), unitPref)} ${unitLabel(unitPref)} since first log`,
-                    }
-                  : undefined
-              }
-            />
+            <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <StatTile
+                  label="Current Weight"
+                  value={latest ? `${formatWeight(latest.weight_kg, unitPref)} ${unitLabel(unitPref)}` : '—'}
+                  trend={
+                    hasTrend
+                      ? {
+                          direction: trendKg > 0 ? 'up' : trendKg < 0 ? 'down' : 'flat',
+                          label: `${roundForDisplay(Math.abs(trendDisplay), unitPref)} ${unitLabel(unitPref)} since first log`,
+                        }
+                      : undefined
+                  }
+                />
+              </View>
+              {bmi != null ? (
+                <View style={{ flex: 1 }}>
+                  <StatTile label="BMI" value={bmi.toFixed(1)} />
+                </View>
+              ) : null}
+            </View>
 
             <Card variant="elevated">
               <Text variant="subtitle">Weight trend</Text>

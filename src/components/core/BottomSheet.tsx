@@ -21,6 +21,16 @@ const DISMISS_VELOCITY = 800;
 type BottomSheetProps = {
   visible: boolean;
   onClose: () => void;
+  /** Fires once the close animation actually finishes and the sheet has
+   * unmounted — not when `onClose`/`visible=false` is first requested. Use
+   * this (not `onClose`) to sequence anything that itself presents a native
+   * modal (an image picker, another BottomSheet, an Alert on some Android
+   * versions) — the sheet's own Modal stays mounted for the ~200ms close
+   * animation, and presenting on top of a still-dismissing native modal is a
+   * real iOS crash (RN's Modal and an imperative UIViewController
+   * presentation, like react-native-image-picker's camera, fighting over
+   * the same presentation slot), not just a visual glitch. */
+  onDismissed?: () => void;
   title?: string;
   children: React.ReactNode;
 };
@@ -31,7 +41,7 @@ type BottomSheetProps = {
  * plain `visible` boolean — stays mounted through its own close animation,
  * then unmounts, rather than disappearing the instant the caller flips the prop.
  */
-export function BottomSheet({ visible, onClose, title, children }: BottomSheetProps) {
+export function BottomSheet({ visible, onClose, onDismissed, title, children }: BottomSheetProps) {
   const theme = useTheme();
   const translateY = useSharedValue(SHEET_MAX_HEIGHT);
   const [rendered, setRendered] = useState(visible);
@@ -45,7 +55,10 @@ export function BottomSheet({ visible, onClose, title, children }: BottomSheetPr
       translateY.value = withSpring(0, { damping: 40, stiffness: 400, mass: 0.9 });
     } else if (rendered) {
       translateY.value = withTiming(SHEET_MAX_HEIGHT, { duration: 200 }, finished => {
-        if (finished) runOnJS(setRendered)(false);
+        if (finished) {
+          runOnJS(setRendered)(false);
+          if (onDismissed) runOnJS(onDismissed)();
+        }
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

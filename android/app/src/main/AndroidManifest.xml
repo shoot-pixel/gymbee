@@ -6,6 +6,14 @@
          where react-native-image-picker falls back to legacy storage access. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- One-shot foreground location read for "At My Gym" check-ins — see
+         CheckInScreen/useCurrentLocation. No background location permission
+         is requested; this app never tracks location the athlete didn't
+         just explicitly ask it to read. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Take Photo option on the new-post FAB. -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <application
       android:name=".MainApplication"

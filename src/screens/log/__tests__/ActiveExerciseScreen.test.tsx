@@ -102,6 +102,25 @@ jest.mock('../../../services/api/queries/progress', () => {
   };
 });
 
+// Renders `trigger` as text so tests can observe when ActiveExerciseScreen
+// decides a completed set is a new PR, without depending on PrBanner's own
+// (reanimated-driven) visual animation state.
+jest.mock('../PrBanner', () => {
+  const ReactActual = require('react');
+  const { Text } = require('react-native');
+  return {
+    PrBanner: ({ trigger }: { trigger: number }) =>
+      ReactActual.createElement(Text, { testID: 'pr-banner-trigger' }, trigger),
+  };
+});
+
+// Not under test here (see SpotifyNowPlayingBar.test.tsx) — stubbed out so
+// this file doesn't also need to mock the integrations/spotify query
+// modules its real implementation pulls in.
+jest.mock('../SpotifyNowPlayingBar', () => ({
+  SpotifyNowPlayingBar: () => null,
+}));
+
 const mockSaveRecommendationMutate = jest.fn();
 const mockSaveSubstitutionMutate = jest.fn();
 
@@ -162,9 +181,11 @@ jest.mock('../../../services/coaching', () => ({
 }));
 
 import { coachingEngine } from '../../../services/coaching';
+import { useLoggedSets } from '../../../services/api/queries/progress';
 
 const mockedRecommendNextSet = coachingEngine.recommendNextSet as jest.Mock;
 const mockedRecommendExerciseSubstitution = coachingEngine.recommendExerciseSubstitution as jest.Mock;
+const mockedUseLoggedSets = useLoggedSets as jest.Mock;
 
 function seedActiveWorkout() {
   useActiveWorkoutStore.setState({
@@ -186,8 +207,8 @@ function seedActiveWorkout() {
         metric: 'weight_kg',
         notes: '',
         sets: [
-          { id: 'set-1', dbId: null, setNumber: 1, reps: 8, loadKg: 60, rpe: null, isWarmup: false, completed: false },
-          { id: 'set-2', dbId: null, setNumber: 2, reps: 8, loadKg: 60, rpe: null, isWarmup: false, completed: false },
+          { id: 'set-1', dbId: null, setNumber: 1, reps: 8, loadKg: 60, rpe: null, durationSeconds: null, timerStartedAt: null, isWarmup: false, completed: false },
+          { id: 'set-2', dbId: null, setNumber: 2, reps: 8, loadKg: 60, rpe: null, durationSeconds: null, timerStartedAt: null, isWarmup: false, completed: false },
         ],
       },
     ],
@@ -200,7 +221,15 @@ beforeEach(() => {
   mockUseRoute.mockReturnValue({ params: { exerciseId: 'ex1' } });
   mockedRecommendNextSet.mockReturnValue(RECOMMENDATION);
   mockedRecommendExerciseSubstitution.mockReturnValue([SUBSTITUTION]);
+  mockedUseLoggedSets.mockReturnValue({ data: [], isLoading: false });
   seedActiveWorkout();
+});
+
+afterEach(() => {
+  // Completing a set starts the store-owned rest timer interval (real
+  // setInterval, not test-doubled) — clear it so it doesn't keep ticking
+  // (and keeping the Jest worker alive) past this test.
+  useActiveWorkoutStore.getState().reset();
 });
 
 describe('ActiveExerciseScreen — live set recommendations', () => {
@@ -267,6 +296,53 @@ describe('ActiveExerciseScreen — live set recommendations', () => {
   });
 });
 
+describe('ActiveExerciseScreen — real-time PR banner', () => {
+  const OLD_LOGGED_AT = '2000-01-01T00:00:00.000Z'; // far more than 14 days ago, regardless of when tests run
+  const RECENT_LOGGED_AT = new Date(Date.now() - 3 * 86_400_000).toISOString(); // 3 days ago
+
+  it('fires when a completed set beats the prior best, given at least two weeks of history', async () => {
+    // Prior best for ex1: 50kg x5 (e1rm ~58.3) — set-1 (60kg x8, e1rm 76) beats it.
+    mockedUseLoggedSets.mockReturnValue({
+      data: [{ id: 'old-1', exerciseId: 'ex1', exerciseName: 'Bench Press', reps: 5, loadKg: 50, loggedAt: OLD_LOGGED_AT }],
+      isLoading: false,
+    });
+
+    const { getByLabelText, getByTestId } = await render(<ActiveExerciseScreen />);
+    expect(getByTestId('pr-banner-trigger').props.children).toBe(0);
+
+    await fireEvent.press(getByLabelText('Set 1 incomplete'));
+
+    await waitFor(() => expect(getByTestId('pr-banner-trigger').props.children).toBe(1));
+  });
+
+  it('does not fire without two weeks of history yet, even if the set would otherwise be a PR', async () => {
+    mockedUseLoggedSets.mockReturnValue({
+      data: [{ id: 'old-1', exerciseId: 'ex1', exerciseName: 'Bench Press', reps: 5, loadKg: 50, loggedAt: RECENT_LOGGED_AT }],
+      isLoading: false,
+    });
+
+    const { getByLabelText, getByTestId } = await render(<ActiveExerciseScreen />);
+    await fireEvent.press(getByLabelText('Set 1 incomplete'));
+
+    await waitFor(() => expect(useActiveWorkoutStore.getState().exercises[0].sets[0].completed).toBe(true));
+    expect(getByTestId('pr-banner-trigger').props.children).toBe(0);
+  });
+
+  it('does not fire when the completed set doesn’t beat the prior best', async () => {
+    // Prior best for ex1: 100kg x5 (e1rm ~116.7) — set-1 (60kg x8, e1rm 76) doesn't beat it.
+    mockedUseLoggedSets.mockReturnValue({
+      data: [{ id: 'old-1', exerciseId: 'ex1', exerciseName: 'Bench Press', reps: 5, loadKg: 100, loggedAt: OLD_LOGGED_AT }],
+      isLoading: false,
+    });
+
+    const { getByLabelText, getByTestId } = await render(<ActiveExerciseScreen />);
+    await fireEvent.press(getByLabelText('Set 1 incomplete'));
+
+    await waitFor(() => expect(useActiveWorkoutStore.getState().exercises[0].sets[0].completed).toBe(true));
+    expect(getByTestId('pr-banner-trigger').props.children).toBe(0);
+  });
+});
+
 describe('ActiveExerciseScreen — exercise substitution', () => {
   it('swaps the exercise for this workout only and follows it to the new identity', async () => {
     const { getByLabelText, getByText } = await render(<ActiveExerciseScreen />);
@@ -301,7 +377,7 @@ describe('ActiveExerciseScreen — exercise substitution', () => {
     await fireEvent.press(getByText('Find a substitute exercise'));
     await waitFor(() => expect(getByText('Dumbbell Bench Press')).toBeTruthy());
     await fireEvent.press(getByText('Dumbbell Bench Press'));
-    await fireEvent.press(getByText('Swap + remove barbell from my equipment'));
+    await fireEvent.press(getByText('Swap + remove Barbell from my equipment'));
 
     await waitFor(() => expect(mockSaveSubstitutionMutate).toHaveBeenCalledTimes(1));
     expect(mockSaveSubstitutionMutate.mock.calls[0][0]).toMatchObject({ scope: 'permanent' });

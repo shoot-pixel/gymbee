@@ -5,9 +5,22 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, Header, TextField, Icon, VisibilitySelector } from '../../components/core';
+import {
+  Text,
+  Card,
+  Button,
+  Header,
+  TextField,
+  Icon,
+  VisibilitySelector,
+  ListRow,
+  Avatar,
+  BottomSheet,
+  EmptyState,
+} from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useCreatePhotoPost } from '../../services/api/queries/posts';
+import { useFriendsList, type PublicProfile } from '../../services/api/queries/community';
 import type { CommunityStackParamList } from '../../navigation/types';
 import type { PostVisibility } from '../../types/database';
 
@@ -48,18 +61,83 @@ function PhotoPicker({ label, photo, onPick }: { label: string; photo: PickedPho
   );
 }
 
+function TagPeopleRow({
+  friends,
+  taggedUserIds,
+  onToggle,
+}: {
+  friends: PublicProfile[] | undefined;
+  taggedUserIds: string[];
+  onToggle: (userId: string) => void;
+}) {
+  const theme = useTheme();
+  const [sheetVisible, setSheetVisible] = useState(false);
+
+  const taggedNames = friends
+    ?.filter(friend => taggedUserIds.includes(friend.id))
+    .map(friend => friend.display_name ?? 'Athlete');
+
+  return (
+    <>
+      <Card variant="elevated">
+        <ListRow
+          icon="users"
+          title="Tag People"
+          subtitle={taggedNames && taggedNames.length > 0 ? taggedNames.join(', ') : 'No one tagged'}
+          showChevron
+          onPress={() => setSheetVisible(true)}
+        />
+      </Card>
+
+      <BottomSheet visible={sheetVisible} onClose={() => setSheetVisible(false)} title="Tag People">
+        {friends != null && friends.length > 0 ? (
+          friends.map(friend => {
+            const selected = taggedUserIds.includes(friend.id);
+            return (
+              <ListRow
+                key={friend.id}
+                leading={<Avatar uri={friend.avatar_url} size={40} />}
+                title={friend.display_name ?? 'Athlete'}
+                subtitle={friend.handle ? `@${friend.handle}` : undefined}
+                trailing={
+                  <Icon
+                    name={selected ? 'circleCheck' : 'circle'}
+                    size="md"
+                    color={selected ? theme.colors.accent.primary : theme.colors.text.tertiary}
+                  />
+                }
+                onPress={() => onToggle(friend.id)}
+              />
+            );
+          })
+        ) : (
+          <EmptyState icon="users" title="No friends yet" />
+        )}
+      </BottomSheet>
+    </>
+  );
+}
+
 export function UploadPhotoPostScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
   const userId = useAuthStore(state => state.userId);
   const createPost = useCreatePhotoPost(userId);
+  const { data: friends } = useFriendsList(userId);
 
   const [visibility, setVisibility] = useState<PostVisibility>('friends');
   const [caption, setCaption] = useState('');
-  const [photo, setPhoto] = useState<PickedPhoto | null>(null);
+  const [photo, setPhoto] = useState<PickedPhoto | null>(params.initialPhoto ?? null);
   const [beforePhoto, setBeforePhoto] = useState<PickedPhoto | null>(null);
   const [afterPhoto, setAfterPhoto] = useState<PickedPhoto | null>(null);
+  const [taggedUserIds, setTaggedUserIds] = useState<string[]>([]);
+
+  const toggleTag = (friendId: string) => {
+    setTaggedUserIds(current =>
+      current.includes(friendId) ? current.filter(id => id !== friendId) : [...current, friendId],
+    );
+  };
 
   const isBeforeAfter = params.mode === 'before_after';
   const title = isBeforeAfter ? 'Post Before & After' : 'Post Progress Photo';
@@ -87,6 +165,7 @@ export function UploadPhotoPostScreen() {
           caption: caption.trim() || null,
           beforePhoto,
           afterPhoto,
+          taggedUserIds,
         });
       } else {
         if (!photo) return;
@@ -95,6 +174,7 @@ export function UploadPhotoPostScreen() {
           visibility,
           caption: caption.trim() || null,
           photo,
+          taggedUserIds,
         });
       }
       Alert.alert('Posted!', undefined, [{ text: 'OK', onPress: () => navigation.goBack() }]);
@@ -131,6 +211,8 @@ export function UploadPhotoPostScreen() {
           onChangeText={setCaption}
           multiline
         />
+
+        <TagPeopleRow friends={friends} taggedUserIds={taggedUserIds} onToggle={toggleTag} />
 
         <Card variant="elevated">
           <VisibilitySelector value={visibility} onChange={setVisibility} />

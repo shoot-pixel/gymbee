@@ -1,115 +1,157 @@
 import React, { useEffect } from 'react';
-import { Image, useWindowDimensions, View } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import { View, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
+  interpolate,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Circle, Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import LinearGradient from 'react-native-linear-gradient';
+import { SetSocialIcon } from '../components/core';
 import { useTheme } from '../theme/ThemeProvider';
 
-const BACKGROUND = require('../assets/branding/loading-screen-bg.png');
+// Matches SetSocialIcon's real mark asset (setsocial-mark.png, 220x174) —
+// for the icon-only path, `size` maps directly to width (see SetSocialLogo).
+const MARK_ASPECT = 220 / 174;
+const MARK_WIDTH_FRACTION = 0.24;
+const GLOW_TO_MARK_WIDTH_RATIO = 2.1;
 
-// Matches the source design's static progress bar — same screen position and
-// width, so the animated indicator below replaces it in place rather than
-// appearing as an unrelated new element.
-const TRACK_WIDTH_FRACTION = 0.33;
-const TRACK_TOP_FRACTION = 0.676;
-const TRACK_HEIGHT = 2;
-// Fraction of the track's width the glowing streak covers.
-const STREAK_WIDTH_FRACTION = 0.42;
-const STREAK_HEIGHT = 6;
-// One full back-and-forth loop (there and back) takes this long — a single
-// leg (withTiming's own duration) is half of it, since withRepeat's
-// reverse=true plays the timing forward then backward as the two halves
-// of one cycle.
-const CYCLE_DURATION_MS = 3000;
+const HAIRLINE_WIDTH_FRACTION = 0.22;
+const HAIRLINE_SEGMENT_FRACTION = 0.42;
+
+// Logo breathing: scale 100% -> 102% over ~2.4s, glow opacity/scale pulses in
+// step. Hairline: a single highlight segment sweeps the track and snaps back,
+// the classic indeterminate-progress motion — no separate reverse slide.
+const BREATH_LEG_MS = 2400;
+const HAIRLINE_LEG_MS = 1400;
+
+/** RootNavigator holds this screen up for exactly this long (a hard cap, not
+ * just a minimum) — breathing/hairline keep looping the whole time
+ * regardless. */
+export const MIN_DISPLAY_DURATION_MS = 4000;
 
 type LoadingScreenProps = {
-  /** Also used as the accessibility label for the progress indicator. */
+  /** Accessibility label for the splash's status region. */
   label?: string;
 };
 
 /**
- * Full-bleed branded loading screen (src/assets/branding/loading-screen-bg.png,
- * derived from the design team's loading_screen.png) shown while app-level
- * state that gates navigation — e.g. auth hydration — is still resolving.
- * Not the same as LoadingState (components/core), which stays a small inline
- * spinner used throughout individual screens' own data-loading states.
+ * Full-bleed branded loading screen shown while app-level state that gates
+ * navigation — auth hydration, then (once signed in) warming the query cache
+ * for Today's data — is still resolving. Not the same as LoadingState
+ * (components/core), which stays a small inline spinner used throughout
+ * individual screens' own data-loading states.
+ *
+ * Deliberately restrained: icon mark only (no wordmark image, whose aspect
+ * ratio scales unpredictably with brand-name length — see git history for
+ * the sizing bug that motivated dropping it here), no cycling status copy —
+ * a slim animated progress hairline communicates "loading" instead. Ambient
+ * blue/purple radial glows plus a breathing teal halo behind the mark carry
+ * the same premium mood the previous photo-background treatment aimed for,
+ * without the visual noise.
  */
-export function LoadingScreen({ label = 'Loading SoSet' }: LoadingScreenProps) {
+export function LoadingScreen({ label = 'Loading SetSocial' }: LoadingScreenProps) {
   const theme = useTheme();
   const { width, height } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
-  const progress = useSharedValue(0);
-  const trackWidth = width * TRACK_WIDTH_FRACTION;
-  const streakWidth = trackWidth * STREAK_WIDTH_FRACTION;
+
+  const breath = useSharedValue(0);
+  const hairlineSlide = useSharedValue(0);
 
   useEffect(() => {
     if (reducedMotion) {
-      // Static, centered — matches the un-animated source design rather than
-      // leaving the indicator pinned at an arbitrary edge.
-      progress.value = 0.5;
+      // Static, resting values — no breathing, no hairline sweep.
+      breath.value = 0.5;
+      hairlineSlide.value = 1;
       return;
     }
-    // withRepeat's reverse=true plays this timing forward then backward as
-    // the two legs of one loop, so halving the cycle duration here is what
-    // makes a full there-and-back pass take CYCLE_DURATION_MS.
-    progress.value = withRepeat(
-      withTiming(1, { duration: CYCLE_DURATION_MS / 2, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true,
-    );
-  }, [reducedMotion, progress]);
+    breath.value = withRepeat(withTiming(1, { duration: BREATH_LEG_MS, easing: Easing.inOut(Easing.sin) }), -1, true);
+    hairlineSlide.value = withRepeat(withTiming(1, { duration: HAIRLINE_LEG_MS, easing: Easing.inOut(Easing.cubic) }), -1, false);
+  }, [reducedMotion, breath, hairlineSlide]);
 
-  const streakStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: progress.value * (trackWidth - streakWidth) }],
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(breath.value, [0, 1], [0.45, 0.8]),
+    transform: [{ scale: interpolate(breath.value, [0, 1], [1, 1.12]) }],
+  }));
+  const markStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(breath.value, [0, 1], [1, 1.02]) }],
+  }));
+
+  const markWidth = width * MARK_WIDTH_FRACTION;
+  const glowSize = markWidth * GLOW_TO_MARK_WIDTH_RATIO;
+  const trackWidth = width * HAIRLINE_WIDTH_FRACTION;
+  const segmentWidth = trackWidth * HAIRLINE_SEGMENT_FRACTION;
+
+  const segmentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(hairlineSlide.value, [0, 1], [-segmentWidth, trackWidth]) }],
   }));
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <Image source={BACKGROUND} resizeMode="cover" style={{ position: 'absolute', width, height }} />
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg.base, overflow: 'hidden' }}>
+      <Svg style={{ position: 'absolute' }} width={width} height={height}>
+        <Defs>
+          <RadialGradient id="blueBlob" cx="70%" cy="15%" r="45%">
+            <Stop offset="0%" stopColor={theme.colors.accent.blue} stopOpacity={0.16} />
+            <Stop offset="55%" stopColor={theme.colors.accent.blue} stopOpacity={0.06} />
+            <Stop offset="100%" stopColor={theme.colors.accent.blue} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="purpleBlob" cx="20%" cy="85%" r="55%">
+            <Stop offset="0%" stopColor={theme.colors.accent.purple} stopOpacity={0.14} />
+            <Stop offset="55%" stopColor={theme.colors.accent.purple} stopOpacity={0.05} />
+            <Stop offset="100%" stopColor={theme.colors.accent.purple} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x={0} y={0} width={width} height={height} fill="url(#blueBlob)" />
+        <Rect x={0} y={0} width={width} height={height} fill="url(#purpleBlob)" />
+      </Svg>
+
       <View
-        style={{ position: 'absolute', top: height * TRACK_TOP_FRACTION, left: (width - trackWidth) / 2, width: trackWidth }}
+        style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
         accessible
-        accessibilityRole="progressbar"
         accessibilityLabel={label}
       >
-        <View style={{ width: trackWidth, height: STREAK_HEIGHT, justifyContent: 'center' }}>
-          <View
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: (STREAK_HEIGHT - TRACK_HEIGHT) / 2,
-              height: TRACK_HEIGHT,
-              borderRadius: TRACK_HEIGHT / 2,
-              backgroundColor: theme.colors.border.default,
-            }}
-          />
+        <Animated.View style={[{ position: 'absolute', width: glowSize, height: glowSize }, glowStyle]}>
+          <Svg width={glowSize} height={glowSize} viewBox="0 0 100 100">
+            <Defs>
+              <RadialGradient id="markGlow" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor={theme.colors.accent.teal} stopOpacity={0.5} />
+                <Stop offset="55%" stopColor={theme.colors.accent.teal} stopOpacity={0.18} />
+                <Stop offset="100%" stopColor={theme.colors.accent.teal} stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={50} cy={50} r={50} fill="url(#markGlow)" />
+          </Svg>
+        </Animated.View>
+
+        <Animated.View style={markStyle}>
+          <SetSocialIcon size={markWidth} accessibilityLabel="" />
+        </Animated.View>
+
+        <View
+          style={{
+            marginTop: theme.spacing.xl,
+            width: trackWidth,
+            height: 3,
+            borderRadius: theme.radii.pill,
+            backgroundColor: theme.colors.bg.surfaceElevated,
+            overflow: 'hidden',
+          }}
+        >
           <Animated.View
             style={[
-              {
-                width: streakWidth,
-                height: STREAK_HEIGHT,
-                borderRadius: STREAK_HEIGHT / 2,
-                shadowColor: theme.colors.accent.teal,
-                shadowOpacity: 0.9,
-                shadowRadius: 10,
-                shadowOffset: { width: 0, height: 0 },
-                elevation: 6,
-              },
-              streakStyle,
+              { width: segmentWidth, height: 3, borderRadius: theme.radii.pill, overflow: 'hidden' },
+              segmentStyle,
             ]}
           >
             <LinearGradient
-              colors={['rgba(0,216,180,0)', theme.colors.accent.teal, 'rgba(0,216,180,0)']}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={{ flex: 1, borderRadius: STREAK_HEIGHT / 2 }}
+              colors={[...theme.gradients.accent]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ width: '100%', height: '100%' }}
             />
           </Animated.View>
         </View>

@@ -16,9 +16,9 @@ import {
   type WorkoutSource,
 } from '../../store/activeWorkoutStore';
 import { useProgramDay } from '../../services/api/queries/programs';
-import { useScheduledWorkout } from '../../services/api/queries/scheduledWorkouts';
+import { useScheduledWorkout, useDeleteScheduledWorkout } from '../../services/api/queries/scheduledWorkouts';
 import { useWorkoutTemplate } from '../../services/api/queries/workoutTemplates';
-import { useStartWorkoutLog } from '../../services/api/queries/workoutLogs';
+import { useStartWorkoutLog, useDeleteWorkoutLog } from '../../services/api/queries/workoutLogs';
 import { useWorkoutAdaptations } from '../../services/api/queries/coaching';
 import { useExercises } from '../../services/api/queries/exercises';
 import { useProfile } from '../../services/api/queries/profiles';
@@ -28,7 +28,7 @@ import { WorkoutExerciseRow } from './WorkoutExerciseRow';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { exerciseRowToMetadata } from '../../utils/exerciseMetadata';
 import { buildVariantSourceExercises } from '../../utils/variantSource';
-import type { LogStackParamList } from '../../navigation/types';
+import type { LogStackParamList, RootStackParamList } from '../../navigation/types';
 import type { Database, EquipmentType } from '../../types/database';
 
 type WorkoutAdaptationRow = Database['public']['Tables']['workout_adaptations']['Row'];
@@ -99,10 +99,12 @@ function sourceKey(source: WorkoutSource | null): string {
 
 type Route = RouteProp<LogStackParamList, 'ActiveWorkoutOverview'>;
 type Nav = NativeStackNavigationProp<LogStackParamList>;
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
 export function ActiveWorkoutOverviewScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
+  const rootNavigation = useNavigation<RootNav>();
   const { params } = useRoute<Route>();
 
   const routeSource: WorkoutSource | null = params?.programDayId
@@ -136,12 +138,22 @@ export function ActiveWorkoutOverviewScreen() {
 
   const store = useActiveWorkoutStore();
   const startWorkoutLog = useStartWorkoutLog();
+  const deleteWorkoutLog = useDeleteWorkoutLog();
+  const deleteScheduledWorkout = useDeleteScheduledWorkout();
   // Guided workouts (a source is set in params) start as soon as the user
   // taps "Start Workout" elsewhere, so auto-starting here is fine. Freestyle
   // has no such prior intent signal — auto-starting on tab focus would
   // silently create a workout_logs row just from opening the Log tab, so it
   // waits for an explicit "Start Freestyle Workout" tap.
   const [freestyleStarted, setFreestyleStarted] = useState(false);
+  // "Delete Workout" resets the store (workoutLogId -> null) but doesn't
+  // unmount this screen — the bottom-tab navigator keeps LogStack mounted in
+  // the background when navigating to another tab, so the reset alone would
+  // make the auto-start effect below see "no session, but a route target is
+  // still here" and silently recreate the just-deleted workout. This flag is
+  // the actual guard against that; popToTop() below is a secondary cleanup
+  // so the stale screen isn't what the user lands on next time they tap Log.
+  const [isDeleted, setIsDeleted] = useState(false);
 
   const needsFreshStart = store.workoutLogId == null || sourceKey(store.source) !== sourceKey(routeSource);
   const sourceDataLoaded =
@@ -158,7 +170,7 @@ export function ActiveWorkoutOverviewScreen() {
   const variantDataReady = !requestedVariant || allExercises != null;
 
   useEffect(() => {
-    if (!needsFreshStart || !userId || !readyToStart || !shouldAutoStart || !variantDataReady) return;
+    if (!needsFreshStart || !userId || !readyToStart || !shouldAutoStart || !variantDataReady || isDeleted) return;
 
     let cancelled = false;
     (async () => {
@@ -232,6 +244,7 @@ export function ActiveWorkoutOverviewScreen() {
     readyToStart,
     shouldAutoStart,
     variantDataReady,
+    isDeleted,
     routeSource?.type,
     routeSource?.id,
     programDay,
@@ -258,6 +271,43 @@ export function ActiveWorkoutOverviewScreen() {
 
   const onFinish = () => {
     navigation.navigate('WorkoutSummary');
+  };
+
+  const onDeleteWorkout = () => {
+    setOptionsSheetOpen(false);
+    Alert.alert(
+      'Delete this workout?',
+      "This can't be undone — every set logged so far will be deleted too.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const workoutLogId = store.workoutLogId;
+            if (!workoutLogId) return;
+            try {
+              await deleteWorkoutLog.mutateAsync(workoutLogId);
+            } catch (err) {
+              Alert.alert('Could not delete workout', err instanceof Error ? err.message : 'Please try again.');
+              return;
+            }
+            // A workout started from a rest day you'd scheduled one-off
+            // (as opposed to a recurring program day) leaves behind the
+            // scheduled_workouts row that created it — without this, "Add
+            // Workout" for that day reappears with a Start button pointing
+            // at a session that no longer exists.
+            if (routeSource?.type === 'scheduledWorkout') {
+              deleteScheduledWorkout.mutate(routeSource.id);
+            }
+            setIsDeleted(true);
+            store.reset();
+            navigation.popToTop();
+            rootNavigation.navigate('MainTabs', { screen: 'TodayTab', params: { screen: 'Today' } });
+          },
+        },
+      ],
+    );
   };
 
   if (routeSource == null && !shouldAutoStart) {
@@ -418,6 +468,12 @@ export function ActiveWorkoutOverviewScreen() {
             setOptionsSheetOpen(false);
             navigation.navigate('ExercisePicker');
           }}
+        />
+        <ListRow
+          title="Delete Workout"
+          icon="trash"
+          onPress={onDeleteWorkout}
+          style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
         />
       </BottomSheet>
     </SafeAreaView>

@@ -57,6 +57,12 @@ export function startWhoopConnect(): Promise<{ url: string }> {
   return invokeFunction('whoop-oauth-start', {});
 }
 
+/** Mints a one-time OAuth state token server-side and returns Spotify's
+ * authorization URL — see supabase/functions/spotify-oauth-start. */
+export function startSpotifyConnect(): Promise<{ url: string }> {
+  return invokeFunction('spotify-oauth-start', {});
+}
+
 export type WhoopSyncResult = {
   cycle_date: string;
   whoop_cycle_id: string;
@@ -76,4 +82,46 @@ export type WhoopSyncResult = {
  * useWhoopMetrics's direct table read, not this function's response. */
 export function syncWhoopMetrics(): Promise<WhoopSyncResult> {
   return invokeFunction('whoop-sync', {});
+}
+
+export type SpotifyPlayerAction = 'now_playing' | 'play' | 'pause' | 'next' | 'previous';
+
+/** Spotify's own /me/player response shape, trimmed to the fields a "now
+ * playing" widget needs — see supabase/functions/spotify-player. `result` is
+ * `null` when nothing is currently playing on any device (Spotify's 204). */
+export type SpotifyPlayerResult = {
+  action: SpotifyPlayerAction;
+  result: {
+    is_playing: boolean;
+    progress_ms: number | null;
+    item: {
+      name: string;
+      duration_ms: number;
+      artists: { name: string }[];
+      album: { images: { url: string }[] };
+    } | null;
+  } | null;
+};
+
+/** Reads or controls Spotify playback via the caller's stored tokens — see
+ * supabase/functions/spotify-player. Only call this when the user is
+ * already known to be connected (see useIntegrationConnections); the client
+ * never sees the Spotify access token itself. */
+export function spotifyPlayerAction(action: SpotifyPlayerAction): Promise<SpotifyPlayerResult> {
+  return invokeFunction('spotify-player', { action });
+}
+
+export type SpotifyPlaylistSummary = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  trackCount: number;
+  ownerName: string | null;
+};
+
+/** Lists the caller's Spotify playlists — see
+ * supabase/functions/spotify-playlists. Only call this when the user is
+ * already known to be connected (see useIntegrationConnections). */
+export function fetchSpotifyPlaylists(): Promise<{ playlists: SpotifyPlaylistSummary[] }> {
+  return invokeFunction('spotify-playlists', {});
 }

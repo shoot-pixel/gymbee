@@ -23,7 +23,7 @@
 // matter what the function sets. A 302's `Location` header isn't subject to
 // that rewrite, and unlike a JS `window.location` assignment it isn't
 // blocked by Safari's no-gesture heuristics either, so it's the reliable way
-// to hand off on this domain. If SoSet ever moves this function behind a
+// to hand off on this domain. If SetSocial ever moves this function behind a
 // custom domain (Supabase Pro), an HTML confirmation page becomes viable
 // again.
 //
@@ -87,6 +87,14 @@ type WhoopTokenResponse = {
   access_token: string;
   refresh_token?: string;
   expires_in: number;
+  // WHOOP echoes back the scopes it actually granted here — which can be a
+  // subset of what was requested if this app isn't cleared for one of them
+  // in the WHOOP Developer Dashboard (already confirmed to happen for
+  // read:profile on this app; see WHOOP_SCOPES in whoop-oauth-start). Logged
+  // below so a 401 on a specific WHOOP endpoint later can be told apart from
+  // a code bug: if its scope is missing here, that's a dashboard config
+  // issue, not something fixable in this function.
+  scope?: string;
 };
 
 Deno.serve(async req => {
@@ -141,6 +149,7 @@ Deno.serve(async req => {
     }
 
     const tokens = (await tokenResponse.json()) as WhoopTokenResponse;
+    console.log('WHOOP token exchange granted scopes:', tokens.scope ?? '(not present in response)');
     const tokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
     const { error: upsertError } = await admin.from('integration_connections').upsert(

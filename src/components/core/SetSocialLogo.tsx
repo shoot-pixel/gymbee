@@ -4,33 +4,32 @@ import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text } from './Text';
 
-export type SoSetLogoVariant = 'icon' | 'horizontal' | 'stacked';
-export type SoSetLogoTheme = 'light-on-dark' | 'dark-on-light';
+export type SetSocialLogoVariant = 'icon' | 'horizontal' | 'stacked';
+export type SetSocialLogoTheme = 'light-on-dark' | 'dark-on-light';
 
-type SoSetLogoProps = {
+type SetSocialLogoProps = {
   /** 'icon' = mark only, 'horizontal' = mark + wordmark side-by-side, 'stacked' = mark above wordmark. */
-  variant?: SoSetLogoVariant;
+  variant?: SetSocialLogoVariant;
   /** 'light-on-dark' (default) is the primary treatment for this app's dark backgrounds. */
-  theme?: SoSetLogoTheme;
+  theme?: SetSocialLogoTheme;
   /** Height of the mark in px — the wordmark (horizontal/stacked) scales off this. */
   size?: number;
-  /** Announced by screen readers; defaults to "SoSet". Pass "" only when an adjacent element already labels this logo, to avoid double-announcing. */
+  /** Announced by screen readers; defaults to "SetSocial". Pass "" only when an adjacent element already labels this logo, to avoid double-announcing. */
   accessibilityLabel?: string;
 };
 
-// Real exported brand assets (from src/assets/design/iOS_icon.png and
-// "SoSet Logo.png"), processed into transparent-background PNGs — see
-// src/assets/branding/. Only a light-on-dark version exists since this app
-// has no light theme anywhere; dark-on-light below is a geometric SVG
+// Real exported brand assets, processed into transparent-background PNGs —
+// see src/assets/branding/. Only a light-on-dark version exists since this
+// app has no light theme anywhere; dark-on-light below is a geometric SVG
 // approximation kept as a documented fallback for if/when a light surface
 // ever needs the mark.
-const MARK_SOURCE = require('../../assets/branding/soset-mark.png');
-const WORDMARK_SOURCE = require('../../assets/branding/soset-wordmark.png');
+const MARK_SOURCE = require('../../assets/branding/setsocial-mark.png');
+const WORDMARK_SOURCE = require('../../assets/branding/setsocial-wordmark.png');
 /** Native pixel aspect ratios of the source assets — used to size the Image from a single `size` prop. */
-const MARK_ASPECT = 810 / 786;
-const WORDMARK_ASPECT = 1088 / 371;
+const MARK_ASPECT = 220 / 174;
+const WORDMARK_ASPECT = 711 / 129;
 
-function SoSetMarkFallbackSvg({ size }: { size: number }) {
+function SetSocialMarkFallbackSvg({ size }: { size: number }) {
   const theme = useTheme();
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100">
@@ -47,13 +46,13 @@ function SoSetMarkFallbackSvg({ size }: { size: number }) {
 }
 
 /** Icon-only mark — app icon reference, tab bars, compact headers. */
-export function SoSetIcon({
+export function SetSocialIcon({
   size = 32,
   theme = 'light-on-dark',
-  accessibilityLabel = 'SoSet',
+  accessibilityLabel = 'SetSocial',
 }: {
   size?: number;
-  theme?: SoSetLogoTheme;
+  theme?: SetSocialLogoTheme;
   accessibilityLabel?: string;
 }) {
   return (
@@ -61,17 +60,17 @@ export function SoSetIcon({
       {theme === 'light-on-dark' ? (
         <Image source={MARK_SOURCE} style={{ width: size, height: size / MARK_ASPECT }} resizeMode="contain" />
       ) : (
-        <SoSetMarkFallbackSvg size={size} />
+        <SetSocialMarkFallbackSvg size={size} />
       )}
     </View>
   );
 }
 
-export function SoSetLogo({ variant = 'icon', theme = 'light-on-dark', size = 32, accessibilityLabel = 'SoSet' }: SoSetLogoProps) {
+export function SetSocialLogo({ variant = 'icon', theme = 'light-on-dark', size = 32, accessibilityLabel = 'SetSocial' }: SetSocialLogoProps) {
   const appTheme = useTheme();
 
   if (variant === 'icon') {
-    return <SoSetIcon size={size} theme={theme} accessibilityLabel={accessibilityLabel} />;
+    return <SetSocialIcon size={size} theme={theme} accessibilityLabel={accessibilityLabel} />;
   }
 
   if (variant === 'horizontal' && theme === 'light-on-dark') {
@@ -95,13 +94,14 @@ export function SoSetLogo({ variant = 'icon', theme = 'light-on-dark', size = 32
   // or 'horizontal' in the dark-on-light treatment — compose the real mark
   // with a code-rendered two-tone wordmark instead.
   const onDark = theme === 'light-on-dark';
-  const soColor = onDark ? appTheme.colors.text.primary : appTheme.colors.bg.base;
-  const setColor = appTheme.colors.accent.primary;
+  const setColor = onDark ? appTheme.colors.text.primary : appTheme.colors.bg.base;
+  const socialColor = appTheme.colors.accent.primary;
   const wordmarkFontSize = size * 0.9;
 
-  // The wordmark is rendered visually (So/Set two-tone) but hidden from the
-  // accessibility tree — the wrapping View below carries the single "SoSet"
-  // label so a screen reader announces it once, not "So Set" split oddly.
+  // The wordmark is rendered visually (Set/Social two-tone) but hidden from
+  // the accessibility tree — the wrapping View below carries the single
+  // "SetSocial" label so a screen reader announces it once, not "Set Social"
+  // split oddly.
   const wordmarkText = (
     <Text
       importantForAccessibility="no"
@@ -112,8 +112,8 @@ export function SoSetLogo({ variant = 'icon', theme = 'light-on-dark', size = 32
         lineHeight: wordmarkFontSize * 1.1,
       }}
     >
-      <Text style={{ fontSize: wordmarkFontSize, fontWeight: '800', color: soColor }}>So</Text>
       <Text style={{ fontSize: wordmarkFontSize, fontWeight: '800', color: setColor }}>Set</Text>
+      <Text style={{ fontSize: wordmarkFontSize, fontWeight: '800', color: socialColor }}>Social</Text>
     </Text>
   );
 
@@ -124,7 +124,7 @@ export function SoSetLogo({ variant = 'icon', theme = 'light-on-dark', size = 32
 
   return (
     <View style={containerStyle} accessible={accessibilityLabel !== ''} accessibilityRole="image" accessibilityLabel={accessibilityLabel || undefined}>
-      <SoSetIcon size={size} theme={theme} accessibilityLabel="" />
+      <SetSocialIcon size={size} theme={theme} accessibilityLabel="" />
       {wordmarkText}
     </View>
   );

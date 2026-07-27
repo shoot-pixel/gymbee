@@ -31,9 +31,10 @@ export function PRDetailScreen() {
     const predictions = coachingEngine.predictPersonalRecords({
       exerciseHistories: computeE1rmHistories(sets),
       asOf: format(new Date(), 'yyyy-MM-dd'),
+      unitPref,
     });
     return predictions.find(p => p.exerciseId === params.exerciseId) ?? null;
-  }, [sets, params.exerciseId]);
+  }, [sets, params.exerciseId, unitPref]);
 
   const exerciseName = exerciseEvents[0]?.exerciseName ?? 'Exercise';
   const current = exerciseEvents[exerciseEvents.length - 1];

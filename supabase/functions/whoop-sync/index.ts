@@ -27,7 +27,7 @@
 // record's `score` object carries `strain` / `recovery_score` /
 // `sleep_performance_percentage` respectively — verify field names live.
 
-import { createClient } from 'npm:@supabase/supabase-js';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -54,6 +54,10 @@ function json(body: unknown, status: number) {
   });
 }
 
+function roundOrNull(value: number | null | undefined): number | null {
+  return value == null ? null : Math.round(value);
+}
+
 function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'object' && err !== null && 'message' in err && typeof err.message === 'string') {
@@ -66,6 +70,9 @@ type WhoopTokenResponse = {
   access_token: string;
   refresh_token?: string;
   expires_in: number;
+  // See whoop-oauth-callback for why this is logged: it's the scopes WHOOP
+  // actually granted, which can be a subset of what was requested.
+  scope?: string;
 };
 
 type WhoopCollection<T> = { records: T[] };
@@ -91,15 +98,91 @@ type WhoopSleep = {
   score?: { sleep_performance_percentage?: number };
 };
 
+/** Thrown by fetchLatest so callers can tell an expired/revoked access token
+ * (401 — worth a refresh-and-retry) apart from every other failure. */
+class WhoopApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 async function fetchLatest<T>(path: string, accessToken: string): Promise<T | null> {
   const res = await fetch(`${WHOOP_API_BASE}${path}?limit=1`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
-    throw new Error(`WHOOP API ${path} failed: ${res.status} ${await res.text()}`);
+    // Scope was confirmed granted (see whoop-oauth-callback's scope log),
+    // so a 401 here is unexplained by anything visible in our own code path
+    // — log the bits an OAuth Bearer challenge normally carries (RFC 6750's
+    // WWW-Authenticate error/error_description) so a genuinely different
+    // failure reason (invalid_token vs insufficient_scope vs something
+    // WHOOP-side) doesn't stay hidden behind one flat message.
+    const wwwAuthenticate = res.headers.get('www-authenticate');
+    const bodyText = await res.text();
+    console.error(`WHOOP ${path} 401/error detail`, { wwwAuthenticate, bodyText });
+    throw new WhoopApiError(res.status, `WHOOP API ${path} failed: ${res.status} ${bodyText}`);
   }
   const body = (await res.json()) as WhoopCollection<T>;
   return body.records[0] ?? null;
+}
+
+/** Fetches all three collections without letting one's failure hide the
+ * others — Promise.all's fail-fast behavior meant a single endpoint 401
+ * (e.g. this WHOOP app never actually being granted the scope one specific
+ * resource needs) surfaced as one opaque error with no visibility into
+ * whether the other two even succeeded. Logging every outcome here is what
+ * tells a scope-specific failure (only /cycle rejects) apart from a
+ * genuinely bad/expired token (all three reject). */
+async function fetchAllSettled(accessToken: string) {
+  const paths = ['/cycle', '/recovery', '/activity/sleep'] as const;
+  const [cycleResult, recoveryResult, sleepResult] = await Promise.allSettled([
+    fetchLatest<WhoopCycle>(paths[0], accessToken),
+    fetchLatest<WhoopRecovery>(paths[1], accessToken),
+    fetchLatest<WhoopSleep>(paths[2], accessToken),
+  ]);
+  [cycleResult, recoveryResult, sleepResult].forEach((result, i) => {
+    if (result.status === 'rejected') {
+      console.error(`WHOOP ${paths[i]} fetch failed`, errorMessage(result.reason));
+    }
+  });
+  return { cycleResult, recoveryResult, sleepResult };
+}
+
+/** Exchanges the stored refresh_token for a new access_token and persists
+ * the result, returning the new access_token. Throws (never returns a stale
+ * token) if WHOOP rejects the refresh_token itself — that means the
+ * connection needs a full reconnect, not another retry. */
+async function refreshAccessToken(admin: SupabaseClient, userId: string, refreshToken: string): Promise<string> {
+  const refreshResponse = await fetch(WHOOP_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: WHOOP_CLIENT_ID,
+      client_secret: WHOOP_CLIENT_SECRET,
+    }),
+  });
+  if (!refreshResponse.ok) {
+    console.error('WHOOP token refresh failed', refreshResponse.status, await refreshResponse.text());
+    throw new WhoopApiError(401, 'Whoop connection expired. Please reconnect from the app.');
+  }
+  const refreshed = (await refreshResponse.json()) as WhoopTokenResponse;
+  console.log('WHOOP token refresh granted scopes:', refreshed.scope ?? '(not present in response)');
+  const { error: updateError } = await admin
+    .from('integration_connections')
+    .update({
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token ?? refreshToken,
+      token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('provider', 'whoop');
+  if (updateError) throw updateError;
+  return refreshed.access_token;
 }
 
 Deno.serve(async req => {
@@ -136,39 +219,37 @@ Deno.serve(async req => {
       if (!connection.refresh_token) {
         return json({ error: 'Whoop connection expired. Please reconnect from the app.' }, 401);
       }
-      const refreshResponse = await fetch(WHOOP_TOKEN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: connection.refresh_token,
-          client_id: WHOOP_CLIENT_ID,
-          client_secret: WHOOP_CLIENT_SECRET,
-        }),
-      });
-      if (!refreshResponse.ok) {
-        console.error('WHOOP token refresh failed', refreshResponse.status, await refreshResponse.text());
-        return json({ error: 'Whoop connection expired. Please reconnect from the app.' }, 401);
-      }
-      const refreshed = (await refreshResponse.json()) as WhoopTokenResponse;
-      accessToken = refreshed.access_token;
-      const { error: updateError } = await admin
-        .from('integration_connections')
-        .update({
-          access_token: refreshed.access_token,
-          refresh_token: refreshed.refresh_token ?? connection.refresh_token,
-          token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-        })
-        .eq('user_id', userData.user.id)
-        .eq('provider', 'whoop');
-      if (updateError) throw updateError;
+      accessToken = await refreshAccessToken(admin, userData.user.id, connection.refresh_token);
     }
 
-    const [cycle, recovery, sleep] = await Promise.all([
-      fetchLatest<WhoopCycle>('/cycle', accessToken),
-      fetchLatest<WhoopRecovery>('/recovery', accessToken),
-      fetchLatest<WhoopSleep>('/activity/sleep', accessToken),
-    ]);
+    // Our stored token_expires_at is a best guess, not the source of truth —
+    // WHOOP can invalidate an access token before that deadline (rotation
+    // from a concurrent sync, a manual reconnect, clock drift). Rather than
+    // fail the whole sync on a 401 the local clock didn't see coming, force
+    // one refresh-and-retry before giving up.
+    let { cycleResult, recoveryResult, sleepResult } = await fetchAllSettled(accessToken);
+    if (
+      cycleResult.status === 'rejected' &&
+      cycleResult.reason instanceof WhoopApiError &&
+      cycleResult.reason.status === 401 &&
+      connection.refresh_token
+    ) {
+      accessToken = await refreshAccessToken(admin, userData.user.id, connection.refresh_token);
+      ({ cycleResult, recoveryResult, sleepResult } = await fetchAllSettled(accessToken));
+    }
+
+    // Cycle is the one collection every field of `row` below ultimately
+    // depends on (cycle_date, whoop_cycle_id, score_state, strain) — if it
+    // failed even after a fresh token, surface that specific error rather
+    // than the generic 500 a rethrow of a plain Error would produce.
+    if (cycleResult.status === 'rejected') {
+      throw cycleResult.reason;
+    }
+    const cycle = cycleResult.value;
+    // Recovery/sleep are supplementary — already optional-chained below —
+    // so a failure fetching either shouldn't block strain from saving.
+    const recovery = recoveryResult.status === 'fulfilled' ? recoveryResult.value : null;
+    const sleep = sleepResult.status === 'fulfilled' ? sleepResult.value : null;
 
     if (!cycle) {
       return json({ error: 'No Whoop cycle data available yet' }, 404);
@@ -179,11 +260,15 @@ Deno.serve(async req => {
       cycle_date: cycle.start.slice(0, 10),
       whoop_cycle_id: String(cycle.id),
       score_state: cycle.score_state,
-      recovery_score: recovery?.score?.recovery_score ?? null,
-      sleep_performance_pct: sleep?.score?.sleep_performance_percentage ?? null,
+      // WHOOP returns these with decimal precision (e.g. 94.859886) — the
+      // smallint columns they're stored in reject a non-integer string
+      // outright ("invalid input syntax for type smallint"), so round here
+      // rather than widen the schema for precision nothing downstream uses.
+      recovery_score: roundOrNull(recovery?.score?.recovery_score),
+      sleep_performance_pct: roundOrNull(sleep?.score?.sleep_performance_percentage),
       strain: cycle.score?.strain ?? null,
-      hrv_ms: recovery?.score?.hrv_rmssd_milli ?? null,
-      resting_heart_rate: recovery?.score?.resting_heart_rate ?? null,
+      hrv_ms: roundOrNull(recovery?.score?.hrv_rmssd_milli),
+      resting_heart_rate: roundOrNull(recovery?.score?.resting_heart_rate),
       synced_at: new Date().toISOString(),
     };
 
@@ -195,6 +280,7 @@ Deno.serve(async req => {
     return json(row, 200);
   } catch (err) {
     console.error(err);
-    return json({ error: errorMessage(err) }, 500);
+    const status = err instanceof WhoopApiError ? err.status : 500;
+    return json({ error: errorMessage(err) }, status);
   }
 });

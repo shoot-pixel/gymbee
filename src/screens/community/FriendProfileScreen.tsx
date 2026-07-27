@@ -1,12 +1,13 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useTheme } from '../../theme/ThemeProvider';
 import {
   Text,
-  StatTile,
   Header,
   LoadingState,
   FriendRequestButton,
@@ -15,6 +16,10 @@ import {
   ListRow,
   PostThumbnail,
   Avatar,
+  Icon,
+  TextField,
+  Button,
+  EmptyState,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -29,6 +34,8 @@ import {
   useBlockUser,
   useFriendCount,
 } from '../../services/api/queries/community';
+import { useStartConversation } from '../../services/api/queries/directMessages';
+import { useUploadAvatar, useUpdateProfile } from '../../services/api/queries/profiles';
 import { useUserPosts, useSignedPhotoUrls, postPhotoPaths } from '../../services/api/queries/posts';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, unitLabel } from '../../utils/units';
@@ -37,6 +44,8 @@ import type { CommunityStackParamList } from '../../navigation/types';
 type Route = RouteProp<CommunityStackParamList, 'FriendProfile'>;
 type Nav = NativeStackNavigationProp<CommunityStackParamList>;
 
+const BIO_MAX_LENGTH = 150;
+
 export function FriendProfileScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
@@ -44,6 +53,10 @@ export function FriendProfileScreen() {
   const userId = useAuthStore(state => state.userId);
   const unitPref = useUnitPreference();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [bioSheetOpen, setBioSheetOpen] = useState(false);
+  const [bioDraft, setBioDraft] = useState('');
+  const [addPostSheetOpen, setAddPostSheetOpen] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const { data: profile, isLoading, refetch: refetchProfile } = useFriendProfile(params.userId);
   const { data: friendCount } = useFriendCount(params.userId);
@@ -54,6 +67,9 @@ export function FriendProfileScreen() {
   const declineRequest = useDeclineFriendRequest(userId);
   const removeRequest = useRemoveFriendRequest(userId);
   const blockUser = useBlockUser(userId);
+  const uploadAvatar = useUploadAvatar(userId);
+  const updateProfile = useUpdateProfile(userId);
+  const startConversation = useStartConversation();
 
   const { data: posts, refetch: refetchPosts } = useUserPosts(params.userId);
   const postPaths = useMemo(() => (posts ?? []).flatMap(postPhotoPaths), [posts]);
@@ -73,6 +89,50 @@ export function FriendProfileScreen() {
   const { state, requestId } = resolveFriendRequestState(relationships, params.userId);
   const actionLoading =
     sendRequest.isPending || acceptRequest.isPending || declineRequest.isPending || removeRequest.isPending;
+
+  const onChangePhoto = async () => {
+    const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert('Could not open photo library', result.errorMessage ?? 'Please try again.');
+      return;
+    }
+    const asset = result.assets?.[0];
+    if (!asset?.uri) return;
+
+    setUploadingAvatar(true);
+    try {
+      await uploadAvatar.mutateAsync({ uri: asset.uri, contentType: asset.type ?? 'image/jpeg' });
+    } catch (err) {
+      Alert.alert('Could not upload photo', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const onSaveBio = async () => {
+    try {
+      await updateProfile.mutateAsync({ bio: bioDraft.trim() || null });
+      setBioSheetOpen(false);
+    } catch (err) {
+      Alert.alert('Could not save bio', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const goToUploadPost = (mode: 'progress' | 'before_after') => {
+    setAddPostSheetOpen(false);
+    navigation.navigate('UploadPhotoPost', { mode });
+  };
+
+  const onMessage = async () => {
+    if (!userId) return;
+    try {
+      const conversation = await startConversation.mutateAsync({ userId, otherUserId: params.userId });
+      navigation.navigate('Conversation', { conversationId: conversation.id });
+    } catch (err) {
+      Alert.alert('Could not start conversation', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
 
   const confirmBlock = () => {
     setMenuOpen(false);
@@ -122,91 +182,195 @@ export function FriendProfileScreen() {
           contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
-            <Avatar uri={profile?.avatar_url} size={72} />
-            <View style={{ flex: 1 }}>
-              <Text variant="title">{profile?.display_name ?? 'Athlete'}</Text>
+          <View>
+            {/* Ambient glow instead of a banner — a fixed decoration
+                anchored to the top-left, not a treatment that needs to
+                stretch to fill the header's full (variable) width, so this
+                can use literal pixel coordinates without measuring the
+                container first (contrast AiCard, whose wash has to reach a
+                card's far corner and so does need to measure). */}
+            <View style={{ height: 100 }}>
+              <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+                <Defs>
+                  <RadialGradient id="profileGlowGreen" cx={30} cy={10} r={90} gradientUnits="userSpaceOnUse">
+                    <Stop offset="0" stopColor={theme.colors.accent.primary} stopOpacity={0.26} />
+                    <Stop offset="1" stopColor={theme.colors.accent.primary} stopOpacity={0} />
+                  </RadialGradient>
+                  <RadialGradient id="profileGlowPurple" cx={120} cy={-10} r={90} gradientUnits="userSpaceOnUse">
+                    <Stop offset="0" stopColor={theme.colors.accent.purple} stopOpacity={0.2} />
+                    <Stop offset="1" stopColor={theme.colors.accent.purple} stopOpacity={0} />
+                  </RadialGradient>
+                </Defs>
+                <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileGlowGreen)" />
+                <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileGlowPurple)" />
+              </Svg>
+              <View style={{ paddingTop: theme.spacing.md, paddingLeft: theme.spacing.xs, alignItems: 'flex-start' }}>
+                <View>
+                  <Avatar uri={profile?.avatar_url} size={72} onPress={isSelf ? onChangePhoto : undefined} />
+                  {isSelf ? (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        right: -2,
+                        bottom: -2,
+                        width: 26,
+                        height: 26,
+                        borderRadius: theme.radii.pill,
+                        backgroundColor: theme.colors.accent.primary,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: 2,
+                        borderColor: theme.colors.bg.base,
+                      }}
+                    >
+                      <Icon name="camera" size={14} color={theme.colors.text.onAccent} />
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+            <View style={{ marginTop: theme.spacing.sm }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xxs }}>
+                <Text variant="title">{profile?.display_name ?? 'Athlete'}</Text>
+                {profile?.is_private ? (
+                  <View accessible accessibilityLabel="Private account">
+                    <Icon name="lock" size="sm" color={theme.colors.text.tertiary} />
+                  </View>
+                ) : null}
+              </View>
               {profile?.handle ? (
                 <Text variant="body" color="secondary">
                   @{profile.handle}
                 </Text>
               ) : null}
+              {isSelf && uploadingAvatar ? (
+                <Text variant="caption" color="secondary">
+                  Uploading…
+                </Text>
+              ) : null}
             </View>
           </View>
 
-          {profile?.bio ? <Text variant="body">{profile.bio}</Text> : null}
-
-          <View style={{ flexDirection: 'row', gap: theme.spacing.lg }}>
+          {isSelf ? (
             <Pressable
-              onPress={() => navigation.navigate('FriendsList', { userId: params.userId, title: 'Followers' })}
+              onPress={() => {
+                setBioDraft(profile?.bio ?? '');
+                setBioSheetOpen(true);
+              }}
             >
-              <Text variant="body">
-                <Text variant="body" style={{ fontWeight: '700' }}>
-                  {friendCount ?? 0}
-                </Text>{' '}
-                Followers
+              <Text variant="body" color={profile?.bio ? 'primary' : 'tertiary'}>
+                {profile?.bio ?? 'Add a bio'}
               </Text>
             </Pressable>
-            <Pressable
-              onPress={() => navigation.navigate('FriendsList', { userId: params.userId, title: 'Following' })}
-            >
-              <Text variant="body">
-                <Text variant="body" style={{ fontWeight: '700' }}>
-                  {friendCount ?? 0}
-                </Text>{' '}
-                Following
-              </Text>
-            </Pressable>
-          </View>
+          ) : profile?.bio ? (
+            <Text variant="body">{profile.bio}</Text>
+          ) : null}
 
           {!isSelf && profile?.hide_stats_from_friends ? (
-            <Text variant="caption" color="tertiary">
-              This athlete has made their stats private.
-            </Text>
+            <View style={{ gap: theme.spacing.xs }}>
+              <Pressable onPress={() => navigation.navigate('FriendsList', { userId: params.userId, title: 'Friends' })}>
+                <View>
+                  <Text variant="subtitle">{friendCount ?? 0}</Text>
+                  <Text variant="label" color="secondary">
+                    Friends
+                  </Text>
+                </View>
+              </Pressable>
+              <Text variant="caption" color="tertiary">
+                This athlete has made their stats private.
+              </Text>
+            </View>
           ) : (
-            <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-              <View style={{ flex: 1 }}>
-                <StatTile
-                  label="Volume This Month"
-                  value={`${formatVolume(profile?.volumeThisMonth ?? 0, unitPref)} ${unitLabel(unitPref)}`}
-                />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.lg }}>
+              <View>
+                <Text variant="subtitle">{`${formatVolume(profile?.volumeThisMonth ?? 0, unitPref)} ${unitLabel(unitPref)}`}</Text>
+                <Text variant="label" color="secondary">
+                  Volume
+                </Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <StatTile label="Workouts This Month" value={profile?.workoutsThisMonth ?? 0} />
+              <View style={{ width: 1, height: 28, backgroundColor: theme.colors.border.default }} />
+              <View>
+                <Text variant="subtitle">{profile?.workoutsThisMonth ?? 0}</Text>
+                <Text variant="label" color="secondary">
+                  Workouts
+                </Text>
               </View>
+              <View style={{ width: 1, height: 28, backgroundColor: theme.colors.border.default }} />
+              <Pressable onPress={() => navigation.navigate('FriendsList', { userId: params.userId, title: 'Friends' })}>
+                <View>
+                  <Text variant="subtitle">{friendCount ?? 0}</Text>
+                  <Text variant="label" color="secondary">
+                    Friends
+                  </Text>
+                </View>
+              </Pressable>
             </View>
           )}
 
           {!isSelf ? (
-            <FriendRequestButton
-              state={state}
-              displayName={profile?.display_name ?? 'this athlete'}
-              size="md"
-              loading={actionLoading}
-              onSend={() => sendRequest.mutate(params.userId)}
-              onAccept={() => requestId && acceptRequest.mutate(requestId)}
-              onDecline={() => requestId && declineRequest.mutate(requestId)}
-              onRemove={() => requestId && removeRequest.mutate(requestId)}
-            />
+            <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <FriendRequestButton
+                  state={state}
+                  displayName={profile?.display_name ?? 'this athlete'}
+                  size="md"
+                  loading={actionLoading}
+                  onSend={() => sendRequest.mutate(params.userId)}
+                  onAccept={() => requestId && acceptRequest.mutate(requestId)}
+                  onDecline={() => requestId && declineRequest.mutate(requestId)}
+                  onRemove={() => requestId && removeRequest.mutate(requestId)}
+                />
+              </View>
+              <Button
+                label="Message"
+                variant="secondary"
+                onPress={onMessage}
+                loading={startConversation.isPending}
+              />
+            </View>
           ) : null}
 
-          {posts != null && posts.length > 0 ? (
+          {isSelf || (posts != null && posts.length > 0) ? (
             <View style={{ gap: theme.spacing.sm }}>
-              <Text variant="label" color="secondary">
-                POSTS
-              </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }}>
-                {posts.map(post => (
-                  <PostThumbnail
-                    key={post.id}
-                    post={post}
-                    photoUrl={post.photo_path ? signedUrls?.[post.photo_path] : undefined}
-                    beforeUrl={post.before_photo_path ? signedUrls?.[post.before_photo_path] : undefined}
-                    afterUrl={post.after_photo_path ? signedUrls?.[post.after_photo_path] : undefined}
-                    onPress={() => navigation.navigate('PostDetail', { postId: post.id })}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text variant="label" color="secondary">
+                  POSTS
+                </Text>
+                {isSelf ? (
+                  <IconButton
+                    name="plus"
+                    variant="ghost"
+                    size={28}
+                    accessibilityLabel="Post a photo"
+                    onPress={() => setAddPostSheetOpen(true)}
                   />
-                ))}
+                ) : null}
               </View>
+              {posts != null && posts.length > 0 ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
+                  {posts.map(post => (
+                    <View key={post.id} style={{ width: '48%', ...theme.shadows.sm }}>
+                      <PostThumbnail
+                        post={post}
+                        photoUrl={post.photo_path ? signedUrls?.[post.photo_path] : undefined}
+                        beforeUrl={post.before_photo_path ? signedUrls?.[post.before_photo_path] : undefined}
+                        afterUrl={post.after_photo_path ? signedUrls?.[post.after_photo_path] : undefined}
+                        aspectRatio={1}
+                        radius={theme.radii.md}
+                        onPress={() => navigation.navigate('PostDetail', { postId: post.id })}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : isSelf ? (
+                <EmptyState
+                  icon="camera"
+                  title="No posts yet"
+                  description="Share a progress photo or a before & after with your friends."
+                  actionLabel="Post a Photo"
+                  onAction={() => setAddPostSheetOpen(true)}
+                />
+              ) : null}
             </View>
           ) : null}
         </ScrollView>
@@ -214,6 +378,24 @@ export function FriendProfileScreen() {
 
       <BottomSheet visible={menuOpen} onClose={() => setMenuOpen(false)}>
         <ListRow title={`Block ${profile?.display_name ?? 'athlete'}`} icon="circleAlert" onPress={confirmBlock} />
+      </BottomSheet>
+
+      <BottomSheet visible={bioSheetOpen} onClose={() => setBioSheetOpen(false)} title="Edit Bio">
+        <View style={{ gap: theme.spacing.lg }}>
+          <TextField
+            value={bioDraft}
+            onChangeText={setBioDraft}
+            placeholder="Tell friends about yourself"
+            multiline
+            maxLength={BIO_MAX_LENGTH}
+          />
+          <Button label="Save" onPress={onSaveBio} loading={updateProfile.isPending} />
+        </View>
+      </BottomSheet>
+
+      <BottomSheet visible={addPostSheetOpen} onClose={() => setAddPostSheetOpen(false)}>
+        <ListRow title="Post Progress Photo" icon="camera" onPress={() => goToUploadPost('progress')} />
+        <ListRow title="Post Before & After" icon="camera" onPress={() => goToUploadPost('before_after')} />
       </BottomSheet>
     </SafeAreaView>
   );

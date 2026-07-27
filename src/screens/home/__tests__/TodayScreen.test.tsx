@@ -1,9 +1,11 @@
 import React from 'react';
+import { format } from 'date-fns';
 import { act } from 'react-test-renderer';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import type { ReactTestRendererJSON, ReactTestRendererNode } from 'react-test-renderer';
 import { TodayScreen } from '../TodayScreen';
 import { useWorkoutLogsInRange } from '../../../services/api/queries/workoutLogs';
+import { useScheduledWorkouts } from '../../../services/api/queries/scheduledWorkouts';
 import { useLoggedSets, computePrEvents } from '../../../services/api/queries/progress';
 
 const mockNavigate = jest.fn();
@@ -31,14 +33,13 @@ jest.mock('../../../store/authStore', () => ({
 const mockRefetchProgram = jest.fn();
 const mockRefetchWorkoutLogs = jest.fn();
 const mockRefetchScheduledWorkouts = jest.fn();
+const mockRefetchWeeklySchedule = jest.fn();
 const mockRefetchLoggedSets = jest.fn();
 
+const mockUseActiveProgramTree = jest.fn();
+
 jest.mock('../../../services/api/queries/programs', () => ({
-  useActiveProgramTree: jest.fn(() => ({
-    data: { id: 'p1', days_per_week: 3, weeks_count: 4, start_date: '2024-01-01', program_weeks: [] },
-    isLoading: false,
-    refetch: mockRefetchProgram,
-  })),
+  useActiveProgramTree: (...args: unknown[]) => mockUseActiveProgramTree(...args),
   getProgramDayForDate: jest.fn(() => null),
 }));
 
@@ -52,11 +53,38 @@ jest.mock('../../../services/api/queries/workoutLogs', () => ({
 
 jest.mock('../../../services/api/queries/scheduledWorkouts', () => ({
   useScheduledWorkouts: jest.fn(() => ({ data: [], isLoading: false, refetch: mockRefetchScheduledWorkouts })),
+  useStartTemplateToday: jest.fn(() => ({ mutateAsync: jest.fn(), isPending: false })),
+  TODAY_RANGE_PAST_DAYS: 91,
+  TODAY_RANGE_FUTURE_DAYS: 21,
+}));
+
+const mockUseWeeklySchedule = jest.fn();
+
+jest.mock('../../../services/api/queries/weeklySchedule', () => {
+  const actual = jest.requireActual('../../../services/api/queries/weeklySchedule');
+  return {
+    ...actual,
+    useWeeklySchedule: (...args: unknown[]) => mockUseWeeklySchedule(...args),
+  };
+});
+
+jest.mock('../../../services/api/queries/workoutTemplates', () => ({
+  useWorkoutTemplate: jest.fn(() => ({ data: undefined, isLoading: false })),
 }));
 
 jest.mock('../../../services/api/queries/progress', () => ({
   useLoggedSets: jest.fn(() => ({ data: [], isLoading: false, refetch: mockRefetchLoggedSets })),
   computePrEvents: jest.fn(() => []),
+}));
+
+jest.mock('../../../services/api/queries/integrations', () => ({
+  useIntegrationConnections: jest.fn(() => ({ data: [], isLoading: false })),
+}));
+
+const mockSyncWhoopMetricsMutate = jest.fn();
+
+jest.mock('../../../services/api/queries/whoop', () => ({
+  useSyncWhoopMetrics: jest.fn(() => ({ mutate: mockSyncWhoopMetricsMutate })),
 }));
 
 jest.mock('../../../services/api/queries/coaching', () => ({
@@ -149,11 +177,12 @@ const FRIEND_POST = {
 };
 
 const mockedUseWorkoutLogsInRange = useWorkoutLogsInRange as jest.Mock;
+const mockedUseScheduledWorkouts = useScheduledWorkouts as jest.Mock;
 const mockedUseLoggedSets = useLoggedSets as jest.Mock;
 const mockedComputePrEvents = computePrEvents as jest.Mock;
 
 /** Flattens a rendered tree into its text content, in document order, so
- * relative card ordering (e.g. "Coach Insight" right under "AI Summary")
+ * relative card ordering (e.g. "Coach Insight" right under "Coach Summary")
  * can be asserted without depending on RNTL's DOM-adjacency helpers. */
 function collectText(
   node: ReactTestRendererJSON | ReactTestRendererJSON[] | ReactTestRendererNode[] | string | null,
@@ -168,25 +197,32 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockUseFriendsPosts.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: jest.fn() });
   mockedUseWorkoutLogsInRange.mockReturnValue({ data: [], isLoading: false, refetch: mockRefetchWorkoutLogs });
+  mockedUseScheduledWorkouts.mockReturnValue({ data: [], isLoading: false, refetch: mockRefetchScheduledWorkouts });
   mockedUseLoggedSets.mockReturnValue({ data: [], isLoading: false, refetch: mockRefetchLoggedSets });
   mockedComputePrEvents.mockReturnValue([]);
+  mockUseActiveProgramTree.mockReturnValue({
+    data: { id: 'p1', days_per_week: 3, weeks_count: 4, start_date: '2024-01-01', program_weeks: [] },
+    isLoading: false,
+    refetch: mockRefetchProgram,
+  });
+  mockUseWeeklySchedule.mockReturnValue({ data: [], isLoading: false, refetch: mockRefetchWeeklySchedule });
 });
 
 describe('TodayScreen', () => {
-  it('renders the AI Summary card from generateTodayFocusSummary', async () => {
+  it('renders the Coach Summary card from generateTodayFocusSummary', async () => {
     const { getByText } = await render(<TodayScreen />);
 
-    await waitFor(() => expect(getByText('AI Summary')).toBeTruthy());
+    await waitFor(() => expect(getByText('Coach Summary')).toBeTruthy());
     expect(getByText('Ready to train')).toBeTruthy();
     expect(getByText('Today is a training day.')).toBeTruthy();
   });
 
-  it('refetches program, workout logs, scheduled workouts, logged sets, and friends posts on pull-to-refresh', async () => {
+  it('refetches program, workout logs, scheduled workouts, weekly schedule, logged sets, and friends posts on pull-to-refresh', async () => {
     const mockRefetchFriendsPosts = jest.fn();
     mockUseFriendsPosts.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: mockRefetchFriendsPosts });
 
     const { getByTestId, getByText } = await render(<TodayScreen />);
-    await waitFor(() => expect(getByText('AI Summary')).toBeTruthy());
+    await waitFor(() => expect(getByText('Coach Summary')).toBeTruthy());
 
     await act(async () => {
       await getByTestId('today-scroll-view').props.refreshControl.props.onRefresh();
@@ -195,6 +231,7 @@ describe('TodayScreen', () => {
     expect(mockRefetchProgram).toHaveBeenCalled();
     expect(mockRefetchWorkoutLogs).toHaveBeenCalled();
     expect(mockRefetchScheduledWorkouts).toHaveBeenCalled();
+    expect(mockRefetchWeeklySchedule).toHaveBeenCalled();
     expect(mockRefetchLoggedSets).toHaveBeenCalled();
     expect(mockRefetchFriendsPosts).toHaveBeenCalled();
   });
@@ -238,17 +275,22 @@ describe('TodayScreen', () => {
     expect(mockDismissMutate).toHaveBeenCalledWith({ id: 'pat-1', userId: 'user-1' });
   });
 
-  it('renders Coach Insight directly under the AI Summary card, ahead of the rest of the page', async () => {
+  it('renders the calendar under Coach Summary, then Coach Insight, ahead of the rest of the page', async () => {
     const { toJSON, getByText } = await render(<TodayScreen />);
     await waitFor(() => expect(getByText('Coach Insight')).toBeTruthy());
 
     const texts = collectText(toJSON());
-    const aiSummaryIndex = texts.indexOf('AI Summary');
+    const aiSummaryIndex = texts.indexOf('Coach Summary');
+    // "Month" is the calendar's static month-picker label — a stable anchor
+    // for the WeekTimeline section, unlike its month-year header text which
+    // depends on the actual current date.
+    const calendarIndex = texts.indexOf('Month');
     const coachInsightIndex = texts.indexOf('Coach Insight');
     const laterContentIndex = texts.indexOf('Nothing logged');
 
     expect(aiSummaryIndex).toBeGreaterThanOrEqual(0);
-    expect(coachInsightIndex).toBeGreaterThan(aiSummaryIndex);
+    expect(calendarIndex).toBeGreaterThan(aiSummaryIndex);
+    expect(coachInsightIndex).toBeGreaterThan(calendarIndex);
     expect(laterContentIndex).toBeGreaterThan(coachInsightIndex);
   });
 
@@ -289,5 +331,107 @@ describe('TodayScreen', () => {
     expect(getByText('42 min')).toBeTruthy();
     expect(getByText('960 kg')).toBeTruthy();
     expect(getByText('New PR')).toBeTruthy();
+  });
+
+  it('shows cardio stats (not the strength summary) on a day whose only completed log is cardio, with no flip affordance', async () => {
+    const startedAt = new Date();
+    startedAt.setHours(9, 0, 0, 0);
+    const completedAt = new Date(startedAt.getTime() + 30 * 60_000);
+
+    mockedUseWorkoutLogsInRange.mockReturnValue({
+      data: [
+        {
+          id: 'wl-1',
+          programDayId: null,
+          scheduledWorkoutId: null,
+          startedAt: startedAt.toISOString(),
+          completedAt: completedAt.toISOString(),
+          cardio: {
+            activityName: 'Treadmill',
+            durationMinutes: 30,
+            distanceKm: 5,
+            effort: 'moderate',
+            estimatedCalories: 320,
+          },
+        },
+      ],
+      isLoading: false,
+      refetch: mockRefetchWorkoutLogs,
+    });
+
+    const { getByText, queryByText } = await render(<TodayScreen />);
+
+    await waitFor(() => expect(getByText("Today's cardio is done")).toBeTruthy());
+    expect(getByText('Treadmill')).toBeTruthy();
+    expect(getByText('30 min')).toBeTruthy();
+    expect(getByText('~320')).toBeTruthy();
+    expect(getByText('5.0 km')).toBeTruthy();
+    expect(queryByText('Tap to see the full workout')).toBeNull();
+  });
+
+  it('shows the recurring training day name for today, ahead of the AI program day', async () => {
+    mockUseWeeklySchedule.mockReturnValue({
+      data: [
+        {
+          id: 'ws-1',
+          day_of_week: new Date().getDay(),
+          workout_template_id: 'template-1',
+          workout_templates: { id: 'template-1', name: 'Ultimate Core Day', workout_template_exercises: [{ order_index: 0 }] },
+        },
+      ],
+      isLoading: false,
+      refetch: mockRefetchWeeklySchedule,
+    });
+
+    const { getByText } = await render(<TodayScreen />);
+    await waitFor(() => expect(getByText('Ultimate Core Day')).toBeTruthy());
+  });
+
+  it('lets an explicit one-off scheduled workout for today override the recurring assignment', async () => {
+    mockUseWeeklySchedule.mockReturnValue({
+      data: [
+        {
+          id: 'ws-1',
+          day_of_week: new Date().getDay(),
+          workout_template_id: 'template-1',
+          workout_templates: { id: 'template-1', name: 'Ultimate Core Day', workout_template_exercises: [{ order_index: 0 }] },
+        },
+      ],
+      isLoading: false,
+      refetch: mockRefetchWeeklySchedule,
+    });
+    mockedUseScheduledWorkouts.mockReturnValue({
+      data: [{ id: 'sw-1', name: 'One-Off Leg Day', scheduled_date: format(new Date(), 'yyyy-MM-dd') }],
+      isLoading: false,
+      refetch: mockRefetchScheduledWorkouts,
+    });
+
+    const { getByText, queryByText } = await render(<TodayScreen />);
+    await waitFor(() => expect(getByText('One-Off Leg Day')).toBeTruthy());
+    expect(queryByText('Ultimate Core Day')).toBeNull();
+  });
+
+  it('still shows the calendar, day detail, and friends activity when there is no active program', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false, refetch: mockRefetchProgram });
+    mockUseFriendsPosts.mockReturnValue({ data: [FRIEND_POST], isLoading: false, isError: false, refetch: jest.fn() });
+
+    const { getByText, getAllByText, toJSON } = await render(<TodayScreen />);
+
+    await waitFor(() => expect(getByText('Set up a training day, or generate a program with AI, from the Training tab.')).toBeTruthy());
+    // The week calendar strip renders regardless of a program (weekday letters M/T/W/etc).
+    expect(getAllByText('M').length).toBeGreaterThan(0);
+    // Selected-day card still resolves (to "nothing logged/scheduled") without a program.
+    expect(getByText('Nothing logged')).toBeTruthy();
+    // Friends activity is completely independent of program state.
+    expect(getByText('Friends Activity')).toBeTruthy();
+    expect(getByText('Friend One posted a progress photo')).toBeTruthy();
+
+    // The no-program prompt sits at the bottom, right above Friends Activity.
+    const texts = collectText(toJSON());
+    const nothingLoggedIndex = texts.indexOf('Nothing logged');
+    const noProgramIndex = texts.indexOf('Set up a training day, or generate a program with AI, from the Training tab.');
+    const friendsActivityIndex = texts.indexOf('Friends Activity');
+    expect(noProgramIndex).toBeGreaterThan(nothingLoggedIndex);
+    expect(friendsActivityIndex).toBeGreaterThan(noProgramIndex);
   });
 });

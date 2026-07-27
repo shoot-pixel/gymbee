@@ -42,3 +42,19 @@ export function navigateToChooseVariant(
     params: { screen: 'ChooseVariant', params: source },
   });
 }
+
+/**
+ * Cardio's equivalent of navigateToStartWorkout — always goes straight to
+ * LogCardio, skipping PreWorkoutReview/ChooseVariant regardless of
+ * featureFlags.aiCoaching. Those screens are strength-specific (readiness
+ * adaptation, exercise variants); a cardio session has neither.
+ */
+export function navigateToStartCardio(
+  rootNavigation: NativeStackNavigationProp<RootStackParamList>,
+  source: { programDayId?: string; date?: string } = {},
+): void {
+  rootNavigation.navigate('MainTabs', {
+    screen: 'LogTab',
+    params: { screen: 'LogCardio', params: source },
+  });
+}

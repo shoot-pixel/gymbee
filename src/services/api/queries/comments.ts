@@ -35,6 +35,26 @@ export function useComments(postId: string | null) {
   });
 }
 
+/** Batched count-per-post, same reasoning as likes.ts's useLikeCounts — a
+ * feed card needs the number, not the full comment list. */
+async function fetchCommentCounts(postIds: string[]): Promise<Record<string, number>> {
+  if (postIds.length === 0) return {};
+  const { data, error } = await supabase.from('post_comments').select('post_id').in('post_id', postIds);
+  if (error) throw error;
+  const counts: Record<string, number> = {};
+  for (const row of data) counts[row.post_id] = (counts[row.post_id] ?? 0) + 1;
+  return counts;
+}
+
+export function useCommentCounts(postIds: string[]) {
+  const key = [...postIds].sort().join(',');
+  return useQuery({
+    queryKey: ['commentCounts', key],
+    queryFn: () => fetchCommentCounts(postIds),
+    enabled: postIds.length > 0,
+  });
+}
+
 export function useCreateComment(postId: string | null, userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -45,6 +65,7 @@ export function useCreateComment(postId: string | null, userId: string | null) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comments', postId] });
+      queryClient.invalidateQueries({ queryKey: ['commentCounts'] });
     },
   });
 }
@@ -58,6 +79,7 @@ export function useDeleteComment(postId: string | null) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comments', postId] });
+      queryClient.invalidateQueries({ queryKey: ['commentCounts'] });
     },
   });
 }

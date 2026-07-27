@@ -21,7 +21,7 @@ export function DaysPerWeekScreen({ navigation }: Props) {
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
       <View style={{ gap: theme.spacing.md }}>
-        <StepProgress step={3} total={5} />
+        <StepProgress step={4} total={6} />
         <View>
           <Text variant="title">Days per week</Text>
           <Text variant="body" color="secondary">

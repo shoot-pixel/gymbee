@@ -30,7 +30,7 @@ export function EquipmentScreen({ navigation }: Props) {
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
       <View style={{ gap: theme.spacing.md }}>
-        <StepProgress step={4} total={5} />
+        <StepProgress step={5} total={6} />
         <View>
           <Text variant="title">Available equipment</Text>
           <Text variant="body" color="secondary">

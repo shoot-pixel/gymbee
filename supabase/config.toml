@@ -393,6 +393,11 @@ deno_version = 2
 [functions.whoop-oauth-callback]
 verify_jwt = false
 
+# Same reasoning as whoop-oauth-callback above — Spotify redirects the
+# user's browser straight here with no Supabase session attached.
+[functions.spotify-oauth-callback]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -12,6 +12,10 @@ type ProgressRingProps = {
   strokeWidth?: number;
   label?: string;
   centerValue?: string;
+  /** Size of the centered numeral — defaults to 'md' (the existing look for
+   * every other ring). Smaller rings with a label underneath the value (e.g.
+   * Whoop's recovery/sleep/strain rings) read cleaner with 'sm'. */
+  centerValueSize?: 'xl' | 'lg' | 'md' | 'sm';
   /** Gradient stops for the filled arc — defaults to the brand green-teal
    * sweep. Pass a different token (e.g. theme.gradients.sleep) when several
    * rings appear together and need to read as distinct metrics. */
@@ -24,6 +28,7 @@ export function ProgressRing({
   strokeWidth = 10,
   label,
   centerValue,
+  centerValueSize = 'md',
   colors,
 }: ProgressRingProps) {
   const theme = useTheme();
@@ -66,7 +71,7 @@ export function ProgressRing({
         />
       </Svg>
       <View style={{ position: 'absolute', alignItems: 'center' }}>
-        {centerValue ? <Numeral value={centerValue} size="md" /> : null}
+        {centerValue ? <Numeral value={centerValue} size={centerValueSize} /> : null}
         {label ? (
           <Text variant="caption" color="secondary">
             {label}

@@ -5,8 +5,12 @@ type AuthResult = { error: string | null };
 /** hasSession is false when the Supabase project still requires email
  * confirmation before a session is issued — signUp succeeds either way, but
  * only an active session lets AuthProvider's onAuthStateChange listener pick
- * the new user up and route them into onboarding automatically. */
-type SignUpResult = AuthResult & { hasSession: boolean };
+ * the new user up and route them into onboarding automatically.
+ * userId is returned directly (rather than making callers wait on
+ * useAuthStore to pick it up via that same listener) so a caller that needs
+ * to write a profiles row right after signing up — see SignUpScreen — isn't
+ * racing RootNavigator's own auth-state-driven navigation swap. */
+type SignUpResult = AuthResult & { hasSession: boolean; userId: string | null };
 
 /** Thin wrapper around supabase.auth mutations with local loading/error state. */
 export function useAuth() {
@@ -23,7 +27,7 @@ export function useAuth() {
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
-    return { error: error?.message ?? null, hasSession: data.session != null };
+    return { error: error?.message ?? null, hasSession: data.session != null, userId: data.user?.id ?? null };
   }, []);
 
   const resetPassword = useCallback(async (email: string): Promise<AuthResult> => {

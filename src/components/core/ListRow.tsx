@@ -6,7 +6,7 @@ import { Icon, type IconName } from './Icon';
 
 type ListRowProps = {
   title: string;
-  subtitle?: string;
+  subtitle?: string | React.ReactNode;
   icon?: IconName;
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
@@ -62,9 +62,13 @@ export function ListRow({
       <View style={{ flex: 1 }}>
         <Text variant="body">{title}</Text>
         {subtitle ? (
-          <Text variant="caption" color="secondary">
-            {subtitle}
-          </Text>
+          typeof subtitle === 'string' ? (
+            <Text variant="caption" color="secondary">
+              {subtitle}
+            </Text>
+          ) : (
+            subtitle
+          )
         ) : null}
       </View>
       {trailing}

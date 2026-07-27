@@ -6,7 +6,7 @@ export type ProgressTimelineBodyMetricInput = { logged_at: string; weight_kg: nu
 export type TimelineEntry =
   | { type: 'pr'; date: string; exerciseId: string; exerciseName: string; loadKg: number; reps: number }
   | { type: 'body_metric'; date: string; weightKg: number }
-  | { type: 'workout_completed'; date: string; title: string; rating: number | null }
+  | { type: 'workout_completed'; date: string; id: string; title: string; rating: number | null }
   | { type: 'milestone'; date: string; count: number };
 
 const MILESTONE_THRESHOLDS = [10, 25, 50, 100, 250, 500];
@@ -44,6 +44,7 @@ export function buildProgressTimeline(
   const workoutEntries: TimelineEntry[] = workoutLogs.map(log => ({
     type: 'workout_completed',
     date: log.completedAt,
+    id: log.id,
     title: log.title,
     rating: log.rating,
   }));

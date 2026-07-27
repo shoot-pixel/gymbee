@@ -1,0 +1,115 @@
+import { useActiveWorkoutStore } from '../activeWorkoutStore';
+
+const EXERCISE = { exerciseId: 'ex1', exerciseName: 'Bench Press', targetSets: 1 };
+
+function seedWorkout() {
+  useActiveWorkoutStore.getState().startWorkout({
+    workoutLogId: 'wl-1',
+    source: { type: 'freestyle', id: null },
+    exercises: [EXERCISE],
+  });
+}
+
+beforeEach(() => {
+  jest.useFakeTimers();
+  useActiveWorkoutStore.getState().reset();
+});
+
+afterEach(() => {
+  useActiveWorkoutStore.getState().reset();
+  jest.useRealTimers();
+});
+
+describe('activeWorkoutStore rest timer', () => {
+  it('decrements by exactly 1 per second, not 2', () => {
+    seedWorkout();
+    useActiveWorkoutStore.getState().startRestTimer(10);
+
+    jest.advanceTimersByTime(1000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(9);
+
+    jest.advanceTimersByTime(1000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(8);
+
+    jest.advanceTimersByTime(3000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(5);
+  });
+
+  it('starting a new rest timer while one is already running never double-ticks', () => {
+    seedWorkout();
+    useActiveWorkoutStore.getState().startRestTimer(60);
+    jest.advanceTimersByTime(2000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(58);
+
+    // Restarting (e.g. a second "increase_rest" recommendation) must clear
+    // the first interval — if it didn't, both would tick the same counter
+    // and it would decrement by 2 per second instead of 1.
+    useActiveWorkoutStore.getState().startRestTimer(30);
+    jest.advanceTimersByTime(1000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(29);
+  });
+
+  it('stops ticking and clears restRunning once it reaches 0', () => {
+    seedWorkout();
+    useActiveWorkoutStore.getState().startRestTimer(2);
+    jest.advanceTimersByTime(3000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
+    expect(useActiveWorkoutStore.getState().restRunning).toBe(false);
+
+    // No stray interval left running — further ticks are a no-op.
+    jest.advanceTimersByTime(5000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
+  });
+
+  it('skipRestTimer stops the interval immediately', () => {
+    seedWorkout();
+    useActiveWorkoutStore.getState().startRestTimer(60);
+    useActiveWorkoutStore.getState().skipRestTimer();
+    expect(useActiveWorkoutStore.getState().restRunning).toBe(false);
+
+    jest.advanceTimersByTime(5000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
+  });
+
+  it('starting a fresh workout clears any stray interval from a prior session', () => {
+    seedWorkout();
+    useActiveWorkoutStore.getState().startRestTimer(60);
+
+    seedWorkout();
+    jest.advanceTimersByTime(5000);
+    // The new session's rest timer was never started, so it should still read 0.
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
+    expect(useActiveWorkoutStore.getState().restRunning).toBe(false);
+  });
+});
+
+describe('activeWorkoutStore set timer (Timer metric stopwatch)', () => {
+  it('records elapsed duration on stop', () => {
+    seedWorkout();
+    const setId = useActiveWorkoutStore.getState().exercises[0].sets[0].id;
+
+    useActiveWorkoutStore.getState().startSetTimer('ex1', setId);
+    jest.advanceTimersByTime(45_000);
+    useActiveWorkoutStore.getState().stopSetTimer('ex1', setId);
+
+    const set = useActiveWorkoutStore.getState().exercises[0].sets[0];
+    expect(set.durationSeconds).toBe(45);
+    expect(set.timerStartedAt).toBeNull();
+  });
+
+  it('only one set timer runs at a time — starting another clears the first', () => {
+    seedWorkout();
+    useActiveWorkoutStore.getState().addSet('ex1');
+    const [setA, setB] = useActiveWorkoutStore.getState().exercises[0].sets;
+
+    useActiveWorkoutStore.getState().startSetTimer('ex1', setA.id);
+    expect(
+      useActiveWorkoutStore.getState().exercises[0].sets.find(s => s.id === setA.id)?.timerStartedAt,
+    ).not.toBeNull();
+
+    useActiveWorkoutStore.getState().startSetTimer('ex1', setB.id);
+    const sets = useActiveWorkoutStore.getState().exercises[0].sets;
+    expect(sets.find(s => s.id === setA.id)?.timerStartedAt).toBeNull();
+    expect(sets.find(s => s.id === setB.id)?.timerStartedAt).not.toBeNull();
+  });
+});

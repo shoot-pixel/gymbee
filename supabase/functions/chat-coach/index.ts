@@ -181,6 +181,28 @@ function buildTools(exerciseNames: string[]) {
       },
       strict: true,
     },
+    {
+      name: 'get_workout_stats',
+      description:
+        "Looks up the athlete's actual logged training history: workouts completed, total sets/volume, recent personal records (PRs), and per-exercise progress (best estimated 1-rep max, most recent working set). Call this whenever the athlete asks about their stats, progress, volume, PRs, or how a specific lift is trending — never guess, estimate, or make up numbers when this tool can answer directly.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          exercise_name: {
+            type: ['string', 'null'],
+            description:
+              'Look up progress for one specific exercise (matched by a case-insensitive substring against what the athlete actually logged, so it also works for their own custom exercises not in the shared library), or null for an overall summary across everything logged.',
+          },
+          days: {
+            type: ['integer', 'null'],
+            description: 'How many days of history to include. Defaults to 90 if null.',
+          },
+        },
+        required: ['exercise_name', 'days'],
+        additionalProperties: false,
+      },
+      strict: true,
+    },
     // deno-lint-ignore no-explicit-any
   ] as any;
 }
@@ -400,6 +422,104 @@ async function scheduleWorkoutTemplate(input: Record<string, unknown>, ctx: Tool
   return { scheduled_workout_id: scheduled.id, name: scheduled.name, date: scheduled.scheduled_date };
 }
 
+/** Epley estimated one-rep max — same formula as the client's
+ * estimateOneRepMax (src/services/api/queries/progress.ts), ported here
+ * since this runs server-side against the raw tables directly. */
+function estimateOneRepMax(loadKg: number, reps: number): number {
+  return loadKg * (1 + reps / 30);
+}
+
+type LoggedSetRow = {
+  reps: number;
+  load_kg: number | null;
+  logged_at: string;
+  exercises: { name: string } | null;
+};
+
+async function getWorkoutStats(input: Record<string, unknown>, ctx: ToolContext) {
+  const days = typeof input.days === 'number' && input.days > 0 ? Math.min(Math.floor(input.days), 365) : 90;
+  const exerciseNameFilter = typeof input.exercise_name === 'string' ? input.exercise_name.toLowerCase() : null;
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+
+  const { data: logs, error: logsError } = await ctx.admin
+    .from('workout_logs')
+    .select('id')
+    .eq('user_id', ctx.userId)
+    .not('completed_at', 'is', null)
+    .gte('completed_at', cutoff);
+  if (logsError) throw logsError;
+
+  // workout_log_sets has no user_id column of its own — RLS (bypassed here
+  // by the service-role client) scopes it via workout_logs.user_id instead,
+  // so the same join has to be done explicitly with !inner to filter by it.
+  const { data: setRows, error: setsError } = await ctx.admin
+    .from('workout_log_sets')
+    .select('reps, load_kg, logged_at, exercises ( name ), workout_logs!inner ( user_id )')
+    .eq('workout_logs.user_id', ctx.userId)
+    .eq('completed', true)
+    .eq('is_warmup', false)
+    .gte('logged_at', cutoff)
+    .order('logged_at', { ascending: true });
+  if (setsError) throw setsError;
+  const sets = (setRows ?? []) as unknown as LoggedSetRow[];
+
+  let totalVolumeKg = 0;
+  const bestE1rmByExercise = new Map<string, number>();
+  const prEvents: Array<{ exercise_name: string; reps: number; load_kg: number; estimated_1rm_kg: number; achieved_at: string }> = [];
+  const exerciseAgg = new Map<
+    string,
+    { sets: number; bestE1rm: number; latest: { reps: number; load_kg: number | null; logged_at: string } }
+  >();
+
+  for (const s of sets) {
+    if (s.load_kg != null) totalVolumeKg += s.load_kg * s.reps;
+    const name = s.exercises?.name ?? 'Unknown exercise';
+    const agg = exerciseAgg.get(name) ?? {
+      sets: 0,
+      bestE1rm: 0,
+      latest: { reps: s.reps, load_kg: s.load_kg, logged_at: s.logged_at },
+    };
+    agg.sets += 1;
+    agg.latest = { reps: s.reps, load_kg: s.load_kg, logged_at: s.logged_at };
+    if (s.load_kg != null && s.load_kg > 0) {
+      const e1rm = estimateOneRepMax(s.load_kg, s.reps);
+      if (e1rm > agg.bestE1rm) agg.bestE1rm = e1rm;
+      const priorBest = bestE1rmByExercise.get(name) ?? 0;
+      if (e1rm > priorBest) {
+        bestE1rmByExercise.set(name, e1rm);
+        prEvents.push({
+          exercise_name: name,
+          reps: s.reps,
+          load_kg: s.load_kg,
+          estimated_1rm_kg: Math.round(e1rm * 10) / 10,
+          achieved_at: s.logged_at,
+        });
+      }
+    }
+    exerciseAgg.set(name, agg);
+  }
+
+  const exerciseSummary = [...exerciseAgg.entries()]
+    .filter(([name]) => !exerciseNameFilter || name.toLowerCase().includes(exerciseNameFilter))
+    .sort((a, b) => b[1].sets - a[1].sets)
+    .slice(0, exerciseNameFilter ? 1 : 8)
+    .map(([name, agg]) => ({
+      exercise_name: name,
+      sets_logged: agg.sets,
+      best_estimated_1rm_kg: agg.bestE1rm > 0 ? Math.round(agg.bestE1rm * 10) / 10 : null,
+      most_recent_set: agg.latest,
+    }));
+
+  return {
+    range_days: days,
+    workouts_completed: (logs ?? []).length,
+    total_sets_logged: sets.length,
+    total_volume_kg: Math.round(totalVolumeKg * 10) / 10,
+    recent_prs: prEvents.slice(-5).reverse(),
+    exercise_summary: exerciseSummary,
+  };
+}
+
 function executeTool(name: string, input: Record<string, unknown>, ctx: ToolContext) {
   switch (name) {
     case 'get_day_plan':
@@ -410,6 +530,8 @@ function executeTool(name: string, input: Record<string, unknown>, ctx: ToolCont
       return searchWorkoutTemplates(input, ctx);
     case 'curate_workout_template':
       return curateWorkoutTemplate(input, ctx);
+    case 'get_workout_stats':
+      return getWorkoutStats(input, ctx);
     case 'schedule_workout_template':
       return scheduleWorkoutTemplate(input, ctx);
     default:
@@ -515,7 +637,7 @@ Deno.serve(async req => {
       whoopMetrics?.score_state === 'SCORED'
         ? `\n\nToday's Whoop data (${whoopMetrics.cycle_date}): recovery ${whoopMetrics.recovery_score}%, sleep performance ${whoopMetrics.sleep_performance_pct ?? 'unknown'}%, strain ${whoopMetrics.strain ?? 'unknown'}. Factor this into training and recovery advice - e.g. favor lighter intensity or extra rest on low-recovery days - and reference these numbers directly if the athlete asks how they're doing.`
         : '';
-    const systemPrompt = `You are SoSet's AI strength coach, chatting with ${profile?.display_name ?? 'an athlete'}.
+    const systemPrompt = `You are SetSocial's AI strength coach, chatting with ${profile?.display_name ?? 'an athlete'}.
 Athlete profile - goal: ${profile?.goal ?? 'unspecified'}, experience: ${profile?.experience_level ?? 'unspecified'}, training days/week: ${profile?.days_per_week ?? 'unspecified'}, injuries/limitations: ${profile?.injuries_notes || 'none reported'}.
 Answer training, recovery, and nutrition questions concisely and encouragingly. Keep replies short (a few sentences unless the question needs more). Flag when something warrants seeing a doctor or physical therapist instead of guessing.
 
@@ -527,7 +649,8 @@ You can take real actions on the athlete's schedule using the tools available to
 - scheduled_workouts has no limit of one per day - if get_day_plan returns more than one for the date and it's not clear which the athlete means, ask before removing anything rather than guessing.
 - If get_day_plan comes back with nothing for a date, say so rather than inventing a workout that isn't there.
 - To add a themed or one-off workout (e.g. "shoulder day"), first call search_workout_templates. Only call curate_workout_template if nothing suitable already exists. A successful curate_workout_template must always be followed by schedule_workout_template - creating a template alone does not put it on the athlete's calendar.
-- Always state plainly, in your reply, exactly what you removed or created and scheduled (name + date). There is no undo, so your reply is the athlete's only confirmation of what happened.${whoopSection}`;
+- Always state plainly, in your reply, exactly what you removed or created and scheduled (name + date). There is no undo, so your reply is the athlete's only confirmation of what happened.
+- You DO have access to the athlete's actual logged training history - call get_workout_stats whenever they ask about their stats, progress, volume, PRs, or how a specific lift is trending. Never say you don't have access to their stats or make numbers up - call the tool and report exactly what it returns, and use it to ground any recommendation in what they've actually been doing.${whoopSection}`;
 
     const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
     const topic = `chat-${conversationId}`;

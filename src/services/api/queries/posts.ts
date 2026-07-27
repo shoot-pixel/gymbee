@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import RNFS from 'react-native-fs';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../supabaseClient';
-import { fetchFriendIds, fetchPublicProfiles } from './community';
+import { fetchFriendIds, fetchPublicProfiles, type PublicProfile } from './community';
 import type { Database, PostVisibility } from '../../../types/database';
 
 export type Post = Database['public']['Tables']['posts']['Row'];
@@ -11,13 +11,14 @@ export type FriendPost = Post & { displayName: string | null; avatarUrl: string 
 type PhotoInput = { uri: string; contentType: string };
 
 type CreatePhotoPostParams =
-  | { mode: 'progress'; visibility: PostVisibility; caption: string | null; photo: PhotoInput }
+  | { mode: 'progress'; visibility: PostVisibility; caption: string | null; photo: PhotoInput; taggedUserIds?: string[] }
   | {
       mode: 'before_after';
       visibility: PostVisibility;
       caption: string | null;
       beforePhoto: PhotoInput;
       afterPhoto: PhotoInput;
+      taggedUserIds?: string[];
     };
 
 /**
@@ -48,6 +49,18 @@ async function uploadPostPhoto(userId: string, visibility: PostVisibility, photo
   return path;
 }
 
+/** Tags are best-effort: a failure here shouldn't undo an otherwise-successful
+ * post (the photo's already uploaded and the row already exists) — it just
+ * means the post goes out untagged, same as if the athlete had skipped
+ * tagging in the first place. */
+async function insertPostTags(postId: string, taggedUserIds: string[] | undefined): Promise<void> {
+  if (!taggedUserIds || taggedUserIds.length === 0) return;
+  const { error } = await supabase
+    .from('post_tags')
+    .insert(taggedUserIds.map(taggedUserId => ({ post_id: postId, tagged_user_id: taggedUserId })));
+  if (error) console.error('Could not tag one or more people on this post', error);
+}
+
 export function useCreatePhotoPost(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -56,14 +69,19 @@ export function useCreatePhotoPost(userId: string | null) {
 
       if (params.mode === 'progress') {
         const photoPath = await uploadPostPhoto(userId, params.visibility, params.photo);
-        const { error } = await supabase.from('posts').insert({
-          user_id: userId,
-          post_type: 'progress_photo',
-          visibility: params.visibility,
-          caption: params.caption,
-          photo_path: photoPath,
-        });
+        const { data, error } = await supabase
+          .from('posts')
+          .insert({
+            user_id: userId,
+            post_type: 'progress_photo',
+            visibility: params.visibility,
+            caption: params.caption,
+            photo_path: photoPath,
+          })
+          .select('id')
+          .single();
         if (error) throw error;
+        await insertPostTags(data.id, params.taggedUserIds);
         return;
       }
 
@@ -71,15 +89,20 @@ export function useCreatePhotoPost(userId: string | null) {
         uploadPostPhoto(userId, params.visibility, params.beforePhoto),
         uploadPostPhoto(userId, params.visibility, params.afterPhoto),
       ]);
-      const { error } = await supabase.from('posts').insert({
-        user_id: userId,
-        post_type: 'before_after_photo',
-        visibility: params.visibility,
-        caption: params.caption,
-        before_photo_path: beforePhotoPath,
-        after_photo_path: afterPhotoPath,
-      });
+      const { data, error } = await supabase
+        .from('posts')
+        .insert({
+          user_id: userId,
+          post_type: 'before_after_photo',
+          visibility: params.visibility,
+          caption: params.caption,
+          before_photo_path: beforePhotoPath,
+          after_photo_path: afterPhotoPath,
+        })
+        .select('id')
+        .single();
       if (error) throw error;
+      await insertPostTags(data.id, params.taggedUserIds);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['posts', userId] });
@@ -116,7 +139,7 @@ export function useUserPosts(userId: string | null) {
 const FRIENDS_POSTS_LIMIT = 60;
 
 /** No pagination yet — same scope-limit call feed.ts's FEED_LIMIT made, just posts-only now. */
-async function fetchFriendsPosts(userId: string): Promise<FriendPost[]> {
+export async function fetchFriendsPosts(userId: string): Promise<FriendPost[]> {
   const friendIds = await fetchFriendIds(userId);
   if (friendIds.length === 0) return [];
 
@@ -250,6 +273,24 @@ export function usePost(postId: string | null) {
   return useQuery({
     queryKey: ['post', postId],
     queryFn: () => fetchPost(postId as string),
+    enabled: postId != null,
+  });
+}
+
+export type TaggedProfile = PublicProfile;
+
+/** Tag rows inherit `posts`' own RLS (see 0039_post_tags.sql), so this never
+ * needs client-side visibility filtering either — same reasoning as fetchUserPosts. */
+async function fetchPostTags(postId: string): Promise<TaggedProfile[]> {
+  const { data, error } = await supabase.from('post_tags').select('tagged_user_id').eq('post_id', postId);
+  if (error) throw error;
+  return fetchPublicProfiles(data.map(row => row.tagged_user_id));
+}
+
+export function usePostTags(postId: string | null) {
+  return useQuery({
+    queryKey: ['postTags', postId],
+    queryFn: () => fetchPostTags(postId as string),
     enabled: postId != null,
   });
 }

@@ -84,6 +84,12 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        // Substitutes AndroidManifest.xml's usesCleartextTraffic="${usesCleartextTraffic}"
+        // placeholder — unresolved, the manifest merger fails the build outright.
+        // "false" matches this app's actual behavior (Supabase/API calls are all
+        // HTTPS; NSAppTransportSecurity on iOS is equally locked down aside from
+        // local networking for dev).
+        manifestPlaceholders = [usesCleartextTraffic: "false"]
     }
     signingConfigs {
         debug {

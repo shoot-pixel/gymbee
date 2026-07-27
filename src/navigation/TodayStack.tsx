@@ -5,6 +5,7 @@ import { TodayScreen } from '../screens/home/TodayScreen';
 import { ProgramDetailScreen } from '../screens/programs/ProgramDetailScreen';
 import { DayDetailScreen } from '../screens/programs/DayDetailScreen';
 import { ExerciseDetailScreen } from '../screens/exercises/ExerciseDetailScreen';
+import { TrainingDayDetailScreen } from '../screens/programs/TrainingDayDetailScreen';
 
 const Stack = createNativeStackNavigator<TodayStackParamList>();
 
@@ -15,6 +16,7 @@ export function TodayStack() {
       <Stack.Screen name="ProgramDetail" component={ProgramDetailScreen} />
       <Stack.Screen name="DayDetail" component={DayDetailScreen} />
       <Stack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
+      <Stack.Screen name="TrainingDayDetail" component={TrainingDayDetailScreen} />
     </Stack.Navigator>
   );
 }

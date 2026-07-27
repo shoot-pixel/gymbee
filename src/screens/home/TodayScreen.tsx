@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { addDays, endOfWeek, format, isFuture, isSameDay, isToday as isDateToday, startOfWeek } from 'date-fns';
+import { addDays, endOfWeek, format, isFuture, isSameDay, isSameWeek, isToday as isDateToday, startOfWeek } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, ProgressRing, ListRow, LoadingState, Icon, Avatar, IconButton, StatTile, type IconName } from '../../components/core';
+import { Text, Card, Button, ProgressRing, ListRow, LoadingState, Icon, Avatar, IconButton, type IconName } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
   useActiveProgramTree,
@@ -14,7 +14,34 @@ import {
 } from '../../services/api/queries/programs';
 import { useProfile } from '../../services/api/queries/profiles';
 import { useWorkoutLogsInRange } from '../../services/api/queries/workoutLogs';
-import { useScheduledWorkouts } from '../../services/api/queries/scheduledWorkouts';
+import {
+  useScheduledWorkouts,
+  useStartTemplateToday,
+  TODAY_RANGE_PAST_DAYS,
+  TODAY_RANGE_FUTURE_DAYS,
+} from '../../services/api/queries/scheduledWorkouts';
+import {
+  useWeeklySchedule,
+  getWeeklyScheduleForDate,
+  type WeeklyScheduleEntry,
+} from '../../services/api/queries/weeklySchedule';
+
+/** This screen doesn't know about Cardio Day yet (see dayPlan.ts for the
+ * screen that does) — a cardio weekly_schedule entry has no
+ * workout_template_id/workout_templates to show here, so it's treated the
+ * same as no entry at all rather than crashing on the now-nullable join.
+ * Narrows workout_template_id/workout_templates to non-null, which the DB's
+ * weekly_schedule_template_required_for_training check constraint
+ * guarantees for any day_type='training' row. */
+type TrainingWeeklyEntry = WeeklyScheduleEntry & {
+  workout_template_id: string;
+  workout_templates: NonNullable<WeeklyScheduleEntry['workout_templates']>;
+};
+function asTrainingEntry(entry: WeeklyScheduleEntry | null): TrainingWeeklyEntry | null {
+  if (!entry || entry.day_type === 'cardio' || !entry.workout_templates) return null;
+  return entry as TrainingWeeklyEntry;
+}
+import { useWorkoutTemplate } from '../../services/api/queries/workoutTemplates';
 import { useLoggedSets, computePrEvents } from '../../services/api/queries/progress';
 import {
   useTrainingPatterns,
@@ -22,15 +49,17 @@ import {
   useDismissTrainingPattern,
 } from '../../services/api/queries/coachingMemory';
 import { useReadinessContext } from '../../services/api/queries/coaching';
+import { useIntegrationConnections } from '../../services/api/queries/integrations';
+import { useSyncWhoopMetrics } from '../../services/api/queries/whoop';
 import { coachingEngine } from '../../services/coaching';
 import type { TodayPlanContext, TrainingPatternType } from '../../services/coaching';
 import { computeStreak } from '../../utils/streak';
 import { estimateWorkoutMinutes } from '../../utils/workoutTiming';
 import { navigateToStartWorkout } from '../../navigation/startWorkoutFlow';
-import { useUnitPreference } from '../../hooks/useUnitPreference';
-import { formatVolume, unitLabel } from '../../utils/units';
 import { WeekTimeline } from './WeekTimeline';
 import { AiSummaryCard } from './AiSummaryCard';
+import { CompletedWorkoutCard } from './CompletedWorkoutCard';
+import { CompletedCardioCard } from './CompletedCardioCard';
 import { FriendsActivitySection } from './FriendsActivitySection';
 import { useFriendsPosts, useSignedPhotoUrls, postPhotoPaths, type FriendPost } from '../../services/api/queries/posts';
 import { trackEvent } from '../../services/analytics/analytics';
@@ -48,8 +77,8 @@ const PATTERN_ICON: Record<TrainingPatternType, IconName> = {
 
 const MAX_INSIGHTS_SHOWN = 2;
 
-const RANGE_PAST_DAYS = 91; // ~13 weeks, matches WeekTimeline's paging window
-const RANGE_FUTURE_DAYS = 21;
+const RANGE_PAST_DAYS = TODAY_RANGE_PAST_DAYS;
+const RANGE_FUTURE_DAYS = TODAY_RANGE_FUTURE_DAYS;
 
 function dateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd');
@@ -78,7 +107,6 @@ export function TodayScreen() {
   // bubbles up to find it since 'Profile' isn't a route in this navigator.
   const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const todayNavigation = useNavigation<NativeStackNavigationProp<TodayStackParamList>>();
-  const unitPref = useUnitPreference();
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
 
@@ -94,7 +122,11 @@ export function TodayScreen() {
     from: rangeFrom,
     to: rangeTo,
   });
+  const { data: weeklySchedule, refetch: refetchWeeklySchedule } = useWeeklySchedule(userId);
   const { data: loggedSets, refetch: refetchLoggedSets } = useLoggedSets(userId);
+  const { data: integrationConnections } = useIntegrationConnections(userId);
+  const isWhoopConnected = integrationConnections?.some(c => c.provider === 'whoop' && c.access_token != null) ?? false;
+  const syncWhoopMetrics = useSyncWhoopMetrics();
   const readinessContext = useReadinessContext(userId);
   const readiness = useMemo(
     () => (readinessContext.isLoading ? null : coachingEngine.evaluateReadiness(readinessContext.inputs)),
@@ -161,17 +193,28 @@ export function TodayScreen() {
     () => new Set((workoutLogs ?? []).map(log => dateKey(new Date(log.completedAt)))),
     [workoutLogs],
   );
+  const cardioDates = useMemo(
+    () => new Set((workoutLogs ?? []).filter(log => log.cardio != null).map(log => dateKey(new Date(log.completedAt)))),
+    [workoutLogs],
+  );
   const scheduledByDate = useMemo(() => {
     const map = new Map<string, NonNullable<typeof scheduledWorkouts>[number]>();
     for (const sw of scheduledWorkouts ?? []) map.set(sw.scheduled_date, sw);
     return map;
   }, [scheduledWorkouts]);
+  const weeklyScheduleDaysOfWeek = useMemo(
+    () => new Set((weeklySchedule ?? []).map(entry => entry.day_of_week)),
+    [weeklySchedule],
+  );
   const prEvents = useMemo(() => (loggedSets ? computePrEvents(loggedSets) : []), [loggedSets]);
   const prDates = useMemo(
     () => new Set(prEvents.map(e => dateKey(new Date(e.loggedAt)))),
     [prEvents],
   );
-  const streak = useMemo(() => computeStreak(program, completedDates, today), [program, completedDates, today]);
+  const streak = useMemo(
+    () => computeStreak(program, completedDates, today, weeklySchedule),
+    [program, completedDates, today, weeklySchedule],
+  );
 
   const weekStart = startOfWeek(today, { weekStartsOn: 0 });
   const weekEnd = endOfWeek(today, { weekStartsOn: 0 });
@@ -189,10 +232,17 @@ export function TodayScreen() {
 
   const resolvedSelected = getProgramDayForDate(program, selectedDate);
   const scheduledSelected = scheduledByDate.get(dateKey(selectedDate));
+  const weeklyScheduleSelected = asTrainingEntry(getWeeklyScheduleForDate(weeklySchedule, selectedDate));
+  const { data: selectedWeeklyTemplate } = useWorkoutTemplate(weeklyScheduleSelected?.workout_template_id);
+  const startTemplateToday = useStartTemplateToday();
   const isSelectedCompleted = completedDates.has(dateKey(selectedDate));
   const isSelectedToday = isDateToday(selectedDate);
   const isSelectedFuture = isFuture(selectedDate) && !isSelectedToday;
   const isSelectedPr = prDates.has(dateKey(selectedDate));
+  const selectedWorkoutLogIds = useMemo(
+    () => (workoutLogs ?? []).filter(log => dateKey(new Date(log.completedAt)) === dateKey(selectedDate)).map(log => log.id),
+    [workoutLogs, selectedDate],
+  );
 
   // Real summary for the completed-day card below — sourced from the same
   // workoutLogs/loggedSets queries already fetched on this screen, filtered
@@ -222,17 +272,45 @@ export function TodayScreen() {
     };
   }, [isSelectedCompleted, selectedDate, workoutLogs, loggedSets]);
 
+  // A day's completed-card shows cardio stats only when every log completed
+  // that day came from LogCardioScreen — a mixed cardio+strength day falls
+  // back to CompletedWorkoutCard rather than trying to merge both kinds of
+  // summary into one card.
+  const selectedCardioSummary = useMemo(() => {
+    if (!isSelectedCompleted) return null;
+    const dayKey = dateKey(selectedDate);
+    const logsForDay = (workoutLogs ?? []).filter(log => dateKey(new Date(log.completedAt)) === dayKey);
+    const cardioEntries = logsForDay.map(log => log.cardio).filter((c): c is NonNullable<typeof c> => c != null);
+    if (cardioEntries.length === 0 || cardioEntries.length !== logsForDay.length) return null;
+
+    const hasDistance = cardioEntries.some(c => c.distanceKm != null);
+    return {
+      activityName: cardioEntries.length === 1 ? cardioEntries[0].activityName : 'Cardio',
+      durationMinutes: cardioEntries.reduce((sum, c) => sum + c.durationMinutes, 0),
+      distanceKm: hasDistance ? cardioEntries.reduce((sum, c) => sum + (c.distanceKm ?? 0), 0) : null,
+      effort: cardioEntries.length === 1 ? cardioEntries[0].effort : null,
+      estimatedCalories: cardioEntries.reduce((sum, c) => sum + c.estimatedCalories, 0),
+    };
+  }, [isSelectedCompleted, selectedDate, workoutLogs]);
+
   const firstName = profile?.display_name?.trim().split(/\s+/)[0];
 
   const yesterday = addDays(today, -1);
   const resolvedYesterday = getProgramDayForDate(program, yesterday);
+  const weeklyScheduleYesterday = asTrainingEntry(getWeeklyScheduleForDate(weeklySchedule, yesterday));
   const missedYesterday =
-    resolvedYesterday != null && !resolvedYesterday.day.is_rest_day && !completedDates.has(dateKey(yesterday));
+    ((resolvedYesterday != null && !resolvedYesterday.day.is_rest_day) || weeklyScheduleYesterday != null) &&
+    !completedDates.has(dateKey(yesterday));
+  const completedYesterday = completedDates.has(dateKey(yesterday));
 
-  const recentPr = [...prEvents].reverse().find(e => {
-    const days = Math.floor((today.getTime() - new Date(e.loggedAt).getTime()) / 86_400_000);
-    return days >= 0 && days <= 6;
-  });
+  const recentPr = [...prEvents]
+    .reverse()
+    .map(e => ({
+      ...e,
+      daysAgo: Math.floor((today.getTime() - new Date(e.loggedAt).getTime()) / 86_400_000),
+      sameCalendarWeek: isSameWeek(new Date(e.loggedAt), today, { weekStartsOn: 0 }),
+    }))
+    .find(e => e.daysAgo >= 0 && e.daysAgo <= 6);
 
   const resolvedToday = getProgramDayForDate(program, today);
   const isDeloadWeek = resolvedToday?.week.deload ?? false;
@@ -247,8 +325,23 @@ export function TodayScreen() {
 
   const isTodayCompleted = completedDates.has(dateKey(today));
   const scheduledToday = scheduledByDate.get(dateKey(today));
+  const weeklyScheduleToday = asTrainingEntry(getWeeklyScheduleForDate(weeklySchedule, today));
   const todayPlan = useMemo<TodayPlanContext>(() => {
-    if (isTodayCompleted) return { kind: 'completed', dayTitle: resolvedToday?.day.title ?? scheduledToday?.name ?? null };
+    if (isTodayCompleted) {
+      return {
+        kind: 'completed',
+        dayTitle: scheduledToday?.name ?? weeklyScheduleToday?.workout_templates.name ?? resolvedToday?.day.title ?? null,
+      };
+    }
+    if (scheduledToday) return { kind: 'scheduled', name: scheduledToday.name };
+    if (weeklyScheduleToday) {
+      return {
+        kind: 'training_day',
+        dayTitle: weeklyScheduleToday.workout_templates.name,
+        exerciseCount: weeklyScheduleToday.workout_templates.workout_template_exercises.length,
+        isDeload: false,
+      };
+    }
     if (resolvedToday?.day.is_rest_day) return { kind: 'rest_day' };
     if (resolvedToday) {
       return {
@@ -258,40 +351,76 @@ export function TodayScreen() {
         isDeload: isDeloadWeek,
       };
     }
-    if (scheduledToday) return { kind: 'scheduled', name: scheduledToday.name };
     return { kind: 'none' };
-  }, [isTodayCompleted, resolvedToday, scheduledToday, isDeloadWeek]);
+  }, [isTodayCompleted, resolvedToday, scheduledToday, weeklyScheduleToday, isDeloadWeek]);
 
   const todayFocusSummary = useMemo(
     () =>
       coachingEngine.generateTodayFocusSummary({
         readiness,
         plan: todayPlan,
-        recentPr: recentPr ? { exerciseName: recentPr.exerciseName, loadKg: recentPr.loadKg, reps: recentPr.reps } : null,
+        recentPr: recentPr
+          ? {
+              exerciseName: recentPr.exerciseName,
+              loadKg: recentPr.loadKg,
+              reps: recentPr.reps,
+              daysAgo: recentPr.daysAgo,
+              sameCalendarWeek: recentPr.sameCalendarWeek,
+            }
+          : null,
         missedYesterday,
+        completedYesterday,
         isMilestoneWeek,
         currentWeekNumber: currentWeekNumber ?? null,
         weeksCount,
         streak,
       }),
-    [readiness, todayPlan, recentPr, missedYesterday, isMilestoneWeek, currentWeekNumber, weeksCount, streak],
+    [
+      readiness,
+      todayPlan,
+      recentPr,
+      missedYesterday,
+      completedYesterday,
+      isMilestoneWeek,
+      currentWeekNumber,
+      weeksCount,
+      streak,
+    ],
   );
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    // Fire-and-forget, like WhoopMetricsSection's own focus-triggered sync —
+    // a slow or failed Whoop round-trip shouldn't hold up the rest of the
+    // pull-to-refresh. Its onSuccess invalidates the whoopMetrics query,
+    // which readinessContext (and today's AI focus summary) reads from.
+    if (isWhoopConnected && userId) {
+      syncWhoopMetrics.mutate(userId);
+    }
     try {
       await Promise.all([
         refetchProgram(),
         refetchWorkoutLogs(),
         refetchScheduledWorkouts(),
+        refetchWeeklySchedule(),
         refetchLoggedSets(),
         refetchFriendsPosts(),
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [refetchProgram, refetchWorkoutLogs, refetchScheduledWorkouts, refetchLoggedSets, refetchFriendsPosts]);
+  }, [
+    refetchProgram,
+    refetchWorkoutLogs,
+    refetchScheduledWorkouts,
+    refetchWeeklySchedule,
+    refetchLoggedSets,
+    refetchFriendsPosts,
+    isWhoopConnected,
+    userId,
+    syncWhoopMetrics,
+  ]);
 
   const goToLogWorkout = (programDayId?: string, scheduledWorkoutId?: string) => {
     navigateToStartWorkout(rootNavigation, { programDayId, scheduledWorkoutId });
@@ -302,6 +431,20 @@ export function TodayScreen() {
       screen: 'ProgramsTab',
       params: { screen: 'ScheduledWorkoutDetail', params: { scheduledWorkoutId } },
     });
+  };
+
+  const goToTrainingDayDetail = (weeklyScheduleId: string, workoutTemplateId: string, dayOfWeek: number) => {
+    todayNavigation.navigate('TrainingDayDetail', { weeklyScheduleId, workoutTemplateId, dayOfWeek });
+  };
+
+  const onStartWeeklyTemplate = async () => {
+    if (!userId || !selectedWeeklyTemplate) return;
+    try {
+      const scheduled = await startTemplateToday.mutateAsync({ userId, template: selectedWeeklyTemplate });
+      goToLogWorkout(undefined, scheduled.id);
+    } catch (err) {
+      Alert.alert('Could not start workout', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   return (
@@ -333,6 +476,22 @@ export function TodayScreen() {
           band={todayFocusSummary.band}
           isRestDay={todayPlan.kind === 'rest_day'}
         />
+
+        {isLoading ? (
+          <LoadingState fill={false} />
+        ) : (
+          <WeekTimeline
+            program={program}
+            completedDates={completedDates}
+            cardioDates={cardioDates}
+            scheduledDates={new Set(scheduledByDate.keys())}
+            weeklyScheduleDaysOfWeek={weeklyScheduleDaysOfWeek}
+            prDates={prDates}
+            streak={streak}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+          />
+        )}
 
         {activePatterns.length > 0 ? (
           <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
@@ -385,81 +544,95 @@ export function TodayScreen() {
           </View>
         ) : null}
 
-        {isLoading ? (
-          <LoadingState fill={false} />
-        ) : !program ? (
-          <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.xl }}>
-            <ProgressRing progress={0} centerValue="0/0" label="sets today" />
-            <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
-              No active program yet. Complete onboarding to get an AI-generated plan.
-            </Text>
-            <Button label="Start Onboarding" onPress={() => {}} />
-          </Card>
-        ) : (
+        {isLoading ? null : (
           <>
-            <WeekTimeline
-              program={program}
-              completedDates={completedDates}
-              scheduledDates={new Set(scheduledByDate.keys())}
-              prDates={prDates}
-              streak={streak}
-              selectedDate={selectedDate}
-              onSelectDate={setSelectedDate}
-            />
-
-            {isSelectedCompleted ? (
-              <Card variant="elevated" style={{ gap: theme.spacing.md }}>
-                <View style={{ alignItems: 'center', gap: theme.spacing.sm }}>
-                  <Icon name="circleCheck" size="lg" color={theme.colors.accent.primary} />
-                  <Text variant="subtitle">
-                    {isSelectedToday ? "Today's workout is done" : `${format(selectedDate, 'EEEE')}'s workout is done`}
+            {isSelectedCompleted && selectedCardioSummary ? (
+              <CompletedCardioCard
+                selectedDate={selectedDate}
+                isSelectedToday={isSelectedToday}
+                summary={selectedCardioSummary}
+              />
+            ) : isSelectedCompleted ? (
+              <CompletedWorkoutCard
+                selectedDate={selectedDate}
+                isSelectedToday={isSelectedToday}
+                workoutLogIds={selectedWorkoutLogIds}
+                fallbackTitle={
+                  scheduledSelected?.name ?? weeklyScheduleSelected?.workout_templates.name ?? resolvedSelected?.day.title ?? null
+                }
+                isPr={isSelectedPr}
+                summary={selectedDaySummary}
+              />
+            ) : scheduledSelected ? (
+              <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
+                <View>
+                  <Text variant="label" color="secondary">
+                    SCHEDULED
                   </Text>
-                  <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
-                    {resolvedSelected?.day.title ?? scheduledSelected?.name ?? 'Nice work.'}
+                  <Text variant="title">{scheduledSelected.name}</Text>
+                </View>
+                {isSelectedToday ? (
+                  <Button label="Start Workout" onPress={() => goToLogWorkout(undefined, scheduledSelected.id)} />
+                ) : (
+                  <Button
+                    label="View Day"
+                    variant="secondary"
+                    onPress={() => goToScheduledDetail(scheduledSelected.id)}
+                  />
+                )}
+              </Card>
+            ) : weeklyScheduleSelected ? (
+              <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
+                <View>
+                  <Text variant="label" color="secondary">
+                    {format(selectedDate, 'EEEE').toUpperCase()} · EVERY WEEK
                   </Text>
-                  {isSelectedPr ? (
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: theme.spacing.xxs,
-                        backgroundColor: theme.colors.accent.subtle,
-                        borderRadius: theme.radii.pill,
-                        paddingHorizontal: theme.spacing.sm,
-                        paddingVertical: theme.spacing.xxs,
-                      }}
-                    >
-                      <Icon name="trophy" size="sm" color={theme.colors.accent.primary} />
-                      <Text variant="caption" style={{ color: theme.colors.accent.primary, fontWeight: '700' }}>
-                        New PR
-                      </Text>
-                    </View>
-                  ) : null}
+                  <Text variant="title">{weeklyScheduleSelected.workout_templates.name}</Text>
+                  <Text variant="caption" color="secondary">
+                    {weeklyScheduleSelected.workout_templates.workout_template_exercises.length} exercises
+                  </Text>
                 </View>
 
-                {selectedDaySummary ? (
-                  <View style={{ gap: theme.spacing.sm }}>
-                    <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-                      <View style={{ flex: 1 }}>
-                        <StatTile label="Duration" value={`${selectedDaySummary.durationMinutes} min`} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <StatTile label="Exercises" value={selectedDaySummary.exerciseCount} />
-                      </View>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-                      <View style={{ flex: 1 }}>
-                        <StatTile label="Sets" value={selectedDaySummary.totalSets} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <StatTile
-                          label="Volume"
-                          value={`${formatVolume(selectedDaySummary.totalVolumeKg, unitPref)} ${unitLabel(unitPref)}`}
-                        />
-                      </View>
-                    </View>
+                {selectedWeeklyTemplate ? (
+                  <View>
+                    {selectedWeeklyTemplate.workout_template_exercises.slice(0, 3).map((te, index) => (
+                      <ListRow
+                        key={te.id}
+                        title={te.exercises.name}
+                        trailing={
+                          <Text variant="body" color="secondary">
+                            {te.target_sets} × {te.target_reps_min}
+                            {te.target_reps_max && te.target_reps_max !== te.target_reps_min
+                              ? `-${te.target_reps_max}`
+                              : ''}
+                          </Text>
+                        }
+                        style={index > 0 ? { borderTopWidth: 1, borderTopColor: theme.colors.border.subtle } : undefined}
+                      />
+                    ))}
+                    {selectedWeeklyTemplate.workout_template_exercises.length > 3 ? (
+                      <Text variant="caption" color="tertiary" style={{ paddingTop: theme.spacing.xs }}>
+                        + {selectedWeeklyTemplate.workout_template_exercises.length - 3} more
+                      </Text>
+                    ) : null}
                   </View>
                 ) : null}
+
+                {isSelectedToday ? (
+                  <Button label="Start Workout" onPress={onStartWeeklyTemplate} loading={startTemplateToday.isPending} />
+                ) : (
+                  <Button
+                    label="View Day"
+                    variant="secondary"
+                    onPress={() =>
+                      goToTrainingDayDetail(
+                        weeklyScheduleSelected.id,
+                        weeklyScheduleSelected.workout_template_id,
+                        weeklyScheduleSelected.day_of_week,
+                      )
+                    }
+                  />
+                )}
               </Card>
             ) : resolvedSelected?.day.is_rest_day ? (
               <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl }}>
@@ -518,24 +691,6 @@ export function TodayScreen() {
                   />
                 )}
               </Card>
-            ) : scheduledSelected ? (
-              <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
-                <View>
-                  <Text variant="label" color="secondary">
-                    SCHEDULED
-                  </Text>
-                  <Text variant="title">{scheduledSelected.name}</Text>
-                </View>
-                {isSelectedToday ? (
-                  <Button label="Start Workout" onPress={() => goToLogWorkout(undefined, scheduledSelected.id)} />
-                ) : (
-                  <Button
-                    label="View Day"
-                    variant="secondary"
-                    onPress={() => goToScheduledDetail(scheduledSelected.id)}
-                  />
-                )}
-              </Card>
             ) : (
               <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl }}>
                 <Text variant="subtitle">
@@ -548,6 +703,24 @@ export function TodayScreen() {
                 </Text>
               </Card>
             )}
+
+            {!program ? (
+              <Card
+                variant="elevated"
+                style={{ alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.xl }}
+              >
+                <ProgressRing progress={0} centerValue="0/0" label="sets today" />
+                <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
+                  Set up a training day, or generate a program with AI, from the Training tab.
+                </Text>
+                <Button
+                  label="Go to Training"
+                  onPress={() =>
+                    rootNavigation.navigate('MainTabs', { screen: 'ProgramsTab', params: { screen: 'Calendar' } })
+                  }
+                />
+              </Card>
+            ) : null}
 
             <FriendsActivitySection
               posts={friendsActivityPreview}

@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
 
 async function fetchOrCreateConversation(userId: string) {
@@ -48,4 +48,22 @@ export function useMessages(conversationId: string | null) {
 export function useInvalidateMessages(conversationId: string | null) {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: ['chat_messages', conversationId] });
+}
+
+/** Empties the conversation rather than deleting+recreating it — there's
+ * exactly one chat_conversations row per user (see fetchOrCreateConversation),
+ * so wiping its messages and keeping the row is simpler than deleting it and
+ * relying on the next send to implicitly create a fresh one. */
+export function useClearChat(conversationId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!conversationId) throw new Error('No conversation to clear.');
+      const { error } = await supabase.from('chat_messages').delete().eq('conversation_id', conversationId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chat_messages', conversationId] });
+    },
+  });
 }

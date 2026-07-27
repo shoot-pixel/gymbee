@@ -8,6 +8,7 @@
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 export type TrainingGoal = 'strength' | 'hypertrophy' | 'endurance' | 'general_fitness';
 export type UnitPreference = 'kg' | 'lb';
+export type Sex = 'male' | 'female';
 export type ExerciseCategory =
   | 'push'
   | 'pull'
@@ -31,6 +32,8 @@ export type DemoMediaType = 'video' | 'image';
  * imports from here, not the other way around. */
 export type ExerciseDefaultMetric = 'weight_lb' | 'weight_kg' | 'weight_pct' | 'reps' | 'time';
 export type ProgramSource = 'ai_generated' | 'manual' | 'template';
+export type DayType = 'training' | 'rest' | 'cardio';
+export type CardioEffort = 'easy' | 'moderate' | 'hard';
 export type ProgramStatus = 'active' | 'completed' | 'archived';
 export type ChatRole = 'user' | 'assistant';
 export type AdaptationType =
@@ -91,7 +94,8 @@ export type TrainingPatternStatus = 'active' | 'dismissed' | 'resolved';
 export type FriendRequestStatus = 'pending' | 'accepted' | 'declined';
 export type PostType = 'progress_photo' | 'before_after_photo';
 export type PostVisibility = 'private' | 'friends';
-export type IntegrationProvider = 'whoop';
+export type DmConversationStatus = 'pending' | 'accepted' | 'declined';
+export type IntegrationProvider = 'whoop' | 'spotify';
 
 export interface Database {
   public: {
@@ -104,6 +108,9 @@ export interface Database {
           avatar_url: string | null;
           handle: string | null;
           bio: string | null;
+          birth_date: string | null;
+          height_cm: number | null;
+          sex: Sex | null;
           experience_level: ExperienceLevel | null;
           goal: TrainingGoal | null;
           days_per_week: number | null;
@@ -113,6 +120,17 @@ export interface Database {
           onboarding_completed: boolean;
           hide_stats_from_friends: boolean;
           hide_photos_from_friends: boolean;
+          /** Instagram-style private-account toggle — true (the default)
+           * means adding this athlete as a friend requires their approval;
+           * false means a friend_requests row addressed to them is
+           * auto-accepted server-side (see the trigger in
+           * 0036_profile_visibility.sql) instead of staying pending. */
+          is_private: boolean;
+          /** Last time this athlete opened Messages / their own profile —
+           * the cutoff a new message or a new like/comment on their posts
+           * is compared against to decide whether it's still "unseen". */
+          messages_seen_at: string;
+          activity_seen_at: string;
           created_at: string;
           updated_at: string;
         };
@@ -123,6 +141,9 @@ export interface Database {
           avatar_url?: string | null;
           handle?: string | null;
           bio?: string | null;
+          birth_date?: string | null;
+          height_cm?: number | null;
+          sex?: Sex | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
           days_per_week?: number | null;
@@ -132,12 +153,18 @@ export interface Database {
           onboarding_completed?: boolean;
           hide_stats_from_friends?: boolean;
           hide_photos_from_friends?: boolean;
+          is_private?: boolean;
+          messages_seen_at?: string;
+          activity_seen_at?: string;
         };
         Update: {
           display_name?: string | null;
           avatar_url?: string | null;
           handle?: string | null;
           bio?: string | null;
+          birth_date?: string | null;
+          height_cm?: number | null;
+          sex?: Sex | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
           days_per_week?: number | null;
@@ -147,6 +174,9 @@ export interface Database {
           onboarding_completed?: boolean;
           hide_stats_from_friends?: boolean;
           hide_photos_from_friends?: boolean;
+          is_private?: boolean;
+          messages_seen_at?: string;
+          activity_seen_at?: string;
         };
         Relationships: [];
       };
@@ -267,6 +297,7 @@ export interface Database {
           day_of_week: number | null;
           title: string | null;
           is_rest_day: boolean;
+          day_type: DayType;
         };
         Insert: {
           program_week_id: string;
@@ -274,12 +305,14 @@ export interface Database {
           day_of_week?: number | null;
           title?: string | null;
           is_rest_day?: boolean;
+          day_type?: DayType;
         };
         Update: {
           day_number?: number;
           day_of_week?: number | null;
           title?: string | null;
           is_rest_day?: boolean;
+          day_type?: DayType;
         };
         Relationships: [];
       };
@@ -380,6 +413,27 @@ export interface Database {
           target_rpe?: number | null;
           rest_seconds?: number | null;
           notes?: string | null;
+        };
+        Relationships: [];
+      };
+      weekly_schedule: {
+        Row: {
+          id: string;
+          user_id: string;
+          day_of_week: number;
+          workout_template_id: string | null;
+          day_type: DayType;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          day_of_week: number;
+          workout_template_id?: string | null;
+          day_type?: DayType;
+        };
+        Update: {
+          workout_template_id?: string | null;
+          day_type?: DayType;
         };
         Relationships: [];
       };
@@ -486,6 +540,7 @@ export interface Database {
           reps: number;
           load_kg: number | null;
           rpe: number | null;
+          duration_seconds: number | null;
           is_warmup: boolean;
           completed: boolean;
           logged_at: string;
@@ -497,6 +552,7 @@ export interface Database {
           reps: number;
           load_kg?: number | null;
           rpe?: number | null;
+          duration_seconds?: number | null;
           is_warmup?: boolean;
           completed?: boolean;
         };
@@ -504,9 +560,40 @@ export interface Database {
           reps?: number;
           load_kg?: number | null;
           rpe?: number | null;
+          duration_seconds?: number | null;
           is_warmup?: boolean;
           completed?: boolean;
         };
+        Relationships: [];
+      };
+      cardio_log_entries: {
+        Row: {
+          id: string;
+          user_id: string;
+          workout_log_id: string;
+          exercise_id: string | null;
+          custom_activity_name: string | null;
+          duration_minutes: number;
+          incline_pct: number | null;
+          speed_kmh: number | null;
+          distance_km: number | null;
+          effort: CardioEffort | null;
+          estimated_calories: number;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          workout_log_id: string;
+          exercise_id?: string | null;
+          custom_activity_name?: string | null;
+          duration_minutes: number;
+          incline_pct?: number | null;
+          speed_kmh?: number | null;
+          distance_km?: number | null;
+          effort?: CardioEffort | null;
+          estimated_calories: number;
+        };
+        Update: never;
         Relationships: [];
       };
       body_metrics: {
@@ -606,6 +693,24 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      gym_checkins: {
+        Row: {
+          user_id: string;
+          latitude: number;
+          longitude: number;
+          checked_in_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          user_id: string;
+          latitude: number;
+          longitude: number;
+          checked_in_at?: string;
+          expires_at: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
       posts: {
         Row: {
           id: string;
@@ -648,6 +753,89 @@ export interface Database {
           post_id: string;
           user_id: string;
           body: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      post_likes: {
+        Row: {
+          id: string;
+          post_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          post_id: string;
+          user_id: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      post_tags: {
+        Row: {
+          id: string;
+          post_id: string;
+          tagged_user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          post_id: string;
+          tagged_user_id: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      dm_conversations: {
+        Row: {
+          id: string;
+          requester_id: string;
+          recipient_id: string;
+          status: DmConversationStatus;
+          created_at: string;
+          last_message_at: string;
+          /** Kept current by the dm_touch_conversation trigger — lets
+           * "do I have an unread message here" exclude threads whose last
+           * message was the caller's own, without a second query. */
+          last_message_sender_id: string | null;
+        };
+        Insert: {
+          requester_id: string;
+          recipient_id: string;
+          status?: DmConversationStatus;
+        };
+        Update: {
+          status?: DmConversationStatus;
+        };
+        Relationships: [];
+      };
+      dm_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          sender_id: string;
+          body: string | null;
+          photo_path: string | null;
+          created_at: string;
+        };
+        Insert: {
+          conversation_id: string;
+          sender_id: string;
+          body?: string | null;
+          photo_path?: string | null;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      dm_message_likes: {
+        Row: {
+          id: string;
+          message_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          message_id: string;
+          user_id: string;
         };
         Update: never;
         Relationships: [];
@@ -915,6 +1103,7 @@ export interface Database {
           bio: string | null;
           hide_stats_from_friends: boolean;
           hide_photos_from_friends: boolean;
+          is_private: boolean;
         };
         Relationships: [];
       };
@@ -938,6 +1127,12 @@ export interface Database {
         Relationships: [];
       };
     };
+    // Left as Record<string, never> rather than typing is_handle_taken (see
+    // migration 0033) here — populating Functions with a concrete shape
+    // breaks unrelated embedded-relationship inference on totally unrelated
+    // tables elsewhere in this file (a confirmed supabase-js/TS generic
+    // resolution quirk, not a real schema conflict). SignUpScreen types that
+    // one RPC call locally instead.
     Functions: Record<string, never>;
     Enums: {
       experience_level: ExperienceLevel;

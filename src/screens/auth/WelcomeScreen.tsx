@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button, SoSetLogo } from '../../components/core';
+import { Text, Button, SetSocialLogo } from '../../components/core';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
@@ -20,14 +20,11 @@ export function WelcomeScreen({ navigation }: Props) {
       }}
     >
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: theme.spacing.lg }}>
-        <SoSetLogo variant="horizontal" size={56} accessibilityLabel="SoSet" />
+        <SetSocialLogo variant="horizontal" size={56} accessibilityLabel="SetSocial" />
         <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
-          <Text variant="body" style={{ fontWeight: '700' }}>
-            AI coaching.
-          </Text>{' '}
-          Real progress.{' '}
+          Sets made{' '}
           <Text variant="body" style={{ color: theme.colors.accent.blue, fontWeight: '700' }}>
-            Together.
+            Social
           </Text>
         </Text>
       </View>

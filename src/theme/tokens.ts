@@ -1,5 +1,5 @@
 /**
- * SoSet design tokens — dark, premium athletic-tech system (green-to-teal
+ * SetSocial design tokens — dark, premium athletic-tech system (green-to-teal
  * primary accent, blue/purple/orange secondary accents). Single source of
  * truth for color/spacing/radius/shadow/typography. Every screen and
  * component should read from here rather than hardcoding values.
@@ -130,6 +130,7 @@ export const typography = {
   numeralXl: { fontSize: 56, fontWeight: '900' as const, letterSpacing: -1, lineHeight: 58 },
   numeralLg: { fontSize: 36, fontWeight: '900' as const, letterSpacing: -0.5, lineHeight: 40 },
   numeralMd: { fontSize: 24, fontWeight: '800' as const, letterSpacing: -0.25, lineHeight: 28 },
+  numeralSm: { fontSize: 18, fontWeight: '700' as const, letterSpacing: -0.1, lineHeight: 22 },
   title: { fontSize: 20, fontWeight: '700' as const, letterSpacing: -0.2, lineHeight: 26 },
   subtitle: { fontSize: 16, fontWeight: '600' as const, lineHeight: 22 },
   body: { fontSize: 15, fontWeight: '400' as const, lineHeight: 21 },

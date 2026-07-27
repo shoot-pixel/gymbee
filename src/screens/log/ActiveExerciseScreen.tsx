@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View, Alert } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { differenceInDays } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card, Button, TextField, Icon, ListRow, BottomSheet, LoadingState } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
@@ -20,23 +21,26 @@ import {
 } from '../../services/api/queries/coaching';
 import { useExercises } from '../../services/api/queries/exercises';
 import { useProfile, useUpdateProfile } from '../../services/api/queries/profiles';
-import { useLoggedSets, computePrEvents } from '../../services/api/queries/progress';
+import { useLoggedSets, computePrEvents, estimateOneRepMax } from '../../services/api/queries/progress';
 import {
   coachingEngine,
   type ExerciseSubstitution,
   type SetRecommendation,
 } from '../../services/coaching';
 import { FocusedExerciseHeader } from './FocusedExerciseHeader';
+import { SpotifyNowPlayingBar } from './SpotifyNowPlayingBar';
 import { ExerciseHistorySummary } from './ExerciseHistorySummary';
 import { RestTimerBanner } from './RestTimerBanner';
+import { PrBanner } from './PrBanner';
 import {
   WorkoutSetRow,
   metricLabel,
+  formatMetricValue,
   isSetPopulated,
 } from './WorkoutSetRow';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatWeight, unitLabel } from '../../utils/units';
-import { exerciseRowToMetadata } from '../../utils/exerciseMetadata';
+import { exerciseRowToMetadata, formatEnumLabel } from '../../utils/exerciseMetadata';
 import type { LogStackParamList } from '../../navigation/types';
 import type { EquipmentType, UnitPreference } from '../../types/database';
 import type { IconName } from '../../components/core';
@@ -44,12 +48,17 @@ import type { IconName } from '../../components/core';
 type Route = RouteProp<LogStackParamList, 'ActiveExercise'>;
 type Nav = NativeStackNavigationProp<LogStackParamList>;
 
-const METRIC_OPTIONS: Array<{ value: SetMetric; label: string; disabled?: boolean }> = [
+// The real-time PR banner needs an established history to compare against —
+// without this, an athlete's very first sets of every exercise would all
+// trivially "beat" a nonexistent prior best and celebrate constantly.
+const MIN_DAYS_OF_DATA_FOR_PR_BANNER = 14;
+
+const METRIC_OPTIONS: Array<{ value: SetMetric; label: string }> = [
   { value: 'weight_lb', label: 'Weight (lb)' },
   { value: 'weight_kg', label: 'Weight (kg)' },
   { value: 'weight_pct', label: 'Weight (%)' },
   { value: 'reps', label: 'Reps' },
-  { value: 'time', label: 'Time (coming soon)', disabled: true },
+  { value: 'time', label: 'Time' },
 ];
 
 const RECOMMENDATION_ACTION_LABELS: Record<SetRecommendation['type'], { accept: string; ignore: string }> = {
@@ -126,6 +135,8 @@ export function ActiveExerciseScreen() {
   const setExerciseTargetSets = useActiveWorkoutStore(state => state.setExerciseTargetSets);
   const substituteExercise = useActiveWorkoutStore(state => state.substituteExercise);
   const startRestTimer = useActiveWorkoutStore(state => state.startRestTimer);
+  const startSetTimer = useActiveWorkoutStore(state => state.startSetTimer);
+  const stopSetTimer = useActiveWorkoutStore(state => state.stopSetTimer);
 
   const exerciseIndex = exercises.findIndex(e => e.exerciseId === params.exerciseId);
   const exercise = exerciseIndex >= 0 ? exercises[exerciseIndex] : undefined;
@@ -151,6 +162,27 @@ export function ActiveExerciseScreen() {
   const [swapSheetOpen, setSwapSheetOpen] = useState(false);
   const [selectedSubstitute, setSelectedSubstitute] = useState<ExerciseSubstitution | null>(null);
   const [pending, setPending] = useState<PendingRecommendation | null>(null);
+  const [prBannerTrigger, setPrBannerTrigger] = useState(0);
+
+  // loggedSets is ordered oldest-first (see fetchLoggedSets), so its first
+  // entry is the athlete's very first logged set ever.
+  const hasEnoughHistoryForPrBanner =
+    loggedSets != null &&
+    loggedSets.length > 0 &&
+    differenceInDays(new Date(), new Date(loggedSets[0].loggedAt)) >= MIN_DAYS_OF_DATA_FOR_PR_BANNER;
+
+  // Best estimated 1RM logged for this exercise before the set just
+  // completed — loggedSets is the historical (already-persisted) dataset, so
+  // it never includes the in-flight set being checked against it.
+  const bestPriorE1rm = (exerciseId: string): number => {
+    let best = 0;
+    for (const s of loggedSets ?? []) {
+      if (s.exerciseId !== exerciseId || s.loadKg == null || s.loadKg <= 0) continue;
+      const e1rm = estimateOneRepMax(s.loadKg, s.reps);
+      if (e1rm > best) best = e1rm;
+    }
+    return best;
+  };
 
   // The exercise this screen was opened for can disappear out from under it
   // (removed, or the workout itself was reset) — bail to the overview rather
@@ -279,6 +311,34 @@ export function ActiveExerciseScreen() {
     }
   };
 
+  // Copies this row's reps + weight into every later, not-yet-completed set
+  // — a quick way to log a straight-sets scheme without re-typing the same
+  // numbers each time. RPE is deliberately left alone (it varies set to set
+  // even at identical reps/weight).
+  const onFillDown = (fromSetRow: LoggedSet) => {
+    const remaining = exercise.sets.filter(s => s.setNumber > fromSetRow.setNumber && !s.completed);
+    if (remaining.length === 0) return;
+    const weightLabel =
+      fromSetRow.loadKg != null ? ` @ ${formatMetricValue(fromSetRow.loadKg, exercise.metric)}${metricLabel(exercise.metric)}` : '';
+    Alert.alert(
+      'Fill remaining sets?',
+      `Copy ${fromSetRow.reps ?? '—'} reps${weightLabel} to the next ${remaining.length} set${remaining.length === 1 ? '' : 's'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Fill Down',
+          onPress: () => {
+            remaining.forEach(setRow => onChangeSet(setRow, { reps: fromSetRow.reps, loadKg: fromSetRow.loadKg }));
+          },
+        },
+      ],
+    );
+  };
+
+  const canFillDown = (setRow: LoggedSet) =>
+    (setRow.reps != null || setRow.loadKg != null) &&
+    exercise.sets.some(s => s.setNumber > setRow.setNumber && !s.completed);
+
   const onToggleSet = async (setRow: LoggedSet) => {
     if (setRow.completed) {
       markSetIncomplete(exercise.exerciseId, setRow.id);
@@ -296,6 +356,7 @@ export function ActiveExerciseScreen() {
           reps: setRow.reps,
           load_kg: setRow.loadKg,
           rpe: setRow.rpe,
+          duration_seconds: setRow.durationSeconds,
           completed: true,
         });
         markSetCompleted(exercise.exerciseId, setRow.id, setRow.dbId);
@@ -307,6 +368,7 @@ export function ActiveExerciseScreen() {
           reps: setRow.reps,
           load_kg: setRow.loadKg,
           rpe: setRow.rpe,
+          duration_seconds: setRow.durationSeconds,
           is_warmup: setRow.isWarmup,
         });
         markSetCompleted(exercise.exerciseId, setRow.id, created.id);
@@ -314,6 +376,13 @@ export function ActiveExerciseScreen() {
       startRestTimer(exercise.restSeconds ?? 90);
 
       if (!setRow.isWarmup) {
+        if (hasEnoughHistoryForPrBanner && setRow.loadKg != null && setRow.loadKg > 0) {
+          const newE1rm = estimateOneRepMax(setRow.loadKg, setRow.reps);
+          if (newE1rm > bestPriorE1rm(exercise.exerciseId)) {
+            setPrBannerTrigger(t => t + 1);
+          }
+        }
+
         const updatedSets = exercise.sets.map(s =>
           s.id === setRow.id ? { ...s, completed: true, reps: setRow.reps, loadKg: setRow.loadKg, rpe: setRow.rpe } : s,
         );
@@ -416,6 +485,8 @@ export function ActiveExerciseScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
+      <SpotifyNowPlayingBar />
+      <PrBanner trigger={prBannerTrigger} />
       <FocusedExerciseHeader
         exerciseName={exercise.exerciseName}
         exerciseNumber={exerciseIndex + 1}
@@ -509,6 +580,9 @@ export function ActiveExerciseScreen() {
                 onToggle={() => onToggleSet(setRow)}
                 onRemove={() => onRemoveSet(setRow)}
                 onChange={patch => onChangeSet(setRow, patch)}
+                onStartTimer={() => startSetTimer(exercise.exerciseId, setRow.id)}
+                onStopTimer={() => stopSetTimer(exercise.exerciseId, setRow.id)}
+                onFillDown={canFillDown(setRow) ? () => onFillDown(setRow) : undefined}
               />
             ))}
           </View>
@@ -570,15 +644,10 @@ export function ActiveExerciseScreen() {
             <ListRow
               key={option.value}
               title={option.label}
-              onPress={
-                option.disabled
-                  ? undefined
-                  : () => {
-                      setExerciseMetric(exercise.exerciseId, option.value);
-                      setMetricSheetOpen(false);
-                    }
-              }
-              style={option.disabled ? { opacity: 0.4 } : undefined}
+              onPress={() => {
+                setExerciseMetric(exercise.exerciseId, option.value);
+                setMetricSheetOpen(false);
+              }}
               trailing={
                 exercise.metric === option.value ? (
                   <Icon name="check" size="sm" color={theme.colors.accent.primary} />
@@ -625,7 +694,7 @@ export function ActiveExerciseScreen() {
               <Button label="Swap for this workout" onPress={() => onConfirmSwap('workout_only')} />
               {currentExerciseMeta ? (
                 <Button
-                  label={`Swap + remove ${currentExerciseMeta.equipment} from my equipment`}
+                  label={`Swap + remove ${formatEnumLabel(currentExerciseMeta.equipment)} from my equipment`}
                   variant="secondary"
                   onPress={() => onConfirmSwap('permanent')}
                 />

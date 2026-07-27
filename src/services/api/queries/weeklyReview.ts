@@ -8,6 +8,7 @@ import { useReadinessCheckinsInRange } from './coaching';
 import { coachingEngine } from '../../coaching';
 import type { GenerateWeeklyReviewParams, WeeklyCheckinInput, WeeklySetInput } from '../../coaching';
 import { walkScheduledDays } from '../../../utils/trainingScheduleWalk';
+import type { UnitPreference } from '../../../types/database';
 
 function dateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd');
@@ -19,7 +20,12 @@ function dateKey(date: Date): string {
  * coachingEngine.generateWeeklyReview(params) itself — this hook only
  * aggregates, mirroring useReadinessContext's split.
  */
-export function useWeeklyReviewData(userId: string | null, weekStart: Date, weekEnd: Date) {
+export function useWeeklyReviewData(
+  userId: string | null,
+  weekStart: Date,
+  weekEnd: Date,
+  unitPref: UnitPreference,
+) {
   const from = dateKey(weekStart);
   const to = dateKey(weekEnd);
 
@@ -105,8 +111,9 @@ export function useWeeklyReviewData(userId: string | null, weekStart: Date, week
       weekPrEvents,
       checkins,
       trainingLoad,
+      unitPref,
     };
-  }, [loggedSets, exercises, checkinRows, workoutLogs, program, from, to, weekStart, weekEnd]);
+  }, [loggedSets, exercises, checkinRows, workoutLogs, program, from, to, weekStart, weekEnd, unitPref]);
 
   return { isLoading, params };
 }

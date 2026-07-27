@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type LoggedSet = {
   /** Stable local key, independent of persistence state. */
@@ -9,6 +11,13 @@ export type LoggedSet = {
   reps: number | null;
   loadKg: number | null;
   rpe: number | null;
+  /** Only meaningful when the exercise's metric is 'time'. */
+  durationSeconds: number | null;
+  /** Timestamp this row's stopwatch was started, if it's currently running —
+   * elapsed is recomputed from this on every render rather than decremented,
+   * so a re-render timer here can't fall prey to the double-tick bug class
+   * fixed for the rest timer (see activeWorkoutStore's restIntervalId). */
+  timerStartedAt: number | null;
   isWarmup: boolean;
   completed: boolean;
 };
@@ -56,6 +65,8 @@ function buildDraftSets(exercise: ExerciseTargets): LoggedSet[] {
     reps: exercise.targetRepsMin ?? null,
     loadKg: exercise.targetLoadKg ?? null,
     rpe: exercise.targetRpe ?? null,
+    durationSeconds: null,
+    timerStartedAt: null,
     isWarmup: false,
     completed: false,
   }));
@@ -94,6 +105,13 @@ type ActiveWorkoutState = {
   startedAt: number | null;
   restSecondsRemaining: number;
   restRunning: boolean;
+  /** False until the persisted session (if any) has been read back from
+   * AsyncStorage — screens that decide whether to resume an in-progress
+   * workout (see LogLandingScreen) must wait for this before checking
+   * workoutLogId, or a cold start would briefly see "no active workout" and
+   * navigate somewhere it shouldn't. */
+  hasHydrated: boolean;
+  setHasHydrated: (value: boolean) => void;
 
   startWorkout: (params: {
     workoutLogId: string;
@@ -108,7 +126,7 @@ type ActiveWorkoutState = {
   updateSetDraft: (
     exerciseId: string,
     setId: string,
-    patch: Partial<Pick<LoggedSet, 'reps' | 'loadKg' | 'rpe'>>,
+    patch: Partial<Pick<LoggedSet, 'reps' | 'loadKg' | 'rpe' | 'durationSeconds'>>,
   ) => void;
   markSetCompleted: (exerciseId: string, setId: string, dbId: string) => void;
   markSetIncomplete: (exerciseId: string, setId: string) => void;
@@ -120,6 +138,13 @@ type ActiveWorkoutState = {
   startRestTimer: (seconds: number) => void;
   tickRestTimer: () => void;
   skipRestTimer: () => void;
+  /** Starts a set's held-time stopwatch. Only one set's stopwatch can run at
+   * a time (you're only doing one set right now) — starting another clears
+   * whichever one was already running, discarding its unstopped elapsed
+   * time rather than silently keeping two running concurrently. */
+  startSetTimer: (exerciseId: string, setId: string) => void;
+  /** Stops the given set's stopwatch and records its elapsed duration. */
+  stopSetTimer: (exerciseId: string, setId: string) => void;
   reset: () => void;
 };
 
@@ -132,150 +157,241 @@ const initialState = {
   restRunning: false,
 } satisfies Partial<ActiveWorkoutState>;
 
-export const useActiveWorkoutStore = create<ActiveWorkoutState>((set, get) => ({
-  ...initialState,
+/** Owns the rest-timer's single setInterval outside of React entirely — a
+ * component-owned interval (the previous design) can't guarantee it's ever
+ * mounted exactly once (screen remounts, react-native-screens retaining
+ * background screens, Fast Refresh), and two concurrent intervals both
+ * ticking the same counter is exactly what "counts down in twos" looks
+ * like. A module-level id, always cleared before a new one starts, makes
+ * that class of bug impossible regardless of component lifecycle. */
+let restIntervalId: ReturnType<typeof setInterval> | null = null;
 
-  startWorkout: ({ workoutLogId, source, exercises }) =>
-    set({
-      workoutLogId,
-      source,
-      exercises: exercises.map(e => ({
-        ...e,
-        metric: e.metric ?? 'weight_kg',
-        notes: '',
-        sets: buildDraftSets(e),
-      })),
-      startedAt: Date.now(),
-      restSecondsRemaining: 0,
-      restRunning: false,
-    }),
+function clearRestInterval() {
+  if (restIntervalId != null) {
+    clearInterval(restIntervalId);
+    restIntervalId = null;
+  }
+}
 
-  addExercise: exercise =>
-    set(state => {
-      if (state.exercises.some(e => e.exerciseId === exercise.exerciseId)) return state;
-      return {
-        exercises: [
-          ...state.exercises,
-          { ...exercise, metric: exercise.metric ?? 'weight_kg', notes: '', sets: buildDraftSets(exercise) },
-        ],
-      };
-    }),
+export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
+  persist(
+    (set, get) => ({
+      ...initialState,
+      hasHydrated: false,
+      setHasHydrated: value => set({ hasHydrated: value }),
 
-  removeExercise: exerciseId =>
-    set(state => ({
-      exercises: state.exercises.filter(exercise => exercise.exerciseId !== exerciseId),
-    })),
+      startWorkout: ({ workoutLogId, source, exercises }) => {
+        // Defensive: a prior session's rest timer should never still be running
+        // by the time a new one starts (normally reset()/skipRestTimer() have
+        // already cleared it, but this guards an abandoned-without-resetting
+        // session from leaving a stray interval ticking indefinitely).
+        clearRestInterval();
+        set({
+          workoutLogId,
+          source,
+          exercises: exercises.map(e => ({
+            ...e,
+            metric: e.metric ?? 'weight_kg',
+            notes: '',
+            sets: buildDraftSets(e),
+          })),
+          startedAt: Date.now(),
+          restSecondsRemaining: 0,
+          restRunning: false,
+        });
+      },
 
-  addSet: exerciseId =>
-    set(state => ({
-      exercises: state.exercises.map(exercise => {
-        if (exercise.exerciseId !== exerciseId) return exercise;
-        const draft = buildDraftSets({
-          targetSets: 1,
-          targetRepsMin: exercise.targetRepsMin,
-          targetLoadKg: exercise.targetLoadKg,
-          targetRpe: exercise.targetRpe,
-        })[0];
-        draft.setNumber = exercise.sets.length + 1;
-        return { ...exercise, sets: [...exercise.sets, draft] };
-      }),
-    })),
+      addExercise: exercise =>
+        set(state => {
+          if (state.exercises.some(e => e.exerciseId === exercise.exerciseId)) return state;
+          return {
+            exercises: [
+              ...state.exercises,
+              { ...exercise, metric: exercise.metric ?? 'weight_kg', notes: '', sets: buildDraftSets(exercise) },
+            ],
+          };
+        }),
 
-  updateSetDraft: (exerciseId, setId, patch) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise =>
-        exercise.exerciseId === exerciseId
-          ? { ...exercise, sets: exercise.sets.map(s => (s.id === setId ? { ...s, ...patch } : s)) }
-          : exercise,
-      ),
-    })),
+      removeExercise: exerciseId =>
+        set(state => ({
+          exercises: state.exercises.filter(exercise => exercise.exerciseId !== exerciseId),
+        })),
 
-  markSetCompleted: (exerciseId, setId, dbId) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise =>
-        exercise.exerciseId === exerciseId
-          ? {
+      addSet: exerciseId =>
+        set(state => ({
+          exercises: state.exercises.map(exercise => {
+            if (exercise.exerciseId !== exerciseId) return exercise;
+            const draft = buildDraftSets({
+              targetSets: 1,
+              targetRepsMin: exercise.targetRepsMin,
+              targetLoadKg: exercise.targetLoadKg,
+              targetRpe: exercise.targetRpe,
+            })[0];
+            draft.setNumber = exercise.sets.length + 1;
+            return { ...exercise, sets: [...exercise.sets, draft] };
+          }),
+        })),
+
+      updateSetDraft: (exerciseId, setId, patch) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise =>
+            exercise.exerciseId === exerciseId
+              ? { ...exercise, sets: exercise.sets.map(s => (s.id === setId ? { ...s, ...patch } : s)) }
+              : exercise,
+          ),
+        })),
+
+      markSetCompleted: (exerciseId, setId, dbId) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise =>
+            exercise.exerciseId === exerciseId
+              ? {
+                  ...exercise,
+                  sets: exercise.sets.map(s => (s.id === setId ? { ...s, completed: true, dbId } : s)),
+                }
+              : exercise,
+          ),
+        })),
+
+      markSetIncomplete: (exerciseId, setId) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise =>
+            exercise.exerciseId === exerciseId
+              ? { ...exercise, sets: exercise.sets.map(s => (s.id === setId ? { ...s, completed: false } : s)) }
+              : exercise,
+          ),
+        })),
+
+      removeSet: (exerciseId, setId) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise =>
+            exercise.exerciseId === exerciseId
+              ? { ...exercise, sets: exercise.sets.filter(s => s.id !== setId) }
+              : exercise,
+          ),
+        })),
+
+      setExerciseNotes: (exerciseId, notes) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise =>
+            exercise.exerciseId === exerciseId ? { ...exercise, notes } : exercise,
+          ),
+        })),
+
+      setExerciseMetric: (exerciseId, metric) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise =>
+            exercise.exerciseId === exerciseId ? { ...exercise, metric } : exercise,
+          ),
+        })),
+
+      /** Caps the exercise's required-set count at what was actually done —
+       * used when a "stop this exercise" recommendation is accepted, so
+       * isExerciseComplete stops expecting the originally-planned set count. */
+      setExerciseTargetSets: (exerciseId, targetSets) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise =>
+            exercise.exerciseId === exerciseId ? { ...exercise, targetSets } : exercise,
+          ),
+        })),
+
+      /** Swaps the exercise's identity in place, keeping its targets (sets/reps/
+       * RPE/rest carry over — the substitute wasn't independently programmed, so
+       * approximate difficulty/progression is preserved) except target load,
+       * which doesn't meaningfully transfer to a different movement/equipment.
+       * Only ever called from a UI path already guarded to zero completed sets —
+       * swapping after sets are logged would orphan those workout_log_sets rows. */
+      substituteExercise: (exerciseId, next) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise => {
+            if (exercise.exerciseId !== exerciseId) return exercise;
+            const updated: ActiveExercise = {
               ...exercise,
-              sets: exercise.sets.map(s => (s.id === setId ? { ...s, completed: true, dbId } : s)),
-            }
-          : exercise,
-      ),
-    })),
+              exerciseId: next.exerciseId,
+              exerciseName: next.exerciseName,
+              targetLoadKg: null,
+            };
+            return { ...updated, sets: buildDraftSets(updated) };
+          }),
+        })),
 
-  markSetIncomplete: (exerciseId, setId) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise =>
-        exercise.exerciseId === exerciseId
-          ? { ...exercise, sets: exercise.sets.map(s => (s.id === setId ? { ...s, completed: false } : s)) }
-          : exercise,
-      ),
-    })),
+      startRestTimer: seconds => {
+        clearRestInterval();
+        set({ restSecondsRemaining: seconds, restRunning: seconds > 0 });
+        if (seconds > 0) {
+          restIntervalId = setInterval(() => get().tickRestTimer(), 1000);
+        }
+      },
 
-  removeSet: (exerciseId, setId) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise =>
-        exercise.exerciseId === exerciseId
-          ? { ...exercise, sets: exercise.sets.filter(s => s.id !== setId) }
-          : exercise,
-      ),
-    })),
+      tickRestTimer: () => {
+        const remaining = get().restSecondsRemaining - 1;
+        if (remaining <= 0) {
+          clearRestInterval();
+          set({ restSecondsRemaining: 0, restRunning: false });
+        } else {
+          set({ restSecondsRemaining: remaining });
+        }
+      },
 
-  setExerciseNotes: (exerciseId, notes) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise =>
-        exercise.exerciseId === exerciseId ? { ...exercise, notes } : exercise,
-      ),
-    })),
+      skipRestTimer: () => {
+        clearRestInterval();
+        set({ restSecondsRemaining: 0, restRunning: false });
+      },
 
-  setExerciseMetric: (exerciseId, metric) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise =>
-        exercise.exerciseId === exerciseId ? { ...exercise, metric } : exercise,
-      ),
-    })),
+      startSetTimer: (exerciseId, setId) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise => ({
+            ...exercise,
+            sets: exercise.sets.map(s => {
+              if (exercise.exerciseId === exerciseId && s.id === setId) {
+                return { ...s, timerStartedAt: Date.now() };
+              }
+              // Clears any other row's running stopwatch — only one runs at a time.
+              return s.timerStartedAt != null ? { ...s, timerStartedAt: null } : s;
+            }),
+          })),
+        })),
 
-  /** Caps the exercise's required-set count at what was actually done —
-   * used when a "stop this exercise" recommendation is accepted, so
-   * isExerciseComplete stops expecting the originally-planned set count. */
-  setExerciseTargetSets: (exerciseId, targetSets) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise =>
-        exercise.exerciseId === exerciseId ? { ...exercise, targetSets } : exercise,
-      ),
-    })),
+      stopSetTimer: (exerciseId, setId) =>
+        set(state => ({
+          exercises: state.exercises.map(exercise => {
+            if (exercise.exerciseId !== exerciseId) return exercise;
+            return {
+              ...exercise,
+              sets: exercise.sets.map(s => {
+                if (s.id !== setId || s.timerStartedAt == null) return s;
+                const durationSeconds = Math.round((Date.now() - s.timerStartedAt) / 1000);
+                return { ...s, durationSeconds, timerStartedAt: null };
+              }),
+            };
+          }),
+        })),
 
-  /** Swaps the exercise's identity in place, keeping its targets (sets/reps/
-   * RPE/rest carry over — the substitute wasn't independently programmed, so
-   * approximate difficulty/progression is preserved) except target load,
-   * which doesn't meaningfully transfer to a different movement/equipment.
-   * Only ever called from a UI path already guarded to zero completed sets —
-   * swapping after sets are logged would orphan those workout_log_sets rows. */
-  substituteExercise: (exerciseId, next) =>
-    set(state => ({
-      exercises: state.exercises.map(exercise => {
-        if (exercise.exerciseId !== exerciseId) return exercise;
-        const updated: ActiveExercise = {
-          ...exercise,
-          exerciseId: next.exerciseId,
-          exerciseName: next.exerciseName,
-          targetLoadKg: null,
-        };
-        return { ...updated, sets: buildDraftSets(updated) };
+      reset: () => {
+        clearRestInterval();
+        set(initialState);
+      },
+    }),
+    {
+      name: 'active-workout-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      // Rest-timer state is a live countdown with no persisted end timestamp
+      // to correctly resume against (unlike startedAt, which the elapsed-time
+      // display always recomputes from a fixed timestamp rather than a raw
+      // counter) — restoring a stale mid-countdown value with no interval
+      // left running to tick it down would just freeze the "Resting — 1:23"
+      // banner forever. Left out of persistence entirely so a fresh app
+      // process always starts with no rest timer running, matching what
+      // startRestTimer/reset already produce by default.
+      partialize: state => ({
+        workoutLogId: state.workoutLogId,
+        source: state.source,
+        exercises: state.exercises,
+        startedAt: state.startedAt,
       }),
-    })),
-
-  startRestTimer: seconds => set({ restSecondsRemaining: seconds, restRunning: seconds > 0 }),
-
-  tickRestTimer: () => {
-    const remaining = get().restSecondsRemaining - 1;
-    if (remaining <= 0) {
-      set({ restSecondsRemaining: 0, restRunning: false });
-    } else {
-      set({ restSecondsRemaining: remaining });
-    }
-  },
-
-  skipRestTimer: () => set({ restSecondsRemaining: 0, restRunning: false }),
-
-  reset: () => set(initialState),
-}));
+      onRehydrateStorage: () => state => {
+        state?.setHasHydrated(true);
+      },
+    },
+  ),
+);

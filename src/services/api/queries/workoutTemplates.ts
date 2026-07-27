@@ -18,7 +18,7 @@ export type WorkoutTemplateSummary = WorkoutTemplateRow & {
   workout_template_exercises: Array<{ order_index: number; exercises: Pick<ExerciseRow, 'name'> }>;
 };
 
-async function fetchWorkoutTemplates(userId: string, search: string): Promise<WorkoutTemplateSummary[]> {
+export async function fetchWorkoutTemplates(userId: string, search: string): Promise<WorkoutTemplateSummary[]> {
   let query = supabase
     .from('workout_templates')
     .select('*, workout_template_exercises ( order_index, exercises ( name ) )')

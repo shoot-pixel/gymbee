@@ -1,6 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
-import type { Database } from '../../../types/database';
+import type { Database, DayType } from '../../../types/database';
+
+type ProgramExerciseInsert = Database['public']['Tables']['program_exercises']['Insert'];
 
 type ProgramRow = Database['public']['Tables']['programs']['Row'];
 type ProgramWeekRow = Database['public']['Tables']['program_weeks']['Row'];
@@ -260,3 +262,86 @@ export function getProgramDayForDate(
 
   return { week, day };
 }
+
+// ---------------------------------------------------------------------------
+// Mutations
+// ---------------------------------------------------------------------------
+
+/** Cascades through program_weeks/program_days/program_exercises (all `on
+ * delete cascade`). Past workout_logs referencing a deleted day's id are
+ * untouched — that FK is `on delete set null`, so history survives. */
+export function useDeleteProgram() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (programId: string) => {
+      const { error } = await supabase.from('programs').delete().eq('id', programId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['program'] });
+      // Sibling key, not covered by the ['program'] prefix — Library's
+      // "Existing Workouts" section reads from it directly.
+      queryClient.invalidateQueries({ queryKey: ['programDays', 'all'] });
+    },
+  });
+}
+
+export function useAddProgramExercise() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (row: ProgramExerciseInsert) => {
+      const { data, error } = await supabase
+        .from('program_exercises')
+        .insert(row)
+        .select('*, exercises ( id, name, category, primary_muscle )')
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, row) => {
+      queryClient.invalidateQueries({ queryKey: ['programDay', row.program_day_id] });
+      queryClient.invalidateQueries({ queryKey: ['program'] });
+    },
+  });
+}
+
+export function useRemoveProgramExercise() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { id: string; programDayId: string }) => {
+      const { error } = await supabase.from('program_exercises').delete().eq('id', params.id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, params) => {
+      queryClient.invalidateQueries({ queryKey: ['programDay', params.programDayId] });
+      queryClient.invalidateQueries({ queryKey: ['program'] });
+    },
+  });
+}
+
+/** Sets a program day's type (rest / training / cardio) — used to let an
+ * athlete change their mind on a day, e.g. from ProgramDetailScreen's "Add
+ * Workout" affordance or DayDetailScreen's rest/cardio choice. Existing
+ * program_exercises (there normally aren't any on a rest or cardio day) are
+ * left alone either way. `is_rest_day` is kept in sync (`= dayType ===
+ * 'rest'`) rather than removed — it's still read directly by several older
+ * call sites (WeekTimeline, TodayScreen, streak.ts) that don't need to know
+ * about cardio at all, so this is the one place that has to keep both
+ * columns consistent instead of rewriting every one of those. */
+export function useSetDayType() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { id: string; dayType: DayType }) => {
+      const { error } = await supabase
+        .from('program_days')
+        .update({ day_type: params.dayType, is_rest_day: params.dayType === 'rest' })
+        .eq('id', params.id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, params) => {
+      queryClient.invalidateQueries({ queryKey: ['programDay', params.id] });
+      queryClient.invalidateQueries({ queryKey: ['program'] });
+    },
+  });
+}
+

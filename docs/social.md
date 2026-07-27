@@ -1,7 +1,7 @@
 # Social Overhaul Architecture
 
 This document covers the friends/social system being built on top of
-SoSet's existing (much smaller than initially assumed) community
+SetSocial's existing (much smaller than initially assumed) community
 features. It's the map for continuing past this pass.
 
 ## Why this doc exists — the premise gap

@@ -1,9 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
-import type { Database } from '../../../types/database';
+import type { CardioEffort, Database } from '../../../types/database';
 
 type WorkoutLogInsert = Database['public']['Tables']['workout_logs']['Insert'];
 type WorkoutLogSetInsert = Database['public']['Tables']['workout_log_sets']['Insert'];
+
+export type CardioLogSummary = {
+  activityName: string;
+  durationMinutes: number;
+  distanceKm: number | null;
+  effort: CardioEffort | null;
+  estimatedCalories: number;
+};
 
 export type WorkoutLogSummary = {
   id: string;
@@ -11,6 +19,26 @@ export type WorkoutLogSummary = {
   scheduledWorkoutId: string | null;
   startedAt: string;
   completedAt: string;
+  /** Non-null when this log came from LogCardioScreen rather than a
+   * strength session — see cardio_log_entries, a 1:1 side table keyed by
+   * workout_log_id. */
+  cardio: CardioLogSummary | null;
+};
+
+type WorkoutLogRangeRow = {
+  id: string;
+  program_day_id: string | null;
+  scheduled_workout_id: string | null;
+  started_at: string;
+  completed_at: string;
+  cardio_log_entries: Array<{
+    duration_minutes: number;
+    distance_km: number | null;
+    effort: CardioEffort | null;
+    estimated_calories: number;
+    custom_activity_name: string | null;
+    exercises: { name: string } | null;
+  }>;
 };
 
 /** Completed workout_logs within a date range (inclusive), keyed by
@@ -23,7 +51,10 @@ async function fetchWorkoutLogsInRange(
 ): Promise<WorkoutLogSummary[]> {
   const { data, error } = await supabase
     .from('workout_logs')
-    .select('id, program_day_id, scheduled_workout_id, started_at, completed_at')
+    .select(
+      `id, program_day_id, scheduled_workout_id, started_at, completed_at,
+      cardio_log_entries ( duration_minutes, distance_km, effort, estimated_calories, custom_activity_name, exercises ( name ) )`,
+    )
     .eq('user_id', userId)
     .not('completed_at', 'is', null)
     .gte('completed_at', from)
@@ -31,13 +62,25 @@ async function fetchWorkoutLogsInRange(
     .order('completed_at');
 
   if (error) throw error;
-  return data.map(row => ({
-    id: row.id,
-    programDayId: row.program_day_id,
-    scheduledWorkoutId: row.scheduled_workout_id,
-    startedAt: row.started_at,
-    completedAt: row.completed_at as string,
-  }));
+  return (data as unknown as WorkoutLogRangeRow[]).map(row => {
+    const cardioEntry = row.cardio_log_entries[0] ?? null;
+    return {
+      id: row.id,
+      programDayId: row.program_day_id,
+      scheduledWorkoutId: row.scheduled_workout_id,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      cardio: cardioEntry
+        ? {
+            activityName: cardioEntry.custom_activity_name ?? cardioEntry.exercises?.name ?? 'Cardio',
+            durationMinutes: cardioEntry.duration_minutes,
+            distanceKm: cardioEntry.distance_km,
+            effort: cardioEntry.effort,
+            estimatedCalories: cardioEntry.estimated_calories,
+          }
+        : null,
+    };
+  });
 }
 
 export function useWorkoutLogsInRange(userId: string | null, range: { from: string; to: string }) {
@@ -92,6 +135,95 @@ export function useAllWorkoutLogs(userId: string | null) {
   });
 }
 
+export type WorkoutLogSetDetail = {
+  id: string;
+  exerciseId: string;
+  exerciseName: string;
+  setNumber: number;
+  reps: number;
+  loadKg: number | null;
+  rpe: number | null;
+  durationSeconds: number | null;
+  isWarmup: boolean;
+};
+
+export type WorkoutLogDetail = {
+  id: string;
+  startedAt: string;
+  completedAt: string | null;
+  title: string;
+  sets: WorkoutLogSetDetail[];
+};
+
+type WorkoutLogDetailRow = {
+  id: string;
+  started_at: string;
+  completed_at: string | null;
+  program_days: { title: string | null } | null;
+  scheduled_workouts: { name: string } | null;
+  workout_log_sets: Array<{
+    id: string;
+    exercise_id: string;
+    exercises: { name: string } | null;
+    set_number: number;
+    reps: number;
+    load_kg: number | null;
+    rpe: number | null;
+    duration_seconds: number | null;
+    is_warmup: boolean;
+  }>;
+};
+
+/** Full per-exercise/per-set breakdown for a single workout_log — the "lean
+ * list, full detail by id" split this codebase uses everywhere else
+ * (templates, programs): useWorkoutLogsInRange already gives Today the
+ * day's workout_log id(s); this is the detail fetch once a completed-day
+ * card is actually opened. */
+async function fetchWorkoutLogDetail(workoutLogId: string): Promise<WorkoutLogDetail> {
+  const { data, error } = await supabase
+    .from('workout_logs')
+    .select(
+      `id, started_at, completed_at,
+      program_days ( title ),
+      scheduled_workouts ( name ),
+      workout_log_sets (
+        id, exercise_id, set_number, reps, load_kg, rpe, duration_seconds, is_warmup,
+        exercises ( name )
+      )`,
+    )
+    .eq('id', workoutLogId)
+    .order('set_number', { foreignTable: 'workout_log_sets' })
+    .single();
+  if (error) throw error;
+
+  const row = data as unknown as WorkoutLogDetailRow;
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    title: row.program_days?.title ?? row.scheduled_workouts?.name ?? 'Workout',
+    sets: row.workout_log_sets.map(s => ({
+      id: s.id,
+      exerciseId: s.exercise_id,
+      exerciseName: s.exercises?.name ?? 'Exercise',
+      setNumber: s.set_number,
+      reps: s.reps,
+      loadKg: s.load_kg,
+      rpe: s.rpe,
+      durationSeconds: s.duration_seconds,
+      isWarmup: s.is_warmup,
+    })),
+  };
+}
+
+export function useWorkoutLogDetail(workoutLogId: string | undefined) {
+  return useQuery({
+    queryKey: ['workoutLogDetail', workoutLogId],
+    queryFn: () => fetchWorkoutLogDetail(workoutLogId as string),
+    enabled: workoutLogId != null,
+  });
+}
+
 export function useStartWorkoutLog() {
   return useMutation({
     mutationFn: async (params: {
@@ -131,13 +263,20 @@ export function useLogSet() {
   });
 }
 
+/** During an in-progress workout (ActiveExerciseScreen) callers don't need
+ * this invalidation — Zustand state drives that screen, not the query cache
+ * — but editing a *past* workout's sets (the completed-day flip card) reads
+ * this same data from the cache, so it needs to be kept fresh. Harmless for
+ * the in-progress case: an extra background refetch of already-correct data. */
 export function useUpdateSet() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
       id: string;
       reps?: number;
       load_kg?: number | null;
       rpe?: number | null;
+      duration_seconds?: number | null;
       completed?: boolean;
     }) => {
       const { id, ...patch } = params;
@@ -150,14 +289,23 @@ export function useUpdateSet() {
       if (error) throw error;
       return data;
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loggedSets'] });
+      queryClient.invalidateQueries({ queryKey: ['workoutLogDetail'] });
+    },
   });
 }
 
 export function useDeleteSet() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('workout_log_sets').delete().eq('id', id);
       if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loggedSets'] });
+      queryClient.invalidateQueries({ queryKey: ['workoutLogDetail'] });
     },
   });
 }
@@ -190,6 +338,24 @@ export function useCompleteWorkoutLog() {
     // families with a 30s staleTime — without invalidating them here, a
     // freshly-completed workout doesn't visibly appear as done until that
     // window lapses or something else happens to trigger a refetch.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workoutLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['loggedSets'] });
+    },
+  });
+}
+
+/** Cascades to workout_log_sets/exercise_substitutions/set_recommendations
+ * (all `on delete cascade` from workout_logs.id) — no manual cleanup needed.
+ * Same invalidation set as useCompleteWorkoutLog, for the same reason: Today/
+ * streak/Progress all read from these two query families. */
+export function useDeleteWorkoutLog() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('workout_logs').delete().eq('id', id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workoutLogs'] });
       queryClient.invalidateQueries({ queryKey: ['loggedSets'] });

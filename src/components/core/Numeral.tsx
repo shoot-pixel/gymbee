@@ -4,14 +4,15 @@ import { useTheme } from '../../theme/ThemeProvider';
 
 type NumeralProps = {
   value: string | number;
-  size?: 'xl' | 'lg' | 'md';
+  size?: 'xl' | 'lg' | 'md' | 'sm';
   color?: string;
 };
 
 /** Big, heavy, tabular-figure numeral used for PRs/stats across the app. */
 export function Numeral({ value, size = 'lg', color }: NumeralProps) {
   const theme = useTheme();
-  const variant = size === 'xl' ? 'numeralXl' : size === 'md' ? 'numeralMd' : 'numeralLg';
+  const variant =
+    size === 'xl' ? 'numeralXl' : size === 'md' ? 'numeralMd' : size === 'sm' ? 'numeralSm' : 'numeralLg';
   return (
     <RNText
       style={[

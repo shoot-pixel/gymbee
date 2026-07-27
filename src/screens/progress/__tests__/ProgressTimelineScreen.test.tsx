@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { ProgressTimelineScreen } from '../ProgressTimelineScreen';
 
@@ -36,11 +37,14 @@ jest.mock('../../../services/api/queries/bodyMetrics', () => ({
   useBodyMetrics: jest.fn(() => ({ data: [{ logged_at: '2024-02-05', weight_kg: 82 }], isLoading: false })),
 }));
 
+const mockDeleteWorkoutLogMutate = jest.fn();
+
 jest.mock('../../../services/api/queries/workoutLogs', () => ({
   useAllWorkoutLogs: jest.fn(() => ({
     data: [{ id: 'log-1', completedAt: '2024-02-01T00:00:00.000Z', title: 'Push Day', rating: 4 }],
     isLoading: false,
   })),
+  useDeleteWorkoutLog: jest.fn(() => ({ mutate: mockDeleteWorkoutLogMutate })),
 }));
 
 beforeEach(() => {
@@ -64,5 +68,19 @@ describe('ProgressTimelineScreen', () => {
     await fireEvent.press(getByText('Bench Press'));
 
     expect(mockNavigate).toHaveBeenCalledWith('PRDetail', { exerciseId: 'ex1' });
+  });
+
+  it('deletes a completed workout after confirming', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      const deleteButton = buttons?.find(b => b.text === 'Delete');
+      deleteButton?.onPress?.();
+    });
+
+    const { getByLabelText } = await render(<ProgressTimelineScreen />);
+    await waitFor(() => expect(getByLabelText('Delete workout')).toBeTruthy());
+    await fireEvent.press(getByLabelText('Delete workout'));
+
+    expect(mockDeleteWorkoutLogMutate).toHaveBeenCalledWith('log-1');
+    alertSpy.mockRestore();
   });
 });

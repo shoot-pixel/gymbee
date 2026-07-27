@@ -753,6 +753,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
 
   it('sums total volume and returns null volume change when no exercise has prior data', () => {
     const result = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 8 }, { reps: 8, loadKg: 100, rpe: 8 }] })],
       previousVolumeByExercise: {},
       previousBestE1rmByExercise: {},
@@ -769,6 +770,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
 
   it('computes volume change against prior-session data when available', () => {
     const result = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 8 }, { reps: 8, loadKg: 100, rpe: 8 }] })],
       previousVolumeByExercise: { ex1: 1400 },
       previousBestE1rmByExercise: {},
@@ -784,6 +786,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
 
   it('picks the highest-e1RM set across all exercises as the best set', () => {
     const result = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [
         exerciseInput({ exerciseId: 'ex1', exerciseName: 'Squat', sets: [{ reps: 5, loadKg: 100, rpe: 8 }] }),
         exerciseInput({ exerciseId: 'ex2', exerciseName: 'Bench', sets: [{ reps: 5, loadKg: 150, rpe: 8 }] }),
@@ -802,6 +805,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
 
   it('classifies improved/declined exercises against prior best e1RM, ignoring noise under 2%', () => {
     const result = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [
         exerciseInput({ exerciseId: 'ex1', exerciseName: 'Squat', sets: [{ reps: 5, loadKg: 100, rpe: 8 }] }),
         exerciseInput({ exerciseId: 'ex2', exerciseName: 'Bench', sets: [{ reps: 5, loadKg: 90, rpe: 8 }] }),
@@ -821,6 +825,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
 
   it('computes RPE adherence over sets with both an actual and target RPE', () => {
     const result = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [
         exerciseInput({
           targetRpe: 8,
@@ -857,6 +862,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
     };
 
     const withReadiness = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 9.5 }] })],
       previousVolumeByExercise: {},
       previousBestE1rmByExercise: {},
@@ -868,6 +874,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
     expect(withReadiness.readinessVsPerformance).toMatch(/above/i);
 
     const withoutReadiness = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 9.5 }] })],
       previousVolumeByExercise: {},
       previousBestE1rmByExercise: {},
@@ -881,6 +888,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
 
   it('classifies recovery needs across all three states', () => {
     const highLoad = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 7 }] })],
       previousVolumeByExercise: {},
       previousBestE1rmByExercise: {},
@@ -892,6 +900,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
     expect(highLoad.estimatedRecoveryNeeds).toBe('extra_rest');
 
     const lightSession = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 5 }] })],
       previousVolumeByExercise: {},
       previousBestE1rmByExercise: {},
@@ -903,6 +912,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
     expect(lightSession.estimatedRecoveryNeeds).toBe('light_next_session');
 
     const normalSession = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 7 }] })],
       previousVolumeByExercise: {},
       previousBestE1rmByExercise: {},
@@ -916,6 +926,7 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
 
   it('surfaces the pain-risk recommendation directly as the fatigue concern', () => {
     const result = engine.generatePostWorkoutSummary({
+      unitPref: 'kg',
       exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 7 }] })],
       previousVolumeByExercise: {},
       previousBestE1rmByExercise: {},
@@ -926,6 +937,23 @@ describe('LocalCoachingEngine.generatePostWorkoutSummary', () => {
     });
 
     expect(result.painOrFatigueConcern).toBe('Go easy on that shoulder.');
+  });
+
+  it('converts the volume sentence to pounds when that is the athlete\'s unit preference, instead of always saying kg', () => {
+    const result = engine.generatePostWorkoutSummary({
+      unitPref: 'lb',
+      exercises: [exerciseInput({ sets: [{ reps: 8, loadKg: 100, rpe: 8 }, { reps: 8, loadKg: 100, rpe: 8 }] })],
+      previousVolumeByExercise: {},
+      previousBestE1rmByExercise: {},
+      sessionPrEvents: [],
+      readiness: null,
+      trainingLoad: load('normal'),
+      painRisk: noPainRisk,
+    });
+
+    // 1600kg -> ~3527lb.
+    expect(result.summary).toContain('3,527lb of total volume today');
+    expect(result.summary).not.toMatch(/kg/);
   });
 });
 
@@ -977,6 +1005,7 @@ describe('LocalCoachingEngine.generateWeeklyReview', () => {
     weekPrEvents: [] as never[],
     checkins: [] as ReturnType<typeof weeklyCheckin>[],
     trainingLoad: load('normal'),
+    unitPref: 'kg' as const,
   };
 
   it('computes consistency percent, and null when no training days were planned', () => {
@@ -1106,6 +1135,20 @@ describe('LocalCoachingEngine.generateWeeklyReview', () => {
 
     expect(result.shareableSummary).not.toMatch(/knee|pain|sleep|stress|soreness|readiness|Very Unique Exercise Name/i);
     expect(result.shareableSummary).toMatch(/workout/i);
+  });
+
+  it('converts volume in both summary and shareableSummary to pounds when that is the athlete\'s unit preference', () => {
+    const result = engine.generateWeeklyReview({
+      ...baseParams,
+      unitPref: 'lb',
+      weekSets: [weeklySet({ exerciseId: 'ex1', reps: 8, loadKg: 100 })],
+    });
+
+    // 800kg -> ~1764lb.
+    expect(result.summary).toContain('1,764lb of total volume');
+    expect(result.shareableSummary).toContain('1,764lb total volume');
+    expect(result.summary).not.toMatch(/kg/);
+    expect(result.shareableSummary).not.toMatch(/kg/);
   });
 });
 
@@ -1260,6 +1303,7 @@ describe('LocalCoachingEngine.predictPersonalRecords', () => {
 
   it('predicts a future e1RM for a clear, well-fit upward trend', () => {
     const result = engine.predictPersonalRecords({
+      unitPref: 'kg',
       asOf,
       exerciseHistories: [
         history('ex1', [
@@ -1281,8 +1325,29 @@ describe('LocalCoachingEngine.predictPersonalRecords', () => {
     expect(result[0].summary).toMatch(/could|projection/i);
   });
 
+  it('converts the predicted e1RM in the summary to pounds when that is the athlete\'s unit preference', () => {
+    const result = engine.predictPersonalRecords({
+      unitPref: 'lb',
+      asOf,
+      exerciseHistories: [
+        history('ex1', [
+          { daysAgo: 50, e1rm: 100 },
+          { daysAgo: 40, e1rm: 105 },
+          { daysAgo: 30, e1rm: 110 },
+          { daysAgo: 20, e1rm: 115 },
+          { daysAgo: 10, e1rm: 120 },
+          { daysAgo: 0, e1rm: 125 },
+        ]),
+      ],
+    });
+
+    expect(result[0].summary).toMatch(/lb/);
+    expect(result[0].summary).not.toMatch(/kg/);
+  });
+
   it('suppresses a prediction with fewer than 4 qualifying points', () => {
     const result = engine.predictPersonalRecords({
+      unitPref: 'kg',
       asOf,
       exerciseHistories: [
         history('ex1', [
@@ -1297,6 +1362,7 @@ describe('LocalCoachingEngine.predictPersonalRecords', () => {
 
   it('suppresses a prediction whose points span fewer than 14 days', () => {
     const result = engine.predictPersonalRecords({
+      unitPref: 'kg',
       asOf,
       exerciseHistories: [
         history('ex1', [
@@ -1312,6 +1378,7 @@ describe('LocalCoachingEngine.predictPersonalRecords', () => {
 
   it('suppresses a flat or declining trend', () => {
     const result = engine.predictPersonalRecords({
+      unitPref: 'kg',
       asOf,
       exerciseHistories: [
         history('ex1', [
@@ -1328,6 +1395,7 @@ describe('LocalCoachingEngine.predictPersonalRecords', () => {
 
   it('suppresses a noisy trend with a weak fit (low R-squared)', () => {
     const result = engine.predictPersonalRecords({
+      unitPref: 'kg',
       asOf,
       exerciseHistories: [
         history('ex1', [
@@ -1344,6 +1412,7 @@ describe('LocalCoachingEngine.predictPersonalRecords', () => {
 
   it('suppresses a well-fit but negligible projected gain', () => {
     const result = engine.predictPersonalRecords({
+      unitPref: 'kg',
       asOf,
       exerciseHistories: [
         history('ex1', [
@@ -1359,6 +1428,7 @@ describe('LocalCoachingEngine.predictPersonalRecords', () => {
 
   it('sorts multiple qualifying exercises by confidence descending', () => {
     const result = engine.predictPersonalRecords({
+      unitPref: 'kg',
       asOf,
       exerciseHistories: [
         history('tight-fit', [
@@ -1477,6 +1547,7 @@ describe('LocalCoachingEngine.generateTodayFocusSummary', () => {
     plan: { kind: 'none' },
     recentPr: null,
     missedYesterday: false,
+    completedYesterday: false,
     isMilestoneWeek: false,
     currentWeekNumber: null,
     weeksCount: 0,
@@ -1521,6 +1592,50 @@ describe('LocalCoachingEngine.generateTodayFocusSummary', () => {
     expect(result.summary).toContain('Aim for RPE 6-8 today.');
   });
 
+  it('always mentions connected Whoop data in the summary, even on a good day when it isn’t a top negative factor', () => {
+    const goodReadiness: ReadinessResult = {
+      ...readiness('high'),
+      factors: [
+        {
+          key: 'wearable_recovery',
+          label: 'Whoop recovery',
+          impact: 'positive',
+          weight: 0.05,
+          detail: 'Whoop recovery is 92% today, sleep performance 88%, strain 6.5.',
+          available: true,
+        },
+      ],
+    };
+
+    const result = engine.generateTodayFocusSummary({
+      ...baseParams,
+      readiness: goodReadiness,
+      plan: { kind: 'training_day', dayTitle: 'Push Day', exerciseCount: 5, isDeload: false },
+    });
+
+    expect(result.summary).toContain('Whoop recovery is 92% today, sleep performance 88%, strain 6.5.');
+  });
+
+  it('says nothing about Whoop when the factor is unavailable (not connected, or not scored yet)', () => {
+    const disconnectedReadiness: ReadinessResult = {
+      ...readiness('high'),
+      factors: [
+        {
+          key: 'wearable_recovery',
+          label: 'Whoop recovery',
+          impact: 'neutral',
+          weight: 0,
+          detail: 'No Whoop data available today.',
+          available: false,
+        },
+      ],
+    };
+
+    const result = engine.generateTodayFocusSummary({ ...baseParams, readiness: disconnectedReadiness });
+
+    expect(result.summary).not.toContain('Whoop');
+  });
+
   it('omits the RPE clause for a completed workout even when readiness is available', () => {
     const result = engine.generateTodayFocusSummary({
       ...baseParams,
@@ -1550,7 +1665,7 @@ describe('LocalCoachingEngine.generateTodayFocusSummary', () => {
     const result = engine.generateTodayFocusSummary({
       ...baseParams,
       missedYesterday: true,
-      recentPr: { exerciseName: 'Bench Press', loadKg: 100, reps: 5 },
+      recentPr: { exerciseName: 'Bench Press', loadKg: 100, reps: 5, daysAgo: 2, sameCalendarWeek: true },
     });
     expect(result.summary).toContain("Yesterday's session is still open");
     expect(result.summary).not.toMatch(/PR/);
@@ -1559,13 +1674,73 @@ describe('LocalCoachingEngine.generateTodayFocusSummary', () => {
   it('prioritizes a recent PR over a milestone week', () => {
     const result = engine.generateTodayFocusSummary({
       ...baseParams,
-      recentPr: { exerciseName: 'Squat', loadKg: 140, reps: 3 },
+      recentPr: { exerciseName: 'Squat', loadKg: 140, reps: 3, daysAgo: 0, sameCalendarWeek: true },
       isMilestoneWeek: true,
       currentWeekNumber: 4,
       weeksCount: 8,
     });
-    expect(result.summary).toContain('You just set a PR on Squat — nice momentum.');
+    // Wording varies (see recentPrPhrasings) — assert on the fact reported,
+    // not one specific phrasing among the equivalent variants.
+    expect(result.summary).toMatch(/Squat/);
     expect(result.summary).not.toMatch(/Week 4 of 8/);
+  });
+
+  it('never claims a PR happened "today" unless it actually did — the lookback window reaches back up to 6 days', () => {
+    const loggedToday = engine.generateTodayFocusSummary({
+      ...baseParams,
+      recentPr: { exerciseName: 'Barbell Bicep Curl', loadKg: 20, reps: 8, daysAgo: 0, sameCalendarWeek: true },
+    });
+    expect(loggedToday.summary).toMatch(/Barbell Bicep Curl today/);
+
+    const loggedEarlierInWeek = engine.generateTodayFocusSummary({
+      ...baseParams,
+      recentPr: { exerciseName: 'Barbell Bicep Curl', loadKg: 20, reps: 8, daysAgo: 4, sameCalendarWeek: true },
+    });
+    // The plan-less baseParams opener ("Nothing is scheduled on today's
+    // calendar.") legitimately contains "today" — only the PR clause itself
+    // must not claim same-day timing it doesn't have.
+    expect(loggedEarlierInWeek.summary).not.toMatch(/Barbell Bicep Curl today/);
+    expect(loggedEarlierInWeek.summary).toMatch(/Barbell Bicep Curl this week/);
+  });
+
+  it('says "last week" rather than "this week" for a PR that falls in the lookback window but not the current calendar week', () => {
+    // e.g. today is a Monday and the PR landed on the preceding Tuesday:
+    // daysAgo (6) is within the lookback window, but it's a different
+    // calendar week — this is the exact case that used to misreport a PR
+    // from a prior week as having happened "this week".
+    const loggedLastWeek = engine.generateTodayFocusSummary({
+      ...baseParams,
+      recentPr: { exerciseName: 'Barbell Bicep Curl', loadKg: 20, reps: 8, daysAgo: 6, sameCalendarWeek: false },
+    });
+    expect(loggedLastWeek.summary).toMatch(/Barbell Bicep Curl last week/);
+    expect(loggedLastWeek.summary).not.toMatch(/Barbell Bicep Curl today/);
+    expect(loggedLastWeek.summary).not.toMatch(/Barbell Bicep Curl this week/);
+  });
+
+  it('mentions recovering well from yesterday only when yesterday was completed, readiness is good, and nothing higher-priority applies', () => {
+    const result = engine.generateTodayFocusSummary({
+      ...baseParams,
+      readiness: readiness('high'),
+      plan: { kind: 'training_day', dayTitle: 'Push Day', exerciseCount: 5, isDeload: false },
+      completedYesterday: true,
+    });
+    expect(result.summary).toMatch(/yesterday/i);
+
+    const lowReadiness = engine.generateTodayFocusSummary({
+      ...baseParams,
+      readiness: readiness('low'),
+      plan: { kind: 'training_day', dayTitle: 'Push Day', exerciseCount: 5, isDeload: false },
+      completedYesterday: true,
+    });
+    expect(lowReadiness.summary).not.toMatch(/yesterday/i);
+
+    const notCompletedYesterday = engine.generateTodayFocusSummary({
+      ...baseParams,
+      readiness: readiness('high'),
+      plan: { kind: 'training_day', dayTitle: 'Push Day', exerciseCount: 5, isDeload: false },
+      completedYesterday: false,
+    });
+    expect(notCompletedYesterday.summary).not.toMatch(/yesterday/i);
   });
 
   it('calls out the final week distinctly from a mid-program milestone week', () => {
@@ -1588,10 +1763,11 @@ describe('LocalCoachingEngine.generateTodayFocusSummary', () => {
 
   it('mentions the streak only when nothing higher-priority applies and it exceeds two days', () => {
     const withStreak = engine.generateTodayFocusSummary({ ...baseParams, streak: 5 });
-    expect(withStreak.summary).toContain("You're on a 5-day streak.");
+    // Wording varies (see streakPhrasings) — assert on the fact reported.
+    expect(withStreak.summary).toMatch(/5[- ]day|5 days/);
 
     const shortStreak = engine.generateTodayFocusSummary({ ...baseParams, streak: 2 });
-    expect(shortStreak.summary).not.toMatch(/streak/);
+    expect(shortStreak.summary).not.toMatch(/streak|days in a row|days and counting/);
   });
 
   it('derives the headline from the readiness band when the plan is not a rest day', () => {

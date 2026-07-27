@@ -12,11 +12,11 @@ export type AuthStackParamList = {
 // ---- Onboarding ----
 export type OnboardingStackParamList = {
   Goals: undefined;
+  BodyProfile: undefined;
   ExperienceLevel: undefined;
   DaysPerWeek: undefined;
   Equipment: undefined;
   Injuries: undefined;
-  GeneratingProgram: undefined;
 };
 
 // ---- Today tab ----
@@ -25,6 +25,7 @@ export type TodayStackParamList = {
   ProgramDetail: { programId: string };
   DayDetail: { programDayId: string };
   ExerciseDetail: { exerciseId: string };
+  TrainingDayDetail: { weeklyScheduleId: string; workoutTemplateId: string; dayOfWeek: number };
 };
 
 // ---- Programs tab ----
@@ -32,11 +33,16 @@ export type ProgramsStackParamList = {
   Calendar: undefined;
   ProgramDetail: { programId: string };
   DayDetail: { programDayId: string };
-  ExercisePicker: { selectMode?: boolean; templateId?: string } | undefined;
-  AddExercise: { selectMode?: boolean; templateId?: string } | undefined;
+  ExercisePicker: { selectMode?: boolean; templateId?: string; programDayId?: string } | undefined;
+  AddExercise: { selectMode?: boolean; templateId?: string; programDayId?: string } | undefined;
   Library: { pickMode?: boolean } | undefined;
   TemplateEditor: { templateId?: string; scheduleAfterSave?: boolean } | undefined;
   ScheduledWorkoutDetail: { scheduledWorkoutId: string };
+  GenerateProgram: undefined;
+  AssignTrainingDay: { initialDayOfWeek?: number } | undefined;
+  AssignCardioDay: { initialDayOfWeek?: number } | undefined;
+  TrainingDayDetail: { weeklyScheduleId: string; workoutTemplateId: string; dayOfWeek: number };
+  WorkoutLogDetail: { workoutLogIds: string[]; title?: string | null; dateLabel?: string };
 };
 
 // ---- Log tab ----
@@ -48,12 +54,18 @@ export type LogStackParamList = {
     | { programDayId?: string; scheduledWorkoutId?: string; templateId?: string; variantType?: WorkoutVariantType }
     | undefined;
   ActiveExercise: { exerciseId: string };
-  ExercisePicker: { selectMode?: boolean; templateId?: string } | undefined;
-  AddExercise: { selectMode?: boolean; templateId?: string } | undefined;
+  ExercisePicker: { selectMode?: boolean; templateId?: string; programDayId?: string } | undefined;
+  AddExercise: { selectMode?: boolean; templateId?: string; programDayId?: string } | undefined;
   ExerciseDetail: { exerciseId: string };
   WorkoutSummary: undefined;
   Library: { pickMode?: boolean } | undefined;
   TemplateEditor: { templateId?: string; scheduleAfterSave?: boolean } | undefined;
+  /** No scheduledWorkoutId — v1 has no one-off cardio scheduling, only
+   * recurring (weekly_schedule) and AI-program (program_days) cardio days.
+   * `date` (yyyy-MM-dd) is which calendar day this session is being logged
+   * for — omitted when logging from a "start now" entry point, in which
+   * case it defaults to today. */
+  LogCardio: { programDayId?: string; date?: string } | undefined;
 };
 
 // ---- Progress tab ----
@@ -69,13 +81,22 @@ export type ProgressStackParamList = {
 export type CommunityStackParamList = {
   Leaderboard: undefined;
   Posts: undefined;
-  MyPosts: undefined;
   FriendProfile: { userId: string };
   PostDetail: { postId: string };
-  UploadPhotoPost: { mode: 'progress' | 'before_after' };
-  /** Followers and Following render the same list (mutual friends) under
-   * two labels — see FriendsListScreen. */
-  FriendsList: { userId: string; title: 'Followers' | 'Following' };
+  UploadPhotoPost: {
+    mode: 'progress' | 'before_after';
+    /** Pre-attached when reached via the Social tab's new-post FAB, which
+     * already captured/picked the photo itself — the screen skips straight
+     * to caption/tags instead of showing its own picker again. */
+    initialPhoto?: { uri: string; contentType: string };
+  };
+  /** GymBee's relationship model is a mutual "Friends" graph (see
+   * FriendsListScreen) — a single label, not separate Followers/Following
+   * lists that would just show identical content under different names. */
+  FriendsList: { userId: string; title: 'Friends' };
+  Messages: undefined;
+  Conversation: { conversationId: string };
+  AtMyGym: undefined;
 };
 
 // ---- Profile (pushed from Today header, not a tab) ----
@@ -92,7 +113,7 @@ export type ProfileStackParamList = {
    * confirmation toast. */
   Integrations: { status?: 'success' | 'error'; message?: string } | undefined;
   PostDetail: { postId: string };
-  FriendsList: { userId: string; title: 'Followers' | 'Following' };
+  FriendsList: { userId: string; title: 'Friends' };
 };
 
 export type MainTabParamList = {

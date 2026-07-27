@@ -1,6 +1,6 @@
 # AI Coaching Architecture
 
-This document covers the AI-coaching foundation added on top of SoSet's existing
+This document covers the AI-coaching foundation added on top of SetSocial's existing
 workout-tracking app: domain models, the coaching engine, feature flags, and what's
 deliberately deferred. It's the map for continuing past this pass.
 

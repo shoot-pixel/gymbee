@@ -85,6 +85,7 @@ export function WhoopMetricsSection({ userId }: { userId: string | null }) {
           progress={metrics.recovery_score != null ? metrics.recovery_score / 100 : 0}
           size={88}
           strokeWidth={8}
+          centerValueSize="sm"
           centerValue={metrics.recovery_score != null ? `${metrics.recovery_score}%` : '—'}
           label="Recovery"
         />
@@ -92,6 +93,7 @@ export function WhoopMetricsSection({ userId }: { userId: string | null }) {
           progress={metrics.sleep_performance_pct != null ? metrics.sleep_performance_pct / 100 : 0}
           size={88}
           strokeWidth={8}
+          centerValueSize="sm"
           colors={theme.gradients.sleep}
           centerValue={metrics.sleep_performance_pct != null ? `${metrics.sleep_performance_pct}%` : '—'}
           label="Sleep"
@@ -100,6 +102,7 @@ export function WhoopMetricsSection({ userId }: { userId: string | null }) {
           progress={metrics.strain != null ? metrics.strain / 21 : 0}
           size={88}
           strokeWidth={8}
+          centerValueSize="sm"
           colors={theme.gradients.strain}
           centerValue={metrics.strain != null ? metrics.strain.toFixed(1) : '—'}
           label="Strain"

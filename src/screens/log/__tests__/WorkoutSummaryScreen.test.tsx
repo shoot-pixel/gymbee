@@ -107,8 +107,8 @@ function seedCompletedWorkout() {
         metric: 'weight_kg',
         notes: '',
         sets: [
-          { id: 'set-1', dbId: 'dbset-1', setNumber: 1, reps: 5, loadKg: 100, rpe: 8, isWarmup: false, completed: true },
-          { id: 'set-2', dbId: 'dbset-2', setNumber: 2, reps: 5, loadKg: 100, rpe: 8, isWarmup: false, completed: true },
+          { id: 'set-1', dbId: 'dbset-1', setNumber: 1, reps: 5, loadKg: 100, rpe: 8, durationSeconds: null, timerStartedAt: null, isWarmup: false, completed: true },
+          { id: 'set-2', dbId: 'dbset-2', setNumber: 2, reps: 5, loadKg: 100, rpe: 8, durationSeconds: null, timerStartedAt: null, isWarmup: false, completed: true },
         ],
       },
     ],

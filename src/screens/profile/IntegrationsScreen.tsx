@@ -10,10 +10,12 @@ import { useAuthStore } from '../../store/authStore';
 import {
   useIntegrationConnections,
   useStartWhoopConnect,
+  useStartSpotifyConnect,
   useDisconnectIntegration,
 } from '../../services/api/queries/integrations';
 import type { ProfileStackParamList } from '../../navigation/types';
 import type { IntegrationProvider } from '../../types/database';
+import type { IconName } from '../../components/core';
 
 type Route = RouteProp<ProfileStackParamList, 'Integrations'>;
 type Nav = NativeStackNavigationProp<ProfileStackParamList>;
@@ -23,6 +25,7 @@ type IntegrationDef = {
   name: string;
   source: string;
   description: string;
+  icon: IconName;
 };
 
 const INTEGRATIONS: IntegrationDef[] = [
@@ -31,7 +34,16 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Whoop',
     source: 'Recovery, sleep & readiness',
     description:
-      'Connect your Whoop account to bring recovery, sleep, and readiness data into SoSet — your coach uses it to adjust each day’s session.',
+      'Connect your Whoop account to bring recovery, sleep, and readiness data into SetSocial — your coach uses it to adjust each day’s session.',
+    icon: 'activity',
+  },
+  {
+    provider: 'spotify',
+    name: 'Spotify',
+    source: 'Playback control & playlists',
+    description:
+      'Connect Spotify to see and control what’s playing during a workout, and attach one of your playlists to a training day.',
+    icon: 'music',
   },
 ];
 
@@ -67,7 +79,13 @@ function IntegrationCard({
 }) {
   const theme = useTheme();
   const { data: connections, isLoading, refetch } = useIntegrationConnections(userId);
-  const startConnect = useStartWhoopConnect();
+  // Rules of hooks: both start-connect mutations are always called, then the
+  // one matching this card's provider is picked below — same fixed-provider-
+  // set pattern as INTEGRATIONS itself, so this grows by one line per new
+  // provider rather than needing conditional hook calls.
+  const startWhoopConnect = useStartWhoopConnect();
+  const startSpotifyConnect = useStartSpotifyConnect();
+  const startConnect = def.provider === 'whoop' ? startWhoopConnect : startSpotifyConnect;
   const disconnect = useDisconnectIntegration();
   const connection = connections?.find(c => c.provider === def.provider) ?? null;
   const isConnected = connection?.access_token != null;
@@ -102,7 +120,7 @@ function IntegrationCard({
     if (!userId) return;
     Alert.alert(
       `Disconnect ${def.name}?`,
-      'SoSet will stop reading your Whoop data. You can reconnect any time.',
+      'SetSocial will stop reading your Whoop data. You can reconnect any time.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -132,7 +150,7 @@ function IntegrationCard({
             justifyContent: 'center',
           }}
         >
-          <Icon name="activity" size="sm" color={theme.colors.text.secondary} />
+          <Icon name={def.icon} size="sm" color={theme.colors.text.secondary} />
         </View>
         <View style={{ flex: 1 }}>
           <Text variant="body" style={{ fontWeight: '700' }}>
@@ -197,7 +215,7 @@ export function IntegrationsScreen() {
   useEffect(() => {
     if (!params?.status) return;
     if (params.status === 'success') {
-      Alert.alert('Whoop connected', 'Your Whoop account is now connected to SoSet.');
+      Alert.alert('Whoop connected', 'Your Whoop account is now connected to SetSocial.');
     } else {
       Alert.alert('Connection failed', params.message ?? 'Could not connect Whoop. Please try again.');
     }
@@ -208,8 +226,9 @@ export function IntegrationsScreen() {
   // Belt-and-suspenders fallback: if the OS hands the app back to the
   // foreground without React Navigation ever processing the soset:// URL
   // (e.g. the user manually switched back via the app switcher instead of
-  // tapping the "Open in SoSet" system prompt), neither effect above runs at
-  // all. Refetching on every foreground transition catches that case too.
+  // tapping the "Open in SetSocial" system prompt), neither effect above
+  // runs at all. Refetching on every foreground transition catches that case
+  // too.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active') {
@@ -226,7 +245,7 @@ export function IntegrationsScreen() {
         contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
       >
         <Text variant="body" color="secondary">
-          Connect third-party fitness platforms to bring their data into SoSet.
+          Connect third-party fitness platforms to bring their data into SetSocial.
         </Text>
         {INTEGRATIONS.map(def => (
           <IntegrationCard key={def.provider} def={def} userId={userId} initiallyExpanded={params?.status != null} />

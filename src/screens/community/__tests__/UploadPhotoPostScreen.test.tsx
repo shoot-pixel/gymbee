@@ -4,7 +4,9 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import { UploadPhotoPostScreen } from '../UploadPhotoPostScreen';
 
 const mockGoBack = jest.fn();
-let mockRouteParams: { mode: 'progress' | 'before_after' } = { mode: 'progress' };
+let mockRouteParams: { mode: 'progress' | 'before_after'; initialPhoto?: { uri: string; contentType: string } } = {
+  mode: 'progress',
+};
 
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
@@ -27,6 +29,10 @@ const mockCreateMutateAsync = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../../services/api/queries/posts', () => ({
   useCreatePhotoPost: jest.fn(() => ({ mutateAsync: mockCreateMutateAsync, isPending: false })),
+}));
+
+jest.mock('../../../services/api/queries/community', () => ({
+  useFriendsList: jest.fn(() => ({ data: [], isLoading: false })),
 }));
 
 beforeEach(() => {
@@ -78,7 +84,50 @@ describe('UploadPhotoPostScreen', () => {
         visibility: 'private',
         caption: 'Feeling strong',
         photo: { uri: 'file://photo.jpg', contentType: 'image/jpeg' },
+        taggedUserIds: [],
       }),
+    );
+  });
+
+  it('pre-attaches a photo passed in via initialPhoto and skips straight to the rest of the form', async () => {
+    mockRouteParams = {
+      mode: 'progress',
+      initialPhoto: { uri: 'file://precaptured.jpg', contentType: 'image/jpeg' },
+    };
+    const { getByText, queryByLabelText } = await render(<UploadPhotoPostScreen />);
+    await waitFor(() => expect(getByText('Post Progress Photo')).toBeTruthy());
+
+    expect(queryByLabelText('Add Photo, no photo selected. Tap to add.')).toBeNull();
+    expect(getByText('Post')).toBeTruthy();
+  });
+
+  it('lets the user tag friends, and includes the selection when posting', async () => {
+    mockRouteParams = { mode: 'progress' };
+    const { useFriendsList } = jest.requireMock('../../../services/api/queries/community') as {
+      useFriendsList: jest.Mock;
+    };
+    useFriendsList.mockReturnValue({
+      data: [{ id: 'friend-1', display_name: 'Alex Rivera', handle: 'alexr', avatar_url: null }],
+      isLoading: false,
+    });
+
+    const { getByText, getByPlaceholderText } = await render(<UploadPhotoPostScreen />);
+    await waitFor(() => expect(getByText('Post Progress Photo')).toBeTruthy());
+
+    await fireEvent.press(getByText('Add Photo'));
+    await waitFor(() => expect(launchImageLibrary).toHaveBeenCalled());
+
+    await fireEvent.press(getByText('Tag People'));
+    await waitFor(() => expect(getByText('Alex Rivera')).toBeTruthy());
+    await fireEvent.press(getByText('Alex Rivera'));
+
+    await fireEvent.changeText(getByPlaceholderText('Add a caption (optional)'), 'Leg day');
+    await fireEvent.press(getByText('Post'));
+
+    await waitFor(() =>
+      expect(mockCreateMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ taggedUserIds: ['friend-1'] }),
+      ),
     );
   });
 

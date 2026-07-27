@@ -132,6 +132,27 @@ export function computeWeeklyVolume(
   return sortedWeeks.slice(-weeks).map(weekStart => ({ weekStart, volume: buckets.get(weekStart) ?? 0 }));
 }
 
+/**
+ * Per-day volume — the Strength Trend chart's fallback for an account whose
+ * history doesn't yet span two calendar weeks. computeWeeklyVolume needs at
+ * least two week-buckets to draw a line; a handful of real sessions logged
+ * within the same week would otherwise render as a single point (i.e. no
+ * line at all) despite having genuine data to show.
+ */
+export function computeDailyVolume(
+  sets: LoggedSet[],
+  days = 14,
+): { date: string; volume: number }[] {
+  const buckets = new Map<string, number>();
+  for (const set of sets) {
+    if (set.loadKg == null) continue;
+    const dateKey = format(new Date(set.loggedAt), 'yyyy-MM-dd');
+    buckets.set(dateKey, (buckets.get(dateKey) ?? 0) + set.loadKg * set.reps);
+  }
+  const sortedDates = Array.from(buckets.keys()).sort();
+  return sortedDates.slice(-days).map(date => ({ date, volume: buckets.get(date) ?? 0 }));
+}
+
 export function totalVolumeThisMonth(sets: LoggedSet[]): number {
   const monthStart = startOfMonth(new Date());
   return sets

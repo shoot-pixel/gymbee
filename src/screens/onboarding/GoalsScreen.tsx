@@ -27,7 +27,7 @@ export function GoalsScreen({ navigation }: Props) {
       style={{ flex: 1, backgroundColor: theme.colors.bg.base, padding: theme.spacing.xl, gap: theme.spacing.lg }}
     >
       <View style={{ gap: theme.spacing.md }}>
-        <StepProgress step={1} total={5} />
+        <StepProgress step={1} total={6} />
         <Text variant="title">What's your goal?</Text>
       </View>
 
@@ -45,7 +45,7 @@ export function GoalsScreen({ navigation }: Props) {
 
       <View style={{ flex: 1 }} />
 
-      <Button label="Next" onPress={() => navigation.navigate('ExperienceLevel')} disabled={!goal} />
+      <Button label="Next" onPress={() => navigation.navigate('BodyProfile')} disabled={!goal} />
     </SafeAreaView>
   );
 }

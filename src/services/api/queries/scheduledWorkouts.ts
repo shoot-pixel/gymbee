@@ -1,10 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
 import { supabase } from '../supabaseClient';
 import type { Database } from '../../../types/database';
+import type { WorkoutTemplateTree } from './workoutTemplates';
 
 type ScheduledWorkoutRow = Database['public']['Tables']['scheduled_workouts']['Row'];
 type ScheduledExerciseRow = Database['public']['Tables']['scheduled_workout_exercises']['Row'];
 type ExerciseRow = Database['public']['Tables']['exercises']['Row'];
+
+// TodayScreen's paging/prefetch window — kept here (rather than duplicated
+// per-caller) so anything that needs to match its ['scheduledWorkouts', ...]
+// cache key exactly, like useAppBootstrap's splash-time prefetch, can't drift
+// out of sync with it.
+export const TODAY_RANGE_PAST_DAYS = 91; // ~13 weeks, matches WeekTimeline's paging window
+export const TODAY_RANGE_FUTURE_DAYS = 21;
 
 /** Common shape shared by program_exercises / workout_template_exercises rows
  * — anything with this shape can be copied into a scheduled workout. */
@@ -27,7 +36,7 @@ export type ScheduledWorkoutTree = ScheduledWorkoutRow & {
   scheduled_workout_exercises: ScheduledExerciseWithExercise[];
 };
 
-async function fetchScheduledWorkouts(
+export async function fetchScheduledWorkouts(
   userId: string,
   from: string,
   to: string,
@@ -129,6 +138,43 @@ export function useCreateScheduledWorkout() {
   });
 }
 
+/** Materializes "today's instance" of a recurring weekly-schedule day as a
+ * real, startable scheduled_workouts row. Find-or-create, not unconditional
+ * create — scheduled_workouts has no unique constraint on
+ * (user_id, scheduled_date), so repeatedly tapping "Start Workout" the same
+ * day (e.g. backing out of an unfinished session and retrying) would
+ * otherwise insert a duplicate row every time, and a duplicate workout_logs
+ * row along with it once started. */
+export function useStartTemplateToday() {
+  const queryClient = useQueryClient();
+  const createScheduledWorkout = useCreateScheduledWorkout();
+  return useMutation({
+    mutationFn: async (params: { userId: string; template: WorkoutTemplateTree }) => {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const { data: existing, error } = await supabase
+        .from('scheduled_workouts')
+        .select('*')
+        .eq('user_id', params.userId)
+        .eq('scheduled_date', today)
+        .eq('source_template_id', params.template.id)
+        .maybeSingle();
+      if (error) throw error;
+      if (existing) return existing;
+
+      return createScheduledWorkout.mutateAsync({
+        userId: params.userId,
+        scheduledDate: today,
+        name: params.template.name,
+        sourceTemplateId: params.template.id,
+        exercises: params.template.workout_template_exercises,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduledWorkouts'] });
+    },
+  });
+}
+
 export function useRescheduleScheduledWorkout() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -155,8 +201,9 @@ export function useDeleteScheduledWorkout() {
       const { error } = await supabase.from('scheduled_workouts').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['scheduledWorkouts'] });
+      queryClient.invalidateQueries({ queryKey: ['scheduledWorkout', id] });
     },
   });
 }

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { formatDistanceToNow } from 'date-fns';
@@ -18,6 +20,7 @@ import {
   Button,
   BottomSheet,
   ListRow,
+  LikeBurst,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -29,6 +32,7 @@ import {
 } from '../../services/api/queries/posts';
 import { useFriendProfile } from '../../services/api/queries/community';
 import { useComments, useCreateComment, useDeleteComment } from '../../services/api/queries/comments';
+import { useLikes, useToggleLike } from '../../services/api/queries/likes';
 import type { CommunityStackParamList, ProfileStackParamList } from '../../navigation/types';
 import type { PostVisibility } from '../../types/database';
 
@@ -50,6 +54,11 @@ export function PostDetailScreen() {
   const createComment = useCreateComment(params.postId, userId);
   const deleteComment = useDeleteComment(params.postId);
   const [commentDraft, setCommentDraft] = useState('');
+
+  const { data: likes } = useLikes(params.postId, userId);
+  const toggleLike = useToggleLike(params.postId, userId);
+  const likedByMe = likes?.likedByMe ?? false;
+  const [likeBurstTrigger, setLikeBurstTrigger] = useState(0);
 
   const photoPaths = useMemo(() => (post ? postPhotoPaths(post) : []), [post]);
   const { data: signedUrls } = useSignedPhotoUrls(photoPaths);
@@ -103,6 +112,21 @@ export function PostDetailScreen() {
       Alert.alert('Could not post comment', err instanceof Error ? err.message : 'Please try again.');
     }
   };
+
+  // Double-tap always plays the animation, but — matching Instagram — only
+  // actually likes when not already liked; it never unlikes.
+  const onDoubleTapPhoto = () => {
+    setLikeBurstTrigger(t => t + 1);
+    if (!likedByMe) {
+      toggleLike.mutate(false);
+    }
+  };
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      runOnJS(onDoubleTapPhoto)();
+    });
 
   const onDeleteComment = (commentId: string) => {
     Alert.alert('Delete comment?', "This can't be undone.", [
@@ -167,47 +191,76 @@ export function PostDetailScreen() {
             {isSelf ? <VisibilityBadge visibility={post.visibility} /> : null}
           </Pressable>
 
-          {post.post_type === 'progress_photo' ? (
-            <View
-              style={{ width: '100%', aspectRatio: 1, borderRadius: theme.radii.md, overflow: 'hidden', backgroundColor: theme.colors.bg.surface }}
-            >
-              {signedUrls?.[post.photo_path ?? ''] ? (
-                <Image
-                  source={{ uri: signedUrls[post.photo_path ?? ''] }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                  accessibilityLabel="Progress photo"
-                />
-              ) : null}
-            </View>
-          ) : (
-            <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-              {(
-                [
-                  { label: 'Before', path: post.before_photo_path },
-                  { label: 'After', path: post.after_photo_path },
-                ] as const
-              ).map(({ label, path }) => (
-                <View key={label} style={{ flex: 1, gap: theme.spacing.xs }}>
-                  <Text variant="label" color="secondary">
-                    {label.toUpperCase()}
-                  </Text>
-                  <View
-                    style={{ width: '100%', aspectRatio: 0.8, borderRadius: theme.radii.md, overflow: 'hidden', backgroundColor: theme.colors.bg.surface }}
-                  >
-                    {path && signedUrls?.[path] ? (
-                      <Image
-                        source={{ uri: signedUrls[path] }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
-                        accessibilityLabel={`${label} photo`}
-                      />
-                    ) : null}
-                  </View>
+          <GestureDetector gesture={doubleTap}>
+            <View style={{ position: 'relative' }}>
+              {post.post_type === 'progress_photo' ? (
+                <View
+                  style={{ width: '100%', aspectRatio: 1, borderRadius: theme.radii.md, overflow: 'hidden', backgroundColor: theme.colors.bg.surface }}
+                >
+                  {signedUrls?.[post.photo_path ?? ''] ? (
+                    <Image
+                      source={{ uri: signedUrls[post.photo_path ?? ''] }}
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="contain"
+                      accessibilityLabel="Progress photo"
+                    />
+                  ) : null}
                 </View>
-              ))}
+              ) : (
+                <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+                  {(
+                    [
+                      { label: 'Before', path: post.before_photo_path },
+                      { label: 'After', path: post.after_photo_path },
+                    ] as const
+                  ).map(({ label, path }) => (
+                    <View key={label} style={{ flex: 1, gap: theme.spacing.xs }}>
+                      <Text variant="label" color="secondary">
+                        {label.toUpperCase()}
+                      </Text>
+                      <View
+                        style={{ width: '100%', aspectRatio: 0.8, borderRadius: theme.radii.md, overflow: 'hidden', backgroundColor: theme.colors.bg.surface }}
+                      >
+                        {path && signedUrls?.[path] ? (
+                          <Image
+                            source={{ uri: signedUrls[path] }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="contain"
+                            accessibilityLabel={`${label} photo`}
+                          />
+                        ) : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+              <LikeBurst trigger={likeBurstTrigger} />
             </View>
-          )}
+          </GestureDetector>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+            <Pressable
+              onPress={() => toggleLike.mutate(likedByMe)}
+              disabled={toggleLike.isPending}
+              hitSlop={8}
+              accessibilityLabel={likedByMe ? 'Unlike' : 'Like'}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: likedByMe ? theme.colors.accent.primary : theme.colors.bg.surfaceElevated,
+              }}
+            >
+              <Text style={{ fontSize: 16 }}>💪</Text>
+            </Pressable>
+            <Text variant="body" color="secondary">
+              {likes && likes.count > 0
+                ? `${likes.count} ${likes.count === 1 ? 'like' : 'likes'}`
+                : 'Be the first to like this'}
+            </Text>
+          </View>
 
           {post.caption ? (
             <Text variant="body" color="secondary">

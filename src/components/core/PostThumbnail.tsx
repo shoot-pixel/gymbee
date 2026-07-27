@@ -10,12 +10,19 @@ type PostThumbnailProps = {
   photoUrl?: string;
   beforeUrl?: string;
   afterUrl?: string;
+  /** Fixed square tile (existing grid usage). Ignored when `aspectRatio` is given. */
   size?: number;
+  /** Fills the parent's width at this ratio instead of a fixed square — the
+   * editorial feed card's 4:5 portrait photo, or a percentage-width grid
+   * column, neither of which a hardcoded pixel `size` can express. */
+  aspectRatio?: number;
+  /** Corner radius override — defaults to radii.sm, the original grid tiles' look. */
+  radius?: number;
   onPress?: () => void;
 };
 
-/** Square photo tile used in both profile screens' posts grids — before/after posts show a split before|after preview. */
-export function PostThumbnail({ post, photoUrl, beforeUrl, afterUrl, size = 108, onPress }: PostThumbnailProps) {
+/** Photo tile used in profile posts grids and the editorial feed — before/after posts show a split before|after preview. */
+export function PostThumbnail({ post, photoUrl, beforeUrl, afterUrl, size = 108, aspectRatio, radius, onPress }: PostThumbnailProps) {
   const theme = useTheme();
   const isBeforeAfter = post.post_type === 'before_after_photo';
 
@@ -25,9 +32,8 @@ export function PostThumbnail({ post, photoUrl, beforeUrl, afterUrl, size = 108,
       accessibilityRole="imagebutton"
       accessibilityLabel={isBeforeAfter ? 'Before and after photo post' : 'Progress photo post'}
       style={{
-        width: size,
-        height: size,
-        borderRadius: theme.radii.sm,
+        ...(aspectRatio != null ? { width: '100%', aspectRatio } : { width: size, height: size }),
+        borderRadius: radius ?? theme.radii.sm,
         overflow: 'hidden',
         backgroundColor: theme.colors.bg.surface,
         flexDirection: 'row',

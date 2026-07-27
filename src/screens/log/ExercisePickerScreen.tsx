@@ -7,13 +7,15 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { TextField, ListRow, LoadingState, EmptyState, Header, IconButton } from '../../components/core';
 import { useExercises } from '../../services/api/queries/exercises';
 import { useActiveWorkoutStore } from '../../store/activeWorkoutStore';
+import { formatEnumLabel } from '../../utils/exerciseMetadata';
 import { useWorkoutTemplate, useAddTemplateExercise } from '../../services/api/queries/workoutTemplates';
+import { useProgramDay, useAddProgramExercise } from '../../services/api/queries/programs';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import type { LogStackParamList, ProgramsStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<LogStackParamList>;
 // ExercisePicker is registered on both LogStack and ProgramsStack (reached
-// from TemplateEditor on either) with identical params.
+// from TemplateEditor/DayDetail on either) with identical params.
 type Route = RouteProp<LogStackParamList | ProgramsStackParamList, 'ExercisePicker'>;
 
 export function ExercisePickerScreen() {
@@ -22,10 +24,13 @@ export function ExercisePickerScreen() {
   const { params } = useRoute<Route>();
   const selectMode = params?.selectMode ?? false;
   const templateId = params?.templateId;
+  const programDayId = params?.programDayId;
   const addExercise = useActiveWorkoutStore(state => state.addExercise);
   const unitPref = useUnitPreference();
   const { data: template } = useWorkoutTemplate(templateId);
   const addTemplateExercise = useAddTemplateExercise();
+  const { data: programDay } = useProgramDay(programDayId);
+  const addProgramExercise = useAddProgramExercise();
   const [search, setSearch] = useState('');
   const { data: exercises, isLoading } = useExercises(search);
 
@@ -38,7 +43,7 @@ export function ExercisePickerScreen() {
             name="plus"
             variant="ghost"
             accessibilityLabel="Add your own exercise"
-            onPress={() => navigation.navigate('AddExercise', { selectMode, templateId })}
+            onPress={() => navigation.navigate('AddExercise', { selectMode, templateId, programDayId })}
           />
         }
       />
@@ -63,13 +68,22 @@ export function ExercisePickerScreen() {
             renderItem={({ item }) => (
               <ListRow
                 title={item.name}
-                subtitle={`${item.category} · ${item.equipment} · ${item.primary_muscle}`}
-                showChevron={!selectMode && !templateId}
+                subtitle={`${formatEnumLabel(item.category)} · ${formatEnumLabel(item.equipment)} · ${formatEnumLabel(item.primary_muscle)}`}
+                showChevron={!selectMode && !templateId && !programDayId}
                 onPress={() => {
                   if (templateId) {
                     const nextIndex = template?.workout_template_exercises.length ?? 0;
                     addTemplateExercise.mutate({
                       workout_template_id: templateId,
+                      exercise_id: item.id,
+                      order_index: nextIndex,
+                      target_sets: 3,
+                    });
+                    navigation.goBack();
+                  } else if (programDayId) {
+                    const nextIndex = programDay?.program_exercises.length ?? 0;
+                    addProgramExercise.mutate({
+                      program_day_id: programDayId,
                       exercise_id: item.id,
                       order_index: nextIndex,
                       target_sets: 3,

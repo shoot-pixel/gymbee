@@ -1,7 +1,17 @@
 import React from 'react';
 import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PostDetailScreen } from '../PostDetailScreen';
+
+// GestureDetector (used for double-tap-to-like) requires a
+// GestureHandlerRootView ancestor — normally provided once at the real
+// app root (App.tsx), which doesn't exist in an isolated test render tree.
+function renderScreen() {
+  return render(<PostDetailScreen />, {
+    wrapper: ({ children }) => <GestureHandlerRootView style={{ flex: 1 }}>{children}</GestureHandlerRootView>,
+  });
+}
 
 const mockNavigate = jest.fn();
 
@@ -45,6 +55,14 @@ const mockUseComments = jest.fn();
 const mockCreateCommentMutateAsync = jest.fn();
 const mockDeleteCommentMutate = jest.fn();
 
+const mockUseLikes = jest.fn();
+const mockToggleLikeMutate = jest.fn();
+
+jest.mock('../../../services/api/queries/likes', () => ({
+  useLikes: (...args: unknown[]) => mockUseLikes(...args),
+  useToggleLike: jest.fn(() => ({ mutate: mockToggleLikeMutate, isPending: false })),
+}));
+
 jest.mock('../../../services/api/queries/comments', () => ({
   useComments: (...args: unknown[]) => mockUseComments(...args),
   useCreateComment: jest.fn(() => ({ mutateAsync: mockCreateCommentMutateAsync, isPending: false })),
@@ -78,38 +96,44 @@ const BEFORE_AFTER_POST = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockUseComments.mockReturnValue({ data: [] });
+  mockUseLikes.mockReturnValue({ data: { count: 0, likedByMe: false } });
 });
 
 describe('PostDetailScreen', () => {
   it('renders a progress-photo post with its caption', async () => {
     mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
 
-    const { getByText, getByLabelText } = await render(<PostDetailScreen />);
+    const { getByText, getByLabelText } = await renderScreen();
 
     await waitFor(() => expect(getByText('Feeling strong')).toBeTruthy());
     expect(getByLabelText('Progress photo')).toBeTruthy();
+    // Full-detail view shows the complete photo scaled down, not cropped —
+    // cropping to fill is correct for the feed grid, not here.
+    expect(getByLabelText('Progress photo').props.resizeMode).toBe('contain');
   });
 
   it('renders a before/after post with two images', async () => {
     mockUsePost.mockReturnValue({ data: BEFORE_AFTER_POST, isLoading: false });
 
-    const { getByLabelText } = await render(<PostDetailScreen />);
+    const { getByLabelText } = await renderScreen();
 
     await waitFor(() => expect(getByLabelText('Before photo')).toBeTruthy());
     expect(getByLabelText('After photo')).toBeTruthy();
+    expect(getByLabelText('Before photo').props.resizeMode).toBe('contain');
+    expect(getByLabelText('After photo').props.resizeMode).toBe('contain');
   });
 
   it('shows the VisibilityBadge only when viewing your own post', async () => {
     mockUsePost.mockReturnValue({ data: { ...PROGRESS_POST, user_id: 'user-1' }, isLoading: false });
 
-    const { getByText } = await render(<PostDetailScreen />);
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('👥 Friends')).toBeTruthy());
   });
 
   it('does not show a VisibilityBadge when viewing a friend\'s post', async () => {
     mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
 
-    const { queryByText } = await render(<PostDetailScreen />);
+    const { queryByText } = await renderScreen();
     await waitFor(() => expect(queryByText('👥 Friends')).toBeNull());
   });
 
@@ -129,7 +153,7 @@ describe('PostDetailScreen', () => {
       ],
     });
 
-    const { getByText } = await render(<PostDetailScreen />);
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Sam K.')).toBeTruthy());
     expect(getByText('Great progress!')).toBeTruthy();
   });
@@ -138,7 +162,7 @@ describe('PostDetailScreen', () => {
     mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
     mockCreateCommentMutateAsync.mockResolvedValue(undefined);
 
-    const { getByPlaceholderText, getByText, getAllByText } = await render(<PostDetailScreen />);
+    const { getByPlaceholderText, getByText, getAllByText } = await renderScreen();
     await waitFor(() => expect(getByText('Feeling strong')).toBeTruthy());
 
     const input = getByPlaceholderText('Add a comment...');
@@ -171,11 +195,39 @@ describe('PostDetailScreen', () => {
       deleteButton?.onPress?.();
     });
 
-    const { getByLabelText } = await render(<PostDetailScreen />);
+    const { getByLabelText } = await renderScreen();
     await waitFor(() => expect(getByLabelText('Delete comment')).toBeTruthy());
     await fireEvent.press(getByLabelText('Delete comment'));
 
     expect(mockDeleteCommentMutate).toHaveBeenCalledWith('comment-1');
     alertSpy.mockRestore();
+  });
+
+  it('shows the like count and prompts to be first when there are none', async () => {
+    mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
+    mockUseLikes.mockReturnValue({ data: { count: 0, likedByMe: false } });
+
+    const { getByText } = await renderScreen();
+    await waitFor(() => expect(getByText('Be the first to like this')).toBeTruthy());
+  });
+
+  it('shows a pluralized like count when liked', async () => {
+    mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
+    mockUseLikes.mockReturnValue({ data: { count: 3, likedByMe: true } });
+
+    const { getByText, getByLabelText } = await renderScreen();
+    await waitFor(() => expect(getByText('3 likes')).toBeTruthy());
+    expect(getByLabelText('Unlike')).toBeTruthy();
+  });
+
+  it('toggles the like via the persistent button', async () => {
+    mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
+    mockUseLikes.mockReturnValue({ data: { count: 1, likedByMe: false } });
+
+    const { getByLabelText } = await renderScreen();
+    await waitFor(() => expect(getByLabelText('Like')).toBeTruthy());
+    await fireEvent.press(getByLabelText('Like'));
+
+    expect(mockToggleLikeMutate).toHaveBeenCalledWith(false);
   });
 });
