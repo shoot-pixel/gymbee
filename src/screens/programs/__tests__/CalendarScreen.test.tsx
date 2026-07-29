@@ -85,13 +85,14 @@ describe('CalendarScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Library', undefined);
   });
 
-  it('navigates to GenerateProgram from the Program segment when there is no active program', async () => {
+  it('opens the Ask Coach sheet from the Program segment when there is no active program', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
 
-    const { getByLabelText } = await render(<CalendarScreen />);
+    const { getByLabelText, getByText } = await render(<CalendarScreen />);
     await fireEvent.press(getByLabelText('Program'));
 
-    expect(mockNavigate).toHaveBeenCalledWith('GenerateProgram');
+    expect(getByText('Build a Custom Program')).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalledWith('GenerateProgram', expect.anything());
   });
 
   it('navigates to ProgramDetail from the Program segment when a program exists', async () => {
@@ -196,7 +197,7 @@ describe('CalendarScreen', () => {
     expect(queryByText('Assign a Workout')).toBeNull();
   });
 
-  it('shows a day as Completed and opens its log detail on tap, once this week\'s workout for that day is logged', async () => {
+  it('shows a day as Done and opens its log detail on tap, once this week\'s workout for that day is logged', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
     mockUseWeeklySchedule.mockReturnValue({
       data: [
@@ -217,7 +218,7 @@ describe('CalendarScreen', () => {
     });
 
     const { getByText, queryByText } = await render(<CalendarScreen />);
-    await waitFor(() => expect(getByText('Completed')).toBeTruthy());
+    await waitFor(() => expect(getByText('Done')).toBeTruthy());
 
     await fireEvent.press(getByText('Wednesday'));
     expect(mockNavigate).toHaveBeenCalledWith('WorkoutLogDetail', {
@@ -232,7 +233,7 @@ describe('CalendarScreen', () => {
     await fireEvent.press(getByText('Assign a Workout'));
     expect(mockNavigate).toHaveBeenCalledWith('AssignTrainingDay', { initialDayOfWeek: 0 });
     // The completed row keeps showing its resolved title alongside the
-    // "Completed" trailing badge — it doesn't disappear.
+    // "Done" trailing badge — it doesn't disappear.
     expect(queryByText('Ultimate Core Day')).toBeTruthy();
   });
 
@@ -302,17 +303,66 @@ describe('CalendarScreen', () => {
     expect(queryByText(format(withinThisWeek, 'EEEE, MMM d'))).toBeNull();
   });
 
-  it('shows a secondary AI-generate link when there is no active program', async () => {
+  it('shows a secondary Ask Coach link when there is no active program', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
 
     const { getByText } = await render(<CalendarScreen />);
-    await waitFor(() => expect(getByText('Generate a periodized program with AI')).toBeTruthy());
+    await waitFor(() => expect(getByText('Ask Coach to build you a custom program')).toBeTruthy());
 
-    await fireEvent.press(getByText('Generate a periodized program with AI'));
-    expect(mockNavigate).toHaveBeenCalledWith('GenerateProgram');
+    await fireEvent.press(getByText('Ask Coach to build you a custom program'));
+    expect(getByText('Build a Custom Program')).toBeTruthy();
   });
 
-  it('shows the program summary card (linking into the full Program view) instead of the AI-generate link once a program exists', async () => {
+  it('asks days-per-week and weeks before revealing the goal/emphasis fields, then submits everything as GenerateProgram params', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+
+    const { getByText, queryByText, getByPlaceholderText } = await render(<CalendarScreen />);
+    await fireEvent.press(getByText('Ask Coach to build you a custom program'));
+
+    expect(getByText('How many days a week do you want to train?')).toBeTruthy();
+    // The rest of the sheet doesn't appear until both questions are answered.
+    expect(queryByText('How many weeks should this block run?')).toBeNull();
+    expect(queryByText('Build My Program')).toBeNull();
+
+    await fireEvent.press(getByText('4 days'));
+    expect(getByText('How many weeks should this block run?')).toBeTruthy();
+    expect(queryByText('Build My Program')).toBeNull();
+
+    await fireEvent.press(getByText('6 weeks'));
+    expect(getByText('Build My Program')).toBeTruthy();
+
+    const goalField = getByPlaceholderText(/Get stronger for climbing season/);
+    await fireEvent.changeText(goalField, 'Get stronger for climbing season');
+    await fireEvent.press(getByText('Chest'));
+    await fireEvent.press(getByText('Shoulders'));
+    await fireEvent.press(getByText('Build My Program'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('GenerateProgram', {
+      daysPerWeek: 4,
+      weeksCount: 6,
+      focusNotes: 'Get stronger for climbing season',
+      emphasisMuscleGroups: ['chest', 'shoulders'],
+    });
+  });
+
+  it('lets the athlete submit the Ask Coach sheet with the goal/emphasis fields left blank — only days/weeks are required', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+
+    const { getByText } = await render(<CalendarScreen />);
+    await fireEvent.press(getByText('Ask Coach to build you a custom program'));
+    await fireEvent.press(getByText('3 days'));
+    await fireEvent.press(getByText('4 weeks'));
+    await fireEvent.press(getByText('Build My Program'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('GenerateProgram', {
+      daysPerWeek: 3,
+      weeksCount: 4,
+      focusNotes: undefined,
+      emphasisMuscleGroups: undefined,
+    });
+  });
+
+  it('shows the program summary card (linking into the full Program view) instead of the Ask Coach link once a program exists', async () => {
     mockUseActiveProgramTree.mockReturnValue({
       data: {
         id: 'program-1',
@@ -326,7 +376,7 @@ describe('CalendarScreen', () => {
 
     const { getByText, queryByText } = await render(<CalendarScreen />);
     await waitFor(() => expect(getByText('Strength Block')).toBeTruthy());
-    expect(queryByText('Generate a periodized program with AI')).toBeNull();
+    expect(queryByText('Ask Coach to build you a custom program')).toBeNull();
 
     await fireEvent.press(getByText('Strength Block'));
     expect(mockNavigate).toHaveBeenCalledWith('ProgramDetail', { programId: 'program-1' });

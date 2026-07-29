@@ -15,9 +15,10 @@ import { useWorkoutTemplate } from '../../services/api/queries/workoutTemplates'
 import { resolveDayPlan } from '../../utils/dayPlan';
 import { useActiveWorkoutStore, type WorkoutSource } from '../../store/activeWorkoutStore';
 import { featureFlags } from '../../config/featureFlags';
-import type { LogStackParamList } from '../../navigation/types';
+import type { LogStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<LogStackParamList>;
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
 function dateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd');
@@ -68,6 +69,7 @@ function sourceToParams(source: WorkoutSource | null): LogStackParamList['Active
 export function LogLandingScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
+  const rootNavigation = useNavigation<RootNav>();
   const userId = useAuthStore(state => state.userId);
   const today = useMemo(() => new Date(), []);
   const todayKey = dateKey(today);
@@ -93,7 +95,6 @@ export function LogLandingScreen() {
     () => resolveDayPlan({ date: today, program, weeklySchedule, scheduledWorkouts, workoutLogs: workoutLogsToday }),
     [today, program, weeklySchedule, scheduledWorkouts, workoutLogsToday],
   );
-  const isTodayCompleted = plan.kind === 'completed';
   const hasTarget =
     plan.kind === 'scheduled' ||
     plan.kind === 'weeklyRecurring' ||
@@ -176,6 +177,19 @@ export function LogLandingScreen() {
       ? 'Today is a rest day in your program.'
       : "You don't have a workout scheduled for today.";
 
+  // Cross-tab hop to the Training tab's editable detail — same destination,
+  // and same reasoning for going via the root navigator instead of this
+  // stack's own, as CompletedWorkoutCard's onEditWorkout on the Today tab.
+  const onEditTodayWorkout = (workoutLogIds: string[], title: string | null) => {
+    rootNavigation.navigate('MainTabs', {
+      screen: 'ProgramsTab',
+      params: {
+        screen: 'WorkoutLogDetail',
+        params: { workoutLogIds, title, dateLabel: format(today, 'EEEE, MMM d') },
+      },
+    });
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}>
@@ -186,13 +200,20 @@ export function LogLandingScreen() {
           <Text variant="title">Log a Workout</Text>
         </View>
 
-        {isTodayCompleted ? (
+        {plan.kind === 'completed' ? (
           <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl }}>
             <Icon name="circleCheck" size="lg" color={theme.colors.accent.primary} />
             <Text variant="subtitle">Today's workout is done</Text>
             <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
               Nice work. Start another session below if you want a second one today.
             </Text>
+            <View style={{ width: '100%' }}>
+              <Button
+                label="Edit Workout"
+                variant="secondary"
+                onPress={() => onEditTodayWorkout(plan.workoutLogIds, plan.title)}
+              />
+            </View>
           </Card>
         ) : hasTarget ? (
           <Card variant="elevated" style={{ gap: theme.spacing.sm }}>

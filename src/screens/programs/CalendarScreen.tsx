@@ -17,6 +17,7 @@ import {
   LoadingState,
   Button,
   SegmentedControl,
+  TextField,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useActiveProgramTree } from '../../services/api/queries/programs';
@@ -25,9 +26,13 @@ import { useWorkoutLogsInRange } from '../../services/api/queries/workoutLogs';
 import { useWeeklySchedule, getWeeklyScheduleForDate } from '../../services/api/queries/weeklySchedule';
 import { resolveDayPlan, getOneOffBaseline, type ResolvedDayPlan } from '../../utils/dayPlan';
 import { navigateToStartCardio } from '../../navigation/startWorkoutFlow';
+import { MUSCLE_GROUPS, type MuscleGroup } from '../../constants/muscleGroups';
+import { formatEnumLabel } from '../../utils/exerciseMetadata';
 import type { ProgramsStackParamList, RootStackParamList } from '../../navigation/types';
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const ASK_DAYS_OPTIONS = [3, 4, 5, 6];
+const ASK_WEEKS_OPTIONS = [4, 6, 8];
 
 function planLineFor(resolved: ResolvedDayPlan): string {
   switch (resolved.kind) {
@@ -64,6 +69,18 @@ export function CalendarScreen() {
   // Set when a rest-day row is tapped — offers a choice (assign a workout,
   // or mark the day cardio) instead of jumping straight to AssignTrainingDay.
   const [restDayChoiceFor, setRestDayChoiceFor] = useState<number | null>(null);
+  // "Ask Coach to build you a custom program" — a short back-and-forth
+  // (answered by tap, not typed) that asks the two questions a generated
+  // program can't be right without — days/week and how many weeks — before
+  // revealing the optional goal/emphasis fields and handing off to
+  // GenerateProgramScreen. Previously these two were silently pulled from
+  // the profile (or the model guessed the week count), which is how a
+  // program could come back shaped nothing like what the athlete wanted.
+  const [generateProgramSheetOpen, setGenerateProgramSheetOpen] = useState(false);
+  const [askDaysPerWeek, setAskDaysPerWeek] = useState<number | null>(null);
+  const [askWeeksCount, setAskWeeksCount] = useState<number | null>(null);
+  const [focusNotes, setFocusNotes] = useState('');
+  const [selectedMuscleGroups, setSelectedMuscleGroups] = useState<MuscleGroup[]>([]);
 
   const [segment, setSegment] = useState<Segment>('thisWeek');
   useFocusEffect(useCallback(() => setSegment('thisWeek'), []));
@@ -107,6 +124,101 @@ export function CalendarScreen() {
     }
   }, [refetchProgram, refetchScheduled, refetchWeeklySchedule, refetchThisWeekLogs]);
 
+  const toggleMuscleGroup = (group: MuscleGroup) => {
+    setSelectedMuscleGroups(current =>
+      current.includes(group) ? current.filter(g => g !== group) : [...current, group],
+    );
+  };
+
+  const onSubmitGenerateProgram = () => {
+    if (askDaysPerWeek == null || askWeeksCount == null) return;
+    setGenerateProgramSheetOpen(false);
+    navigation.navigate('GenerateProgram', {
+      daysPerWeek: askDaysPerWeek,
+      weeksCount: askWeeksCount,
+      focusNotes: focusNotes.trim() || undefined,
+      emphasisMuscleGroups: selectedMuscleGroups.length > 0 ? selectedMuscleGroups : undefined,
+    });
+    setAskDaysPerWeek(null);
+    setAskWeeksCount(null);
+    setFocusNotes('');
+    setSelectedMuscleGroups([]);
+  };
+
+  // Coach's own message — left-aligned, chat-bubble styled — used for both
+  // questions in the Ask Coach sheet below.
+  const renderCoachBubble = (message: string) => (
+    <View
+      style={{
+        alignSelf: 'flex-start',
+        maxWidth: '90%',
+        backgroundColor: theme.colors.bg.surface,
+        borderWidth: 1,
+        borderColor: theme.colors.border.default,
+        borderRadius: theme.radii.lg,
+        borderBottomLeftRadius: 4,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+      }}
+    >
+      <Text variant="body">{message}</Text>
+    </View>
+  );
+
+  // The athlete's tapped answer, replayed back as a sent bubble once chosen
+  // — so the sheet reads as a short exchange rather than a form resetting
+  // itself after every tap.
+  const renderAnswerBubble = (label: string) => (
+    <View
+      style={{
+        alignSelf: 'flex-end',
+        backgroundColor: theme.colors.accent.primary,
+        borderRadius: theme.radii.lg,
+        borderBottomRightRadius: 4,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+      }}
+    >
+      <Text variant="body" style={{ color: theme.colors.text.onAccent, fontWeight: '600' }}>
+        {label}
+      </Text>
+    </View>
+  );
+
+  const renderChipRow = (options: number[], selected: number | null, suffix: string, onSelect: (n: number) => void) => (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }}>
+      {options.map(n => {
+        const isSelected = selected === n;
+        return (
+          <Pressable
+            key={n}
+            onPress={() => onSelect(n)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isSelected }}
+            style={{
+              paddingHorizontal: theme.spacing.md,
+              paddingVertical: 7,
+              borderRadius: theme.radii.pill,
+              backgroundColor: isSelected ? theme.colors.accent.subtle : theme.colors.bg.surface,
+              borderWidth: 1,
+              borderColor: isSelected ? theme.colors.accent.primary : theme.colors.border.default,
+            }}
+          >
+            <Text
+              variant="caption"
+              style={{
+                color: isSelected ? theme.colors.accent.primary : theme.colors.text.secondary,
+                fontWeight: isSelected ? '600' : '400',
+              }}
+            >
+              {n} {suffix}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
   const onChangeSegment = (value: Segment) => {
     setSegment(value);
     if (value === 'library') {
@@ -115,7 +227,7 @@ export function CalendarScreen() {
       if (program) {
         navigation.navigate('ProgramDetail', { programId: program.id });
       } else {
-        navigation.navigate('GenerateProgram');
+        setGenerateProgramSheetOpen(true);
       }
     }
   };
@@ -169,7 +281,16 @@ export function CalendarScreen() {
               <Button label="Add a Training Day" onPress={() => navigation.navigate('AssignTrainingDay')} />
             </View>
           ) : (
-            <Card variant="elevated" style={{ gap: 0 }}>
+            // padding: 0 rather than Card's default inset — "today"'s green
+            // wash is a per-row background color, and with the card's own
+            // padding still in place that wash sat inside a 12px margin on
+            // every side instead of reaching the card's actual edges, reading
+            // as a rectangle cut off short of where the card itself ends.
+            // Each row now carries its own horizontal padding instead (see
+            // below), so normal rows still look inset the same as before —
+            // only a highlighted row's background actually reaches edge to
+            // edge.
+            <Card variant="elevated" style={{ gap: 0, padding: 0 }}>
               {WEEKDAY_NAMES.map((weekday, dayOfWeek) => {
                 const date = thisWeekDates[dayOfWeek];
                 const isToday = format(date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
@@ -214,10 +335,29 @@ export function CalendarScreen() {
 
                 const trailing =
                   resolved.kind === 'completed' ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xxs }}>
-                      <Icon name="circleCheck" size="sm" color={theme.colors.accent.primary} />
-                      <Text variant="caption" style={{ color: theme.colors.accent.primary, fontWeight: '700' }}>
-                        Completed
+                    // A soft-tinted pill rather than a solid icon + bold label —
+                    // "today" already washes the whole row green (see isToday
+                    // below), so a completed day that's also today doesn't need
+                    // a second, louder green signal stacked on top of it.
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: theme.spacing.xxs,
+                        paddingHorizontal: theme.spacing.sm,
+                        paddingVertical: 3,
+                        borderRadius: theme.radii.pill,
+                        backgroundColor: 'rgba(0,227,142,0.10)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(0,227,142,0.32)',
+                      }}
+                    >
+                      <Icon name="check" size={12} color={theme.colors.accent.primary} strokeWidth={3} />
+                      <Text
+                        variant="caption"
+                        style={{ color: theme.colors.accent.primary, fontWeight: '700', fontSize: 11, letterSpacing: 0.2 }}
+                      >
+                        Done
                       </Text>
                     </View>
                   ) : resolved.kind === 'weeklyCardio' || resolved.kind === 'programCardio' ? (
@@ -269,8 +409,23 @@ export function CalendarScreen() {
                     }
                     onPress={onPress}
                     style={{
+                      paddingHorizontal: theme.spacing.md,
                       ...(dayOfWeek > 0 ? { borderTopWidth: 1, borderTopColor: theme.colors.border.subtle } : null),
-                      ...(isToday ? { backgroundColor: theme.colors.accent.subtle } : null),
+                      ...(isToday
+                        ? {
+                            backgroundColor: theme.colors.accent.subtle,
+                            // Matches the card's own corner radius exactly when
+                            // "today" lands on the first/last row, so the wash's
+                            // corners round together with the card instead of a
+                            // square edge poking past the card's curve.
+                            ...(dayOfWeek === 0
+                              ? { borderTopLeftRadius: theme.radii.lg, borderTopRightRadius: theme.radii.lg }
+                              : null),
+                            ...(dayOfWeek === 6
+                              ? { borderBottomLeftRadius: theme.radii.lg, borderBottomRightRadius: theme.radii.lg }
+                              : null),
+                          }
+                        : null),
                     }}
                   />
                 );
@@ -305,10 +460,10 @@ export function CalendarScreen() {
           <LoadingState fill={false} />
         ) : !program ? (
           <ListRow
-            title="Generate a periodized program with AI"
-            icon="calendarPlus"
+            title="Ask Coach to build you a custom program"
+            icon="messageCircle"
             showChevron
-            onPress={() => navigation.navigate('GenerateProgram')}
+            onPress={() => setGenerateProgramSheetOpen(true)}
           />
         ) : (
           <Pressable onPress={() => navigation.navigate('ProgramDetail', { programId: program.id })}>
@@ -367,6 +522,79 @@ export function CalendarScreen() {
               navigation.navigate('Library', { pickMode: true });
             }}
           />
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={generateProgramSheetOpen}
+        onClose={() => setGenerateProgramSheetOpen(false)}
+        title="Build a Custom Program"
+      >
+        <View style={{ gap: theme.spacing.md }}>
+          {renderCoachBubble('How many days a week do you want to train?')}
+          {renderChipRow(ASK_DAYS_OPTIONS, askDaysPerWeek, 'days', setAskDaysPerWeek)}
+
+          {askDaysPerWeek != null ? (
+            <>
+              {renderAnswerBubble(`${askDaysPerWeek} days`)}
+              {renderCoachBubble('How many weeks should this block run?')}
+              {renderChipRow(ASK_WEEKS_OPTIONS, askWeeksCount, 'weeks', setAskWeeksCount)}
+            </>
+          ) : null}
+
+          {askDaysPerWeek != null && askWeeksCount != null ? (
+            <>
+              {renderAnswerBubble(`${askWeeksCount} weeks`)}
+              <TextField
+                label="Anything specific this program should accomplish? (optional)"
+                value={focusNotes}
+                onChangeText={setFocusNotes}
+                placeholder="Get stronger for climbing season, build a bigger chest, train for a 5K…"
+                multiline
+              />
+              <View style={{ gap: theme.spacing.sm }}>
+                <Text variant="label" color="secondary">
+                  MUSCLE GROUPS TO EMPHASIZE (OPTIONAL)
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }}>
+                  {MUSCLE_GROUPS.map(group => {
+                    const selected = selectedMuscleGroups.includes(group);
+                    return (
+                      <Pressable
+                        key={group}
+                        onPress={() => toggleMuscleGroup(group)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: theme.spacing.xxs,
+                          paddingHorizontal: theme.spacing.sm,
+                          paddingVertical: 7,
+                          borderRadius: theme.radii.pill,
+                          backgroundColor: selected ? theme.colors.accent.subtle : theme.colors.bg.surface,
+                          borderWidth: 1,
+                          borderColor: selected ? theme.colors.accent.primary : theme.colors.border.default,
+                        }}
+                      >
+                        {selected ? <Icon name="check" size={11} color={theme.colors.accent.primary} strokeWidth={3} /> : null}
+                        <Text
+                          variant="caption"
+                          style={{
+                            color: selected ? theme.colors.accent.primary : theme.colors.text.secondary,
+                            fontWeight: selected ? '600' : '400',
+                          }}
+                        >
+                          {formatEnumLabel(group)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              <Button label="Build My Program" onPress={onSubmitGenerateProgram} />
+            </>
+          ) : null}
         </View>
       </BottomSheet>
     </SafeAreaView>

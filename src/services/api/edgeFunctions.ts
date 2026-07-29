@@ -26,8 +26,17 @@ export type GenerateProgramInput = {
   goal: TrainingGoal;
   experience_level: ExperienceLevel;
   days_per_week: number;
+  /** How many weeks the generated block should run — asked explicitly by
+   * the Ask Coach flow before generation, never inferred by the model. */
+  weeks_count: number;
   equipment: EquipmentType[];
   injuries_notes: string;
+  /** Free-text answer to "what are you trying to accomplish?" — optional,
+   * same as injuries_notes. */
+  focus_notes: string;
+  /** MuscleGroup values (see constants/muscleGroups.ts) the athlete picked
+   * to emphasize this program — optional, may be empty. */
+  emphasis_muscle_groups: string[];
 };
 
 export function generateProgram(input: GenerateProgramInput): Promise<{ program_id: string }> {

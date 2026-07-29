@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Pressable, Alert } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Icon, TextField } from '../../components/core';
@@ -70,6 +70,51 @@ function formatDuration(totalSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+const COUNTDOWN_START_FROM = 5;
+const COUNTDOWN_GO_DISPLAY_MS = 500;
+
+/** Drives the pre-set "5, 4, 3, 2, 1, GO" countdown shown on a timed set's
+ * Start button before its stopwatch actually starts — gives the athlete a
+ * beat to get into position instead of the clock starting the instant they
+ * tap. `count` is 5..1 while counting down, 0 while "GO" is showing, and
+ * null the rest of the time (idle or already running). A single chained
+ * setTimeout (rather than setInterval) makes the final, shorter "GO" beat
+ * trivial to express as just one more step with its own delay. */
+function useStartCountdown(onFinished: () => void) {
+  const [count, setCount] = useState<number | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancel = () => {
+    if (timeoutRef.current != null) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setCount(null);
+  };
+
+  useEffect(() => cancel, []); // clears any pending step if this row unmounts mid-countdown
+
+  const step = (value: number) => {
+    setCount(value);
+    timeoutRef.current = setTimeout(
+      () => {
+        if (value > 0) {
+          step(value - 1);
+        } else {
+          timeoutRef.current = null;
+          setCount(null);
+          onFinished();
+        }
+      },
+      value > 0 ? 1000 : COUNTDOWN_GO_DISPLAY_MS,
+    );
+  };
+
+  const start = () => step(COUNTDOWN_START_FROM);
+
+  return { count, isCounting: count != null, start, cancel };
+}
+
 /** Recomputes elapsed time from a fixed start timestamp on every tick rather
  * than decrementing/incrementing a counter — the same reason the rest timer
  * moved away from a counter-based interval (see activeWorkoutStore). This
@@ -117,6 +162,25 @@ export function WorkoutSetRow({
   const theme = useTheme();
   const timerRunning = setRow.timerStartedAt != null;
   const elapsedSeconds = useElapsedSeconds(setRow.timerStartedAt);
+  const countdown = useStartCountdown(onStartTimer);
+
+  // Completing the set (or someone else stopping its timer) while the
+  // pre-start countdown is still running should cancel it rather than let it
+  // finish and start a timer for a set that's already done.
+  useEffect(() => {
+    if (setRow.completed) countdown.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setRow.completed]);
+
+  const onPressTimerControl = () => {
+    if (timerRunning) {
+      onStopTimer();
+    } else if (countdown.isCounting) {
+      countdown.cancel();
+    } else {
+      countdown.start();
+    }
+  };
 
   const onDeletePress = () => {
     if (!isSetPopulated(setRow)) {
@@ -181,7 +245,10 @@ export function WorkoutSetRow({
       <View style={{ flex: 1 }}>
         {metric === 'time' ? (
           <Pressable
-            onPress={timerRunning ? onStopTimer : onStartTimer}
+            onPress={onPressTimerControl}
+            accessibilityLabel={
+              timerRunning ? 'Stop timer' : countdown.isCounting ? 'Cancel countdown' : 'Start timer'
+            }
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -189,22 +256,31 @@ export function WorkoutSetRow({
               gap: theme.spacing.xxs,
               paddingVertical: theme.spacing.sm,
               borderRadius: theme.radii.sm,
-              backgroundColor: timerRunning ? theme.colors.accent.subtle : theme.colors.bg.surface,
+              backgroundColor:
+                timerRunning || countdown.isCounting ? theme.colors.accent.subtle : theme.colors.bg.surface,
             }}
           >
-            <Icon
-              name={timerRunning ? 'pause' : 'timer'}
-              size="sm"
-              color={timerRunning ? theme.colors.accent.primary : theme.colors.text.secondary}
-            />
-            {timerRunning ? (
+            {countdown.isCounting ? (
               <Text variant="body" style={{ color: theme.colors.accent.primary, fontWeight: '700' }}>
-                {formatDuration(elapsedSeconds)}
+                {countdown.count! > 0 ? countdown.count : 'GO'}
               </Text>
             ) : (
-              <Text variant="body" color={setRow.durationSeconds != null ? 'primary' : 'secondary'}>
-                {setRow.durationSeconds != null ? formatDuration(setRow.durationSeconds) : 'Start'}
-              </Text>
+              <>
+                <Icon
+                  name={timerRunning ? 'pause' : 'timer'}
+                  size="sm"
+                  color={timerRunning ? theme.colors.accent.primary : theme.colors.text.secondary}
+                />
+                {timerRunning ? (
+                  <Text variant="body" style={{ color: theme.colors.accent.primary, fontWeight: '700' }}>
+                    {formatDuration(elapsedSeconds)}
+                  </Text>
+                ) : (
+                  <Text variant="body" color={setRow.durationSeconds != null ? 'primary' : 'secondary'}>
+                    {setRow.durationSeconds != null ? formatDuration(setRow.durationSeconds) : 'Start'}
+                  </Text>
+                )}
+              </>
             )}
           </Pressable>
         ) : (

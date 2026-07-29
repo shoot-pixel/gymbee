@@ -15,6 +15,8 @@ import {
   LoadingState,
   SegmentedControl,
   Button,
+  IconButton,
+  ReportBlockSheet,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -22,6 +24,7 @@ import {
   useIncomingDmRequests,
   useOutgoingDmRequests,
   useRespondToConversation,
+  type ConversationSummary,
 } from '../../services/api/queries/directMessages';
 import type { CommunityStackParamList } from '../../navigation/types';
 
@@ -33,6 +36,7 @@ export function MessagesScreen() {
   const navigation = useNavigation<Nav>();
   const userId = useAuthStore(state => state.userId);
   const [tab, setTab] = useState<Tab>('messages');
+  const [moderatingConversation, setModeratingConversation] = useState<ConversationSummary | null>(null);
 
   const { data: conversations, isLoading: conversationsLoading, refetch: refetchConversations } = useConversations(userId);
   const { data: incoming, isLoading: incomingLoading, refetch: refetchIncoming } = useIncomingDmRequests(userId);
@@ -86,7 +90,14 @@ export function MessagesScreen() {
                   title={c.otherParticipant?.display_name ?? 'Athlete'}
                   subtitle={format(new Date(c.last_message_at), 'MMM d, h:mm a')}
                   leading={<Avatar uri={c.otherParticipant?.avatar_url} size={40} />}
-                  showChevron
+                  trailing={
+                    <IconButton
+                      name="moreVertical"
+                      variant="ghost"
+                      accessibilityLabel="Conversation options"
+                      onPress={() => setModeratingConversation(c)}
+                    />
+                  }
                   onPress={() => navigation.navigate('Conversation', { conversationId: c.id })}
                   style={index > 0 ? { borderTopWidth: 1, borderTopColor: theme.colors.border.subtle } : undefined}
                 />
@@ -160,6 +171,16 @@ export function MessagesScreen() {
           </>
         )}
       </ScrollView>
+
+      <ReportBlockSheet
+        visible={moderatingConversation != null}
+        onClose={() => setModeratingConversation(null)}
+        currentUserId={userId}
+        targetType="conversation"
+        targetId={moderatingConversation?.id ?? ''}
+        reportedUserId={moderatingConversation?.otherParticipant?.id ?? ''}
+        reportedUserName={moderatingConversation?.otherParticipant?.display_name ?? undefined}
+      />
     </SafeAreaView>
   );
 }

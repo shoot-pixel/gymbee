@@ -54,8 +54,13 @@ jest.mock('../../../services/api/queries/community', () => {
     useAcceptFriendRequest: jest.fn(() => ({ mutate: mockAcceptMutate, isPending: false })),
     useDeclineFriendRequest: jest.fn(() => ({ mutate: mockDeclineMutate, isPending: false })),
     useRemoveFriendRequest: jest.fn(() => ({ mutate: jest.fn(), isPending: false })),
+    useBlockUser: jest.fn(() => ({ mutate: jest.fn(), isPending: false })),
   };
 });
+
+jest.mock('../../../services/api/queries/reports', () => ({
+  useCreateReport: jest.fn(() => ({ mutate: jest.fn(), isPending: false })),
+}));
 
 const mockUseProfile = jest.fn();
 

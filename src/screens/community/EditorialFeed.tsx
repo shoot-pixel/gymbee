@@ -17,6 +17,7 @@ type EditorialFeedProps = {
   emptyDescription?: string;
   onPressPost: (postId: string) => void;
   onPressAuthor: (userId: string) => void;
+  onPressMenu: (post: FriendPost) => void;
 };
 
 /** The "Editorial Feed" — a vertical stream of FeedPostCards, replacing the
@@ -31,6 +32,7 @@ export function EditorialFeed({
   emptyDescription,
   onPressPost,
   onPressAuthor,
+  onPressMenu,
 }: EditorialFeedProps) {
   const theme = useTheme();
 
@@ -52,6 +54,7 @@ export function EditorialFeed({
           commentCount={commentCounts[post.id] ?? 0}
           onPress={() => onPressPost(post.id)}
           onPressAuthor={() => onPressAuthor(post.user_id)}
+          onPressMenu={() => onPressMenu(post)}
         />
       ))}
     </View>

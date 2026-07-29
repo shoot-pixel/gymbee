@@ -34,10 +34,15 @@ jest.mock('../../../hooks/useUnitPreference', () => ({
   useUnitPreference: () => mockUseUnitPreference(),
 }));
 
+// Completed "now" (rather than a fixed past date) so the bulk of these tests
+// exercise the normal, still-editable path — locking only kicks in once
+// local midnight has passed since completion (see the dedicated lock tests
+// below), and a hardcoded past date would make every test here run against
+// the locked state instead.
 const DETAIL = {
   id: 'wl-1',
-  startedAt: '2026-03-04T09:00:00.000Z',
-  completedAt: '2026-03-04T09:42:00.000Z',
+  startedAt: new Date().toISOString(),
+  completedAt: new Date().toISOString(),
   title: 'Push Day',
   sets: [
     {
@@ -156,5 +161,38 @@ describe('WorkoutLogDetailScreen', () => {
     await waitFor(() => expect(mockDeleteWorkoutLogMutateAsync).toHaveBeenCalledWith('wl-1'));
     expect(mockGoBack).toHaveBeenCalled();
     alertSpy.mockRestore();
+  });
+
+  describe('a workout completed on a previous day', () => {
+    beforeEach(() => {
+      mockUseWorkoutLogDetail.mockReturnValue({
+        data: { ...DETAIL, completedAt: '2020-01-01T09:42:00.000Z' },
+        isLoading: false,
+      });
+    });
+
+    it('shows a locked banner', async () => {
+      const { getByText } = await render(<WorkoutLogDetailScreen />);
+
+      expect(getByText(/can no longer be edited/i)).toBeTruthy();
+    });
+
+    it('makes set fields read-only', async () => {
+      const { getByDisplayValue } = await render(<WorkoutLogDetailScreen />);
+
+      expect(getByDisplayValue('8').props.editable).toBe(false);
+    });
+
+    it('hides the per-set delete action', async () => {
+      const { queryByLabelText } = await render(<WorkoutLogDetailScreen />);
+
+      expect(queryByLabelText('Remove set 1')).toBeNull();
+    });
+
+    it('hides Delete Workout', async () => {
+      const { queryByText } = await render(<WorkoutLogDetailScreen />);
+
+      expect(queryByText('Delete Workout')).toBeNull();
+    });
   });
 });

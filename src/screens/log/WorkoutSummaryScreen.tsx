@@ -131,6 +131,13 @@ export function WorkoutSummaryScreen() {
       return;
     }
     store.reset();
+    // rootNavigation is this screen's nearest navigator — LogStack, since
+    // WorkoutSummary lives on it — so popToTop() here clears
+    // ActiveWorkoutOverview/ActiveExercise back to LogLanding before leaving.
+    // Without it those screens stay mounted underneath with their original
+    // route target still in place, and the Log tab reopens straight back
+    // into them instead of the (now-hydrated) landing screen.
+    rootNavigation.popToTop();
     rootNavigation.navigate('MainTabs', { screen: 'TodayTab', params: { screen: 'Today' } });
   };
 

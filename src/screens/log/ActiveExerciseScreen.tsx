@@ -9,6 +9,7 @@ import { Text, Card, Button, TextField, Icon, ListRow, BottomSheet, LoadingState
 import { useAuthStore } from '../../store/authStore';
 import {
   useActiveWorkoutStore,
+  effectiveTotalSets,
   type LoggedSet,
   type SetMetric,
 } from '../../store/activeWorkoutStore';
@@ -227,7 +228,7 @@ export function ActiveExerciseScreen() {
   const previousExercise = exerciseIndex > 0 ? exercises[exerciseIndex - 1] : null;
   const nextExercise = exerciseIndex < exercises.length - 1 ? exercises[exerciseIndex + 1] : null;
   const completedSets = exercise.sets.filter(s => s.completed).length;
-  const totalSets = exercise.targetSets ?? exercise.sets.length;
+  const totalSets = effectiveTotalSets(exercise);
 
   const onConfirmSwap = (scope: 'workout_only' | 'permanent') => {
     if (!selectedSubstitute || !currentExerciseMeta) return;
@@ -349,6 +350,18 @@ export function ActiveExerciseScreen() {
       Alert.alert('Enter reps', 'Reps must be a positive number.');
       return;
     }
+
+    // Checking off a timed set stops its stopwatch automatically — the
+    // athlete shouldn't have to separately tap Stop before completing the
+    // set. Computed here (rather than relying on setRow.durationSeconds,
+    // which only updates once the store re-renders this component) so the
+    // very set being completed is logged with its real elapsed time.
+    let durationSeconds = setRow.durationSeconds;
+    if (setRow.timerStartedAt != null) {
+      durationSeconds = Math.round((Date.now() - setRow.timerStartedAt) / 1000);
+      stopSetTimer(exercise.exerciseId, setRow.id);
+    }
+
     try {
       if (setRow.dbId) {
         await updateSet.mutateAsync({
@@ -356,7 +369,7 @@ export function ActiveExerciseScreen() {
           reps: setRow.reps,
           load_kg: setRow.loadKg,
           rpe: setRow.rpe,
-          duration_seconds: setRow.durationSeconds,
+          duration_seconds: durationSeconds,
           completed: true,
         });
         markSetCompleted(exercise.exerciseId, setRow.id, setRow.dbId);
@@ -368,7 +381,7 @@ export function ActiveExerciseScreen() {
           reps: setRow.reps,
           load_kg: setRow.loadKg,
           rpe: setRow.rpe,
-          duration_seconds: setRow.durationSeconds,
+          duration_seconds: durationSeconds,
           is_warmup: setRow.isWarmup,
         });
         markSetCompleted(exercise.exerciseId, setRow.id, created.id);

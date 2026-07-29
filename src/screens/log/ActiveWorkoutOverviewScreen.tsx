@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, View, Alert, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -146,14 +146,26 @@ export function ActiveWorkoutOverviewScreen() {
   // silently create a workout_logs row just from opening the Log tab, so it
   // waits for an explicit "Start Freestyle Workout" tap.
   const [freestyleStarted, setFreestyleStarted] = useState(false);
-  // "Delete Workout" resets the store (workoutLogId -> null) but doesn't
-  // unmount this screen — the bottom-tab navigator keeps LogStack mounted in
-  // the background when navigating to another tab, so the reset alone would
-  // make the auto-start effect below see "no session, but a route target is
-  // still here" and silently recreate the just-deleted workout. This flag is
-  // the actual guard against that; popToTop() below is a secondary cleanup
-  // so the stale screen isn't what the user lands on next time they tap Log.
-  const [isDeleted, setIsDeleted] = useState(false);
+  // Both "Delete Workout" below and a normal Finish Workout -> Save (on
+  // WorkoutSummaryScreen, a sibling screen further down this same LogStack)
+  // reset the store (workoutLogId -> null) without unmounting this screen —
+  // the bottom-tab navigator keeps LogStack mounted in the background when
+  // navigating to another tab or screen. Without a guard, the auto-start
+  // effect below would see that reset as "no session, but a route target is
+  // still here" and silently start a brand-new workout for the same target,
+  // which is what made completed/deleted sessions appear to "restart"
+  // themselves the next time the Log tab was opened.
+  //
+  // hadSessionRef tracks whether *this instance* has ever shown a live
+  // session; once true, seeing workoutLogId go back to null means that
+  // session ended, not that one has never started. It's a ref (mutated
+  // inline during render, not in an effect) so the derived value below is
+  // correct in the very same commit the store changes — an effect-based flag
+  // would still be one render behind, since effects for this commit already
+  // read the pre-update closure.
+  const hadSessionRef = useRef(store.workoutLogId != null);
+  if (store.workoutLogId != null) hadSessionRef.current = true;
+  const sessionJustEnded = hadSessionRef.current && store.workoutLogId == null;
 
   const needsFreshStart = store.workoutLogId == null || sourceKey(store.source) !== sourceKey(routeSource);
   const sourceDataLoaded =
@@ -170,7 +182,7 @@ export function ActiveWorkoutOverviewScreen() {
   const variantDataReady = !requestedVariant || allExercises != null;
 
   useEffect(() => {
-    if (!needsFreshStart || !userId || !readyToStart || !shouldAutoStart || !variantDataReady || isDeleted) return;
+    if (!needsFreshStart || !userId || !readyToStart || !shouldAutoStart || !variantDataReady || sessionJustEnded) return;
 
     let cancelled = false;
     (async () => {
@@ -244,7 +256,7 @@ export function ActiveWorkoutOverviewScreen() {
     readyToStart,
     shouldAutoStart,
     variantDataReady,
-    isDeleted,
+    sessionJustEnded,
     routeSource?.type,
     routeSource?.id,
     programDay,
@@ -300,7 +312,6 @@ export function ActiveWorkoutOverviewScreen() {
             if (routeSource?.type === 'scheduledWorkout') {
               deleteScheduledWorkout.mutate(routeSource.id);
             }
-            setIsDeleted(true);
             store.reset();
             navigation.popToTop();
             rootNavigation.navigate('MainTabs', { screen: 'TodayTab', params: { screen: 'Today' } });

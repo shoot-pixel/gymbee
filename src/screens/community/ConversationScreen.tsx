@@ -6,7 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Header, Text, Icon, IconButton, TextField, LoadingState, Avatar } from '../../components/core';
+import { Header, Text, Icon, IconButton, TextField, LoadingState, Avatar, ReportBlockSheet } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
   useConversation,
@@ -38,6 +38,7 @@ export function ConversationScreen() {
 
   const [body, setBody] = useState('');
   const [photo, setPhoto] = useState<PendingPhoto | null>(null);
+  const [moderationOpen, setModerationOpen] = useState(false);
 
   const photoPaths = useMemo(() => (messages ?? []).map(m => m.photo_path).filter((p): p is string => p != null), [messages]);
   const { data: signedUrls } = useSignedDmPhotoUrls(photoPaths);
@@ -80,14 +81,22 @@ export function ConversationScreen() {
         title={conversation?.otherParticipant?.display_name ?? 'Messages'}
         right={
           conversation ? (
-            <Avatar
-              uri={conversation.otherParticipant?.avatar_url}
-              size={32}
-              onPress={() =>
-                conversation.otherParticipant &&
-                navigation.navigate('FriendProfile', { userId: conversation.otherParticipant.id })
-              }
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+              <Avatar
+                uri={conversation.otherParticipant?.avatar_url}
+                size={32}
+                onPress={() =>
+                  conversation.otherParticipant &&
+                  navigation.navigate('FriendProfile', { userId: conversation.otherParticipant.id })
+                }
+              />
+              <IconButton
+                name="moreVertical"
+                variant="ghost"
+                accessibilityLabel="Conversation options"
+                onPress={() => setModerationOpen(true)}
+              />
+            </View>
           ) : undefined
         }
       />
@@ -196,6 +205,19 @@ export function ConversationScreen() {
           />
         </View>
       </KeyboardAvoidingView>
+
+      {conversation ? (
+        <ReportBlockSheet
+          visible={moderationOpen}
+          onClose={() => setModerationOpen(false)}
+          currentUserId={userId}
+          targetType="conversation"
+          targetId={params.conversationId}
+          reportedUserId={conversation.otherParticipant?.id ?? ''}
+          reportedUserName={conversation.otherParticipant?.display_name ?? undefined}
+          onBlocked={() => navigation.goBack()}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

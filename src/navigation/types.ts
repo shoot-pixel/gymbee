@@ -17,6 +17,7 @@ export type OnboardingStackParamList = {
   DaysPerWeek: undefined;
   Equipment: undefined;
   Injuries: undefined;
+  BuildFirstWeek: undefined;
 };
 
 // ---- Today tab ----
@@ -38,7 +39,7 @@ export type ProgramsStackParamList = {
   Library: { pickMode?: boolean } | undefined;
   TemplateEditor: { templateId?: string; scheduleAfterSave?: boolean } | undefined;
   ScheduledWorkoutDetail: { scheduledWorkoutId: string };
-  GenerateProgram: undefined;
+  GenerateProgram: { daysPerWeek: number; weeksCount: number; focusNotes?: string; emphasisMuscleGroups?: string[] };
   AssignTrainingDay: { initialDayOfWeek?: number } | undefined;
   AssignCardioDay: { initialDayOfWeek?: number } | undefined;
   TrainingDayDetail: { weeklyScheduleId: string; workoutTemplateId: string; dayOfWeek: number };

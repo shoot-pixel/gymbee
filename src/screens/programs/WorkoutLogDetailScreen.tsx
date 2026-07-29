@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { isSameDay } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Header, Icon, TextField, LoadingState } from '../../components/core';
 import {
@@ -51,7 +52,12 @@ export function WorkoutLogDetailScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
       <Header title={params.title ?? 'Workout'} onBack={onBack} />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {params.dateLabel ? (
           <Text variant="body" color="secondary">
             {params.dateLabel}
@@ -70,6 +76,7 @@ export function WorkoutLogDetailScreen() {
           />
         ))}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -117,6 +124,13 @@ function WorkoutLogSection({
     return <LoadingState fill={false} />;
   }
 
+  // Once local midnight has passed since a workout was completed, it's
+  // locked in — sets/notes read-only, no deleting it or any set in it. Kept
+  // as a plain render-time check (not a schedule/timer) since the screen is
+  // only ever open for a bounded session; the boundary just needs to be
+  // right whenever the athlete happens to open this screen, not tick live.
+  const isLocked = detail.completedAt != null && !isSameDay(new Date(detail.completedAt), new Date());
+
   const exerciseOrder: string[] = [];
   const setsByExercise = new Map<string, WorkoutLogSetDetail[]>();
   for (const setRow of detail.sets) {
@@ -130,6 +144,24 @@ function WorkoutLogSection({
   return (
     <View style={{ gap: theme.spacing.md }}>
       <Text variant="subtitle">{detail.title}</Text>
+      {isLocked ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: theme.spacing.xs,
+            backgroundColor: theme.colors.bg.surface,
+            borderRadius: theme.radii.sm,
+            paddingVertical: theme.spacing.sm,
+            paddingHorizontal: theme.spacing.md,
+          }}
+        >
+          <Icon name="lock" size="sm" color={theme.colors.text.secondary} />
+          <Text variant="caption" color="secondary" style={{ flex: 1 }}>
+            This workout is from a previous day and can no longer be edited.
+          </Text>
+        </View>
+      ) : null}
       {exerciseOrder.map(exerciseId => {
         const sets = setsByExercise.get(exerciseId)!;
         const isTimed = sets[0].durationSeconds != null;
@@ -156,6 +188,7 @@ function WorkoutLogSection({
                 key={setRow.id}
                 setRow={setRow}
                 unitPref={unitPref}
+                readOnly={isLocked}
                 onSave={patch => updateSet.mutate({ id: setRow.id, ...patch })}
                 onDelete={() => deleteSet.mutate(setRow.id)}
               />
@@ -163,12 +196,14 @@ function WorkoutLogSection({
           </View>
         );
       })}
-      <Pressable onPress={onDeleteWorkout} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
-        <Icon name="trash" size="sm" color={theme.colors.semantic.danger} />
-        <Text variant="body" style={{ color: theme.colors.semantic.danger }}>
-          Delete Workout
-        </Text>
-      </Pressable>
+      {isLocked ? null : (
+        <Pressable onPress={onDeleteWorkout} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+          <Icon name="trash" size="sm" color={theme.colors.semantic.danger} />
+          <Text variant="body" style={{ color: theme.colors.semantic.danger }}>
+            Delete Workout
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -176,6 +211,10 @@ function WorkoutLogSection({
 type HistoricalSetRowProps = {
   setRow: WorkoutLogSetDetail;
   unitPref: UnitPreference;
+  /** True once the workout this set belongs to is locked (past local
+   * midnight since it was completed) — inputs go read-only and the delete
+   * action disappears rather than silently no-op, so it's obvious why. */
+  readOnly: boolean;
   onSave: (patch: { reps?: number; load_kg?: number | null; rpe?: number | null; duration_seconds?: number | null }) => void;
   onDelete: () => void;
 };
@@ -184,7 +223,7 @@ type HistoricalSetRowProps = {
  * completed and stored, unlike the active-logging screen's draft-then-
  * confirm flow, so there's no separate "save" action to hang a mutation
  * off of. */
-function HistoricalSetRow({ setRow, unitPref, onSave, onDelete }: HistoricalSetRowProps) {
+function HistoricalSetRow({ setRow, unitPref, readOnly, onSave, onDelete }: HistoricalSetRowProps) {
   const theme = useTheme();
   const isTimed = setRow.durationSeconds != null;
 
@@ -223,12 +262,19 @@ function HistoricalSetRow({ setRow, unitPref, onSave, onDelete }: HistoricalSetR
   };
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, opacity: readOnly ? 0.6 : 1 }}>
       <Text variant="caption" color="tertiary" style={{ width: 20 }}>
         {setRow.setNumber}
       </Text>
       <View style={{ flex: 1 }}>
-        <TextField keyboardType="number-pad" value={reps} onChangeText={setReps} onBlur={onRepsBlur} placeholder="Reps" />
+        <TextField
+          keyboardType="number-pad"
+          value={reps}
+          onChangeText={setReps}
+          onBlur={onRepsBlur}
+          placeholder="Reps"
+          editable={!readOnly}
+        />
       </View>
       <View style={{ flex: 1 }}>
         <TextField
@@ -237,18 +283,30 @@ function HistoricalSetRow({ setRow, unitPref, onSave, onDelete }: HistoricalSetR
           onChangeText={setLoadOrDuration}
           onBlur={onLoadOrDurationBlur}
           placeholder={isTimed ? 'sec' : unitLabel(unitPref)}
+          editable={!readOnly}
         />
       </View>
       <View style={{ flex: 1 }}>
-        <TextField keyboardType="decimal-pad" value={rpe} onChangeText={setRpe} onBlur={onRpeBlur} placeholder="RPE" />
+        <TextField
+          keyboardType="decimal-pad"
+          value={rpe}
+          onChangeText={setRpe}
+          onBlur={onRpeBlur}
+          placeholder="RPE"
+          editable={!readOnly}
+        />
       </View>
-      <Pressable
-        onPress={onDelete}
-        accessibilityLabel={`Remove set ${setRow.setNumber}`}
-        style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
-      >
-        <Icon name="trash" size="sm" color={theme.colors.semantic.danger} />
-      </Pressable>
+      {readOnly ? (
+        <View style={{ width: 44, height: 44 }} />
+      ) : (
+        <Pressable
+          onPress={onDelete}
+          accessibilityLabel={`Remove set ${setRow.setNumber}`}
+          style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Icon name="trash" size="sm" color={theme.colors.semantic.danger} />
+        </Pressable>
+      )}
     </View>
   );
 }

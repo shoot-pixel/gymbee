@@ -20,6 +20,15 @@ const MARK_ASPECT = 220 / 174;
 const MARK_WIDTH_FRACTION = 0.24;
 const GLOW_TO_MARK_WIDTH_RATIO = 2.1;
 
+// The source asset's visible glyph isn't drawn centered within its own
+// 220x174 canvas — measured bounding box of the opaque pixels sits ~5.9%
+// left and ~0.9% above the canvas's true center. Both the mark and the
+// hairline track below it are laid out with identical centering logic, so
+// without this correction the mark visibly sits left of the track instead
+// of stacking on the same center line.
+const MARK_VISUAL_OFFSET_X_FRACTION = 13 / 220;
+const MARK_VISUAL_OFFSET_Y_FRACTION = 1.5 / 174;
+
 const HAIRLINE_WIDTH_FRACTION = 0.22;
 const HAIRLINE_SEGMENT_FRACTION = 0.42;
 
@@ -82,6 +91,9 @@ export function LoadingScreen({ label = 'Loading SetSocial' }: LoadingScreenProp
   }));
 
   const markWidth = width * MARK_WIDTH_FRACTION;
+  const markHeight = markWidth / MARK_ASPECT;
+  const markCorrectionX = markWidth * MARK_VISUAL_OFFSET_X_FRACTION;
+  const markCorrectionY = markHeight * MARK_VISUAL_OFFSET_Y_FRACTION;
   const glowSize = markWidth * GLOW_TO_MARK_WIDTH_RATIO;
   const trackWidth = width * HAIRLINE_WIDTH_FRACTION;
   const segmentWidth = trackWidth * HAIRLINE_SEGMENT_FRACTION;
@@ -128,7 +140,9 @@ export function LoadingScreen({ label = 'Loading SetSocial' }: LoadingScreenProp
         </Animated.View>
 
         <Animated.View style={markStyle}>
-          <SetSocialIcon size={markWidth} accessibilityLabel="" />
+          <View style={{ transform: [{ translateX: markCorrectionX }, { translateY: markCorrectionY }] }}>
+            <SetSocialIcon size={markWidth} accessibilityLabel="" />
+          </View>
         </Animated.View>
 
         <View

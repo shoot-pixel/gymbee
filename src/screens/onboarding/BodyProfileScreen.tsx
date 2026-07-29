@@ -26,7 +26,7 @@ function toDigits(value: string): number | null {
  * "what did you lift": cardio calorie estimates (weight-driven, see
  * cardioCalories.ts) and, once known, height/sex-aware context elsewhere.
  * Weight is asked in lb here but, like the rest of the app, gets converted
- * and persisted in kg — see onFinish in InjuriesScreen, which is where every
+ * and persisted in kg — see useCompleteOnboarding, which is where every
  * onboarding answer (this screen's included) actually gets saved.
  */
 export function BodyProfileScreen({ navigation }: Props) {

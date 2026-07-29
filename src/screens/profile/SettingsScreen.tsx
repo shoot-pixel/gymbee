@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Linking, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -115,6 +115,12 @@ export function SettingsScreen({ navigation }: Props) {
               icon="repeat"
               showChevron
               onPress={() => navigation.navigate('Integrations')}
+              style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
+            />
+            <ListRow
+              title="Contact Support"
+              icon="mail"
+              onPress={() => Linking.openURL('mailto:support@setsocial.app')}
               style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
             />
           </Card>

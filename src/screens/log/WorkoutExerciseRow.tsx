@@ -4,7 +4,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card } from '../../components/core';
 import { ExerciseProgressIndicator } from './ExerciseProgressIndicator';
 import { formatWeight, unitLabel } from '../../utils/units';
-import type { ActiveExercise } from '../../store/activeWorkoutStore';
+import { effectiveTotalSets, type ActiveExercise } from '../../store/activeWorkoutStore';
 import type { UnitPreference } from '../../types/database';
 
 type WorkoutExerciseRowProps = {
@@ -28,7 +28,7 @@ function repsLabel(exercise: ActiveExercise): string | null {
  * ActiveExercise screen for just this exercise. */
 export function WorkoutExerciseRow({ exercise, order, isNext, unitPref, onPress }: WorkoutExerciseRowProps) {
   const theme = useTheme();
-  const totalSets = exercise.targetSets ?? exercise.sets.length;
+  const totalSets = effectiveTotalSets(exercise);
   const completedSets = exercise.sets.filter(s => s.completed).length;
   const complete = totalSets > 0 && completedSets >= totalSets;
   const reps = repsLabel(exercise);

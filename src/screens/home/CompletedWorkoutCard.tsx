@@ -133,9 +133,32 @@ export function CompletedWorkoutCard({
           {/* Only the header is the flip-back tap target — wrapping the whole
               card (including the ScrollView below) in one Pressable eats the
               vertical pan gesture before the ScrollView's native scroll can
-              claim it, which is what made the back face unscrollable. */}
-          <Pressable onPress={toggleFlip} accessibilityRole="button" accessibilityLabel="Flip back to summary">
+              claim it, which is what made the back face unscrollable. Made as
+              big and obvious as that constraint allows: a full-width row with
+              generous vertical padding (not just the text's own line height)
+              plus a visible "flip back" icon, since a bare text label was too
+              easy to miss/mis-tap in the gym.
+          */}
+          <Pressable
+            onPress={toggleFlip}
+            accessibilityRole="button"
+            accessibilityLabel="Flip back to summary"
+            hitSlop={8}
+            style={({ pressed }) => [
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginHorizontal: -theme.spacing.md,
+                marginTop: -theme.spacing.md,
+                paddingHorizontal: theme.spacing.md,
+                paddingVertical: theme.spacing.md,
+                opacity: pressed ? 0.6 : 1,
+              },
+            ]}
+          >
             <Text variant="subtitle">Workout Summary</Text>
+            <Icon name="rotateCcw" size="sm" color={theme.colors.text.secondary} />
           </Pressable>
           <ScrollView
             style={{ flex: 1 }}

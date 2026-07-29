@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -21,6 +21,7 @@ import {
   BottomSheet,
   ListRow,
   LikeBurst,
+  ReportBlockSheet,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -31,7 +32,7 @@ import {
   useDeletePost,
 } from '../../services/api/queries/posts';
 import { useFriendProfile } from '../../services/api/queries/community';
-import { useComments, useCreateComment, useDeleteComment } from '../../services/api/queries/comments';
+import { useComments, useCreateComment, useDeleteComment, type Comment } from '../../services/api/queries/comments';
 import { useLikes, useToggleLike } from '../../services/api/queries/likes';
 import type { CommunityStackParamList, ProfileStackParamList } from '../../navigation/types';
 import type { PostVisibility } from '../../types/database';
@@ -64,6 +65,8 @@ export function PostDetailScreen() {
   const { data: signedUrls } = useSignedPhotoUrls(photoPaths);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moderationOpen, setModerationOpen] = useState(false);
+  const [reportingComment, setReportingComment] = useState<Comment | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editCaption, setEditCaption] = useState('');
   const [editVisibility, setEditVisibility] = useState<PostVisibility>('friends');
@@ -160,12 +163,12 @@ export function PostDetailScreen() {
       <Header
         title="Post"
         right={
-          isSelf ? (
+          post ? (
             <IconButton
               name="moreVertical"
               variant="ghost"
               accessibilityLabel="Post options"
-              onPress={() => setMenuOpen(true)}
+              onPress={() => (isSelf ? setMenuOpen(true) : setModerationOpen(true))}
             />
           ) : undefined
         }
@@ -175,7 +178,12 @@ export function PostDetailScreen() {
       ) : !post ? (
         <EmptyState icon="circleAlert" title="Post unavailable" description="This post may have been removed." />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+        >
           <Pressable
             onPress={goToOwnerProfile}
             disabled={isSelf}
@@ -295,28 +303,48 @@ export function PostDetailScreen() {
                     onPress={() => onDeleteComment(comment.id)}
                   />
                 ) : null}
+                {comment.user_id !== userId ? (
+                  <IconButton
+                    name="moreVertical"
+                    variant="ghost"
+                    size={20}
+                    accessibilityLabel="Comment options"
+                    onPress={() => setReportingComment(comment)}
+                  />
+                ) : null}
               </View>
             ))}
-            <View style={{ flexDirection: 'row', gap: theme.spacing.sm, alignItems: 'flex-end' }}>
-              <View style={{ flex: 1 }}>
-                <TextField
-                  value={commentDraft}
-                  onChangeText={setCommentDraft}
-                  placeholder="Add a comment..."
-                  multiline
-                  maxLength={500}
-                />
-              </View>
-              <Button
-                label="Post"
-                size="sm"
-                onPress={onPostComment}
-                loading={createComment.isPending}
-                disabled={commentDraft.trim().length === 0}
-              />
-            </View>
           </View>
         </ScrollView>
+
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: theme.spacing.sm,
+            alignItems: 'flex-end',
+            padding: theme.spacing.lg,
+            borderTopWidth: 1,
+            borderTopColor: theme.colors.border.subtle,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <TextField
+              value={commentDraft}
+              onChangeText={setCommentDraft}
+              placeholder="Add a comment..."
+              multiline
+              maxLength={500}
+            />
+          </View>
+          <Button
+            label="Post"
+            size="sm"
+            onPress={onPostComment}
+            loading={createComment.isPending}
+            disabled={commentDraft.trim().length === 0}
+          />
+        </View>
+        </KeyboardAvoidingView>
       )}
 
       <BottomSheet visible={menuOpen} onClose={() => setMenuOpen(false)}>
@@ -354,6 +382,29 @@ export function PostDetailScreen() {
           <Button label="Save Changes" onPress={onSaveEdit} loading={updatePost.isPending} />
         </View>
       </BottomSheet>
+
+      {post ? (
+        <ReportBlockSheet
+          visible={moderationOpen}
+          onClose={() => setModerationOpen(false)}
+          currentUserId={userId}
+          targetType="post"
+          targetId={post.id}
+          reportedUserId={post.user_id}
+          reportedUserName={owner?.display_name ?? undefined}
+          onBlocked={() => navigation.goBack()}
+        />
+      ) : null}
+
+      <ReportBlockSheet
+        visible={reportingComment != null}
+        onClose={() => setReportingComment(null)}
+        currentUserId={userId}
+        targetType="comment"
+        targetId={reportingComment?.id ?? ''}
+        reportedUserId={reportingComment?.user_id ?? ''}
+        reportedUserName={reportingComment?.displayName ?? undefined}
+      />
     </SafeAreaView>
   );
 }

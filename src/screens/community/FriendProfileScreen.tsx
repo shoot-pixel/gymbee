@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -46,8 +46,11 @@ type Nav = NativeStackNavigationProp<CommunityStackParamList>;
 
 const BIO_MAX_LENGTH = 150;
 
+const PROFILE_GLOW_HEIGHT = 260;
+
 export function FriendProfileScreen() {
   const theme = useTheme();
+  const { width } = useWindowDimensions();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
   const userId = useAuthStore(state => state.userId);
@@ -161,6 +164,33 @@ export function FriendProfileScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
+      {/* Ambient glow — a full-width wash anchored to the true top of the
+          screen (behind the Header too, which has no background of its own)
+          rather than a small box inset by the scroll content's own padding.
+          Percentage-based cx/cy/r (the default objectBoundingBox units)
+          scale with the actual device width, instead of the old literal
+          pixel centers/radii that were sized for a much narrower box and so
+          clipped hard at its edges — which is what read as "squared off". */}
+      <Svg
+        style={{ position: 'absolute', top: 0, left: 0 }}
+        width={width}
+        height={PROFILE_GLOW_HEIGHT}
+        pointerEvents="none"
+      >
+        <Defs>
+          <RadialGradient id="profileGlowGreen" cx="20%" cy="0%" r="75%">
+            <Stop offset="0" stopColor={theme.colors.accent.primary} stopOpacity={0.22} />
+            <Stop offset="1" stopColor={theme.colors.accent.primary} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="profileGlowPurple" cx="80%" cy="0%" r="75%">
+            <Stop offset="0" stopColor={theme.colors.accent.purple} stopOpacity={0.18} />
+            <Stop offset="1" stopColor={theme.colors.accent.purple} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width={width} height={PROFILE_GLOW_HEIGHT} fill="url(#profileGlowGreen)" />
+        <Rect x="0" y="0" width={width} height={PROFILE_GLOW_HEIGHT} fill="url(#profileGlowPurple)" />
+      </Svg>
+
       <Header
         title="Profile"
         right={
@@ -183,50 +213,28 @@ export function FriendProfileScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
         >
           <View>
-            {/* Ambient glow instead of a banner — a fixed decoration
-                anchored to the top-left, not a treatment that needs to
-                stretch to fill the header's full (variable) width, so this
-                can use literal pixel coordinates without measuring the
-                container first (contrast AiCard, whose wash has to reach a
-                card's far corner and so does need to measure). */}
-            <View style={{ height: 100 }}>
-              <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
-                <Defs>
-                  <RadialGradient id="profileGlowGreen" cx={30} cy={10} r={90} gradientUnits="userSpaceOnUse">
-                    <Stop offset="0" stopColor={theme.colors.accent.primary} stopOpacity={0.26} />
-                    <Stop offset="1" stopColor={theme.colors.accent.primary} stopOpacity={0} />
-                  </RadialGradient>
-                  <RadialGradient id="profileGlowPurple" cx={120} cy={-10} r={90} gradientUnits="userSpaceOnUse">
-                    <Stop offset="0" stopColor={theme.colors.accent.purple} stopOpacity={0.2} />
-                    <Stop offset="1" stopColor={theme.colors.accent.purple} stopOpacity={0} />
-                  </RadialGradient>
-                </Defs>
-                <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileGlowGreen)" />
-                <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileGlowPurple)" />
-              </Svg>
-              <View style={{ paddingTop: theme.spacing.md, paddingLeft: theme.spacing.xs, alignItems: 'flex-start' }}>
-                <View>
-                  <Avatar uri={profile?.avatar_url} size={72} onPress={isSelf ? onChangePhoto : undefined} />
-                  {isSelf ? (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        right: -2,
-                        bottom: -2,
-                        width: 26,
-                        height: 26,
-                        borderRadius: theme.radii.pill,
-                        backgroundColor: theme.colors.accent.primary,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderWidth: 2,
-                        borderColor: theme.colors.bg.base,
-                      }}
-                    >
-                      <Icon name="camera" size={14} color={theme.colors.text.onAccent} />
-                    </View>
-                  ) : null}
-                </View>
+            <View style={{ paddingTop: theme.spacing.md, alignItems: 'flex-start' }}>
+              <View>
+                <Avatar uri={profile?.avatar_url} size={72} onPress={isSelf ? onChangePhoto : undefined} />
+                {isSelf ? (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      right: -2,
+                      bottom: -2,
+                      width: 26,
+                      height: 26,
+                      borderRadius: theme.radii.pill,
+                      backgroundColor: theme.colors.accent.primary,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderWidth: 2,
+                      borderColor: theme.colors.bg.base,
+                    }}
+                  >
+                    <Icon name="camera" size={14} color={theme.colors.text.onAccent} />
+                  </View>
+                ) : null}
               </View>
             </View>
             <View style={{ marginTop: theme.spacing.sm }}>

@@ -5,67 +5,26 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Button, TextField, StepProgress } from '../../components/core';
 import { useOnboardingStore } from '../../store/onboardingStore';
-import { useAuthStore } from '../../store/authStore';
-import { useUpdateProfile } from '../../services/api/queries/profiles';
-import { useLogBodyMetric } from '../../services/api/queries/bodyMetrics';
-import { lbToKg, feetInchesToCm } from '../../utils/units';
 import type { OnboardingStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Injuries'>;
 
-export function InjuriesScreen(_props: Props) {
+export function InjuriesScreen({ navigation }: Props) {
   const theme = useTheme();
-  const userId = useAuthStore(state => state.userId);
-  const setSession = useAuthStore(state => state.setSession);
-  const {
-    sex,
-    heightFeet,
-    heightInches,
-    weightLb,
-    goal,
-    experienceLevel,
-    daysPerWeek,
-    equipment,
-    injuriesNotes,
-    setInjuriesNotes,
-    reset,
-  } = useOnboardingStore();
-  const updateProfile = useUpdateProfile(userId);
-  const logBodyMetric = useLogBodyMetric(userId);
+  const { sex, heightFeet, heightInches, weightLb, goal, experienceLevel, daysPerWeek, injuriesNotes, setInjuriesNotes } =
+    useOnboardingStore();
   const [error, setError] = useState<string | null>(null);
 
-  // No program gets created here — onboarding just saves the athlete's
-  // profile fields and finishes. Generating a program (with AI, or building
-  // one manually) is now a choice made later from the Programs tab.
-  const onFinish = async () => {
-    if (!userId || !goal || !experienceLevel || !daysPerWeek || sex == null || heightFeet == null || heightInches == null || weightLb == null) {
+  // Saving the profile and deciding whether to generate a first week now
+  // happens on BuildFirstWeekScreen — this screen only validates that every
+  // earlier answer is present before handing off.
+  const onNext = () => {
+    if (!goal || !experienceLevel || !daysPerWeek || sex == null || heightFeet == null || heightInches == null || weightLb == null) {
       setError('Missing onboarding answers — please go back and complete every step.');
       return;
     }
     setError(null);
-    try {
-      await Promise.all([
-        updateProfile.mutateAsync({
-          goal,
-          experience_level: experienceLevel,
-          days_per_week: daysPerWeek,
-          equipment_access: equipment,
-          injuries_notes: injuriesNotes || null,
-          sex,
-          height_cm: Math.round(feetInchesToCm(heightFeet, heightInches) * 10) / 10,
-          onboarding_completed: true,
-        }),
-        // Starting weight isn't a profiles column — it's the first entry in
-        // body_metrics, the same table (and "latest entry wins" convention)
-        // every later weight update and the cardio calorie estimate already
-        // read from, so a later re-weigh is picked up automatically.
-        logBodyMetric.mutateAsync({ weightKg: lbToKg(weightLb) }),
-      ]);
-      reset();
-      setSession({ userId, onboardingCompleted: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save your profile. Please try again.');
-    }
+    navigation.navigate('BuildFirstWeek');
   };
 
   return (
@@ -113,7 +72,7 @@ export function InjuriesScreen(_props: Props) {
 
           <View style={{ flex: 1, minHeight: theme.spacing.xl }} />
 
-          <Button label="Finish" onPress={onFinish} loading={updateProfile.isPending || logBodyMetric.isPending} />
+          <Button label="Next" onPress={onNext} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

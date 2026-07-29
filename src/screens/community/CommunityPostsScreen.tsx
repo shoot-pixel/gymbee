@@ -17,6 +17,7 @@ import {
   FriendRequestButton,
   Avatar,
   Badge,
+  ReportBlockSheet,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -29,7 +30,7 @@ import {
   useDeclineFriendRequest,
   useRemoveFriendRequest,
 } from '../../services/api/queries/community';
-import { useFriendsPosts, useSignedPhotoUrls, postPhotoPaths } from '../../services/api/queries/posts';
+import { useFriendsPosts, useSignedPhotoUrls, postPhotoPaths, type FriendPost } from '../../services/api/queries/posts';
 import { useLikeCounts } from '../../services/api/queries/likes';
 import { useCommentCounts } from '../../services/api/queries/comments';
 import { useProfile } from '../../services/api/queries/profiles';
@@ -92,6 +93,7 @@ export function CommunityPostsScreen() {
   const rootNavigation = useNavigation<RootNav>();
   const userId = useAuthStore(state => state.userId);
   const [search, setSearch] = useState('');
+  const [reportingPost, setReportingPost] = useState<FriendPost | null>(null);
 
   const { data: posts, isLoading, refetch: refetchPosts } = useFriendsPosts(userId);
   const { data: searchResults, isLoading: searching } = useSearchProfiles(search, userId);
@@ -288,9 +290,21 @@ export function CommunityPostsScreen() {
             emptyDescription="Add friends to see their posts here."
             onPressPost={postId => navigation.navigate('PostDetail', { postId })}
             onPressAuthor={authorUserId => navigation.navigate('FriendProfile', { userId: authorUserId })}
+            onPressMenu={setReportingPost}
           />
         </ScrollView>
       )}
+
+      <ReportBlockSheet
+        visible={reportingPost != null}
+        onClose={() => setReportingPost(null)}
+        currentUserId={userId}
+        targetType="post"
+        targetId={reportingPost?.id ?? ''}
+        reportedUserId={reportingPost?.user_id ?? ''}
+        reportedUserName={reportingPost?.displayName ?? undefined}
+        onBlocked={() => setReportingPost(null)}
+      />
     </SafeAreaView>
   );
 }

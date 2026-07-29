@@ -46,8 +46,6 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SetSocial uses your location only when you tap "Check In" to show other nearby athletes you're at the gym. Your exact location is never shared with other users or stored beyond your check-in.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>SetSocial uses your location only when you tap "Check In" to show other nearby athletes you're at the gym. Your exact location is never shared with other users or stored beyond your check-in. SetSocial never tracks your location in the background.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SetSocial uses your camera so you can take a photo to post directly from the app.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -68,6 +66,13 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+	<!-- The app only uses standard HTTPS/TLS for networking (Supabase, Anthropic,
+	     Spotify, WHOOP) - no custom cryptography - which qualifies for the
+	     export-compliance exemption. Declaring it here answers App Store
+	     Connect's encryption questionnaire once for every future build instead
+	     of prompting on each one. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
 </plist>

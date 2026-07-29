@@ -56,6 +56,8 @@ import type { TodayPlanContext, TrainingPatternType } from '../../services/coach
 import { computeStreak } from '../../utils/streak';
 import { estimateWorkoutMinutes } from '../../utils/workoutTiming';
 import { navigateToStartWorkout } from '../../navigation/startWorkoutFlow';
+import { buildWidgetPayload } from '../../services/widget/buildWidgetPayload';
+import { syncWidget } from '../../services/widget/nativeWidgetBridge';
 import { WeekTimeline } from './WeekTimeline';
 import { AiSummaryCard } from './AiSummaryCard';
 import { CompletedWorkoutCard } from './CompletedWorkoutCard';
@@ -387,6 +389,42 @@ export function TodayScreen() {
       streak,
     ],
   );
+
+  // Keeps the Home Screen/Lock Screen widget in sync with whatever this
+  // screen itself just showed — same headline/summary/band AiSummaryCard
+  // renders, same day-plan data CalendarScreen's "what's next" reads from.
+  // Fires on every refetch that lands here (pull-to-refresh, refocus, a
+  // Whoop sync completing), which is the "whenever the app is refreshed
+  // with latest metrics" half of the widget's refresh contract — the other
+  // half (the daily 6 AM rollover) lives entirely on the widget extension's
+  // own timeline policy and needs nothing from this screen.
+  useEffect(() => {
+    if (isLoading) return;
+    syncWidget(
+      buildWidgetPayload({
+        today,
+        todayFocusSummary,
+        isRestDay: todayPlan.kind === 'rest_day',
+        program,
+        weeklySchedule,
+        scheduledWorkouts,
+        workoutLogs,
+        sessionsThisWeek,
+        weeklyTarget,
+      }),
+    );
+  }, [
+    isLoading,
+    today,
+    todayFocusSummary,
+    todayPlan,
+    program,
+    weeklySchedule,
+    scheduledWorkouts,
+    workoutLogs,
+    sessionsThisWeek,
+    weeklyTarget,
+  ]);
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {

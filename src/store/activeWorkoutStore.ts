@@ -79,6 +79,13 @@ export function isExerciseComplete(exercise: ActiveExercise): boolean {
   return exercise.sets.filter(s => s.completed).length >= required;
 }
 
+/** "Total sets" for display purposes — the target, unless the athlete has
+ * manually added more sets than that (addSet has no upper bound), in which
+ * case the actual row count wins so a "4 of 3 complete" reading never shows. */
+export function effectiveTotalSets(exercise: Pick<ActiveExercise, 'targetSets' | 'sets'>): number {
+  return Math.max(exercise.targetSets ?? exercise.sets.length, exercise.sets.length);
+}
+
 export type WorkoutStats = {
   totalExercises: number;
   completedExercises: number;

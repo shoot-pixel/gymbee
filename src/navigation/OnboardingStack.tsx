@@ -7,6 +7,7 @@ import { ExperienceLevelScreen } from '../screens/onboarding/ExperienceLevelScre
 import { DaysPerWeekScreen } from '../screens/onboarding/DaysPerWeekScreen';
 import { EquipmentScreen } from '../screens/onboarding/EquipmentScreen';
 import { InjuriesScreen } from '../screens/onboarding/InjuriesScreen';
+import { BuildFirstWeekScreen } from '../screens/onboarding/BuildFirstWeekScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 
@@ -19,6 +20,7 @@ export function OnboardingStack() {
       <Stack.Screen name="DaysPerWeek" component={DaysPerWeekScreen} />
       <Stack.Screen name="Equipment" component={EquipmentScreen} />
       <Stack.Screen name="Injuries" component={InjuriesScreen} />
+      <Stack.Screen name="BuildFirstWeek" component={BuildFirstWeekScreen} />
     </Stack.Navigator>
   );
 }

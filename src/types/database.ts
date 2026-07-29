@@ -96,6 +96,16 @@ export type PostType = 'progress_photo' | 'before_after_photo';
 export type PostVisibility = 'private' | 'friends';
 export type DmConversationStatus = 'pending' | 'accepted' | 'declined';
 export type IntegrationProvider = 'whoop' | 'spotify';
+export type ReportReason =
+  | 'spam'
+  | 'harassment'
+  | 'nudity_or_sexual_content'
+  | 'violence_or_dangerous_behavior'
+  | 'impersonation'
+  | 'false_information'
+  | 'other';
+export type ReportTarget = 'post' | 'comment' | 'message' | 'conversation' | 'profile';
+export type ReportStatus = 'open' | 'actioned' | 'dismissed';
 
 export interface Database {
   public: {
@@ -1092,6 +1102,30 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      reports: {
+        Row: {
+          id: string;
+          reporter_id: string;
+          reported_user_id: string;
+          target_type: ReportTarget;
+          target_id: string;
+          reason: ReportReason;
+          details: string | null;
+          status: ReportStatus;
+          created_at: string;
+        };
+        Insert: {
+          reporter_id: string;
+          reported_user_id: string;
+          target_type: ReportTarget;
+          target_id: string;
+          reason: ReportReason;
+          details?: string | null;
+        };
+        // Insert-only from the client — see migration 0042.
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -1159,6 +1193,8 @@ export interface Database {
       post_type: PostType;
       post_visibility: PostVisibility;
       integration_provider: IntegrationProvider;
+      report_reason: ReportReason;
+      report_target: ReportTarget;
     };
   };
 }

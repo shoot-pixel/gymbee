@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, View } from 'react-native';
 import { formatDistanceToNow } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Avatar, Card, PostThumbnail } from '../../components/core';
+import { Text, Avatar, Card, PostThumbnail, IconButton } from '../../components/core';
 import type { FriendPost } from '../../services/api/queries/posts';
 
 type FeedPostCardProps = {
@@ -14,6 +14,7 @@ type FeedPostCardProps = {
   commentCount: number;
   onPress: () => void;
   onPressAuthor: () => void;
+  onPressMenu: () => void;
 };
 
 /**
@@ -33,26 +34,30 @@ export function FeedPostCard({
   commentCount,
   onPress,
   onPressAuthor,
+  onPressMenu,
 }: FeedPostCardProps) {
   const theme = useTheme();
 
   return (
     <Pressable onPress={onPress}>
       <Card variant="elevated" style={{ gap: theme.spacing.sm, marginHorizontal: theme.spacing.lg }}>
-        <Pressable
-          onPress={onPressAuthor}
-          accessibilityRole="button"
-          accessibilityLabel={`View ${post.displayName ?? 'athlete'}'s profile`}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}
-        >
-          <Avatar uri={post.avatarUrl} size={30} />
-          <Text variant="body" style={{ flex: 1, fontWeight: '700' }} numberOfLines={1}>
-            {post.displayName ?? 'Athlete'}
-          </Text>
-          <Text variant="caption" color="tertiary">
-            {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
-          </Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Pressable
+            onPress={onPressAuthor}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${post.displayName ?? 'athlete'}'s profile`}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}
+          >
+            <Avatar uri={post.avatarUrl} size={30} />
+            <Text variant="body" style={{ flex: 1, fontWeight: '700' }} numberOfLines={1}>
+              {post.displayName ?? 'Athlete'}
+            </Text>
+            <Text variant="caption" color="tertiary">
+              {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+            </Text>
+          </Pressable>
+          <IconButton name="moreVertical" variant="ghost" size={28} accessibilityLabel="Post options" onPress={onPressMenu} />
+        </View>
 
         <PostThumbnail post={post} photoUrl={photoUrl} beforeUrl={beforeUrl} afterUrl={afterUrl} aspectRatio={4 / 5} radius={theme.radii.md} />
 

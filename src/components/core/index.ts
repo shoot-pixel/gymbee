@@ -27,3 +27,4 @@ export { VisibilitySelector } from './VisibilitySelector';
 export { VisibilityBadge } from './VisibilityBadge';
 export { PostThumbnail } from './PostThumbnail';
 export { LikeBurst } from './LikeBurst';
+export { ReportBlockSheet } from './ReportBlockSheet';

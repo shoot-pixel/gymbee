@@ -49,6 +49,11 @@ jest.mock('../../../services/api/queries/posts', () => {
 
 jest.mock('../../../services/api/queries/community', () => ({
   useFriendProfile: jest.fn(() => ({ data: { display_name: 'Alex B.', avatar_url: null } })),
+  useBlockUser: jest.fn(() => ({ mutate: jest.fn(), isPending: false })),
+}));
+
+jest.mock('../../../services/api/queries/reports', () => ({
+  useCreateReport: jest.fn(() => ({ mutate: jest.fn(), isPending: false })),
 }));
 
 const mockUseComments = jest.fn();

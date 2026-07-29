@@ -37,6 +37,14 @@ jest.mock('../../../services/api/queries/directMessages', () => ({
   useSignedDmPhotoUrls: jest.fn(() => ({ data: {} })),
 }));
 
+jest.mock('../../../services/api/queries/community', () => ({
+  useBlockUser: jest.fn(() => ({ mutate: jest.fn(), isPending: false })),
+}));
+
+jest.mock('../../../services/api/queries/reports', () => ({
+  useCreateReport: jest.fn(() => ({ mutate: jest.fn(), isPending: false })),
+}));
+
 const CONVERSATION = {
   id: 'conv-1',
   requester_id: 'user-1',

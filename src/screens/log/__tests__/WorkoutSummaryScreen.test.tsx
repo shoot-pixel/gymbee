@@ -4,12 +4,13 @@ import { WorkoutSummaryScreen } from '../WorkoutSummaryScreen';
 import { useActiveWorkoutStore } from '../../../store/activeWorkoutStore';
 
 const mockNavigate = jest.fn();
+const mockPopToTop = jest.fn();
 
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {
     ...actual,
-    useNavigation: () => ({ navigate: mockNavigate }),
+    useNavigation: () => ({ navigate: mockNavigate, popToTop: mockPopToTop }),
   };
 });
 
@@ -143,6 +144,7 @@ describe('WorkoutSummaryScreen', () => {
     await waitFor(() => expect(mockCompleteWorkoutLogMutateAsync).toHaveBeenCalledTimes(1));
     expect(mockCompleteWorkoutLogMutateAsync.mock.calls[0][0]).toMatchObject({ workoutLogId: 'wl-1' });
     expect(useActiveWorkoutStore.getState().workoutLogId).toBeNull();
+    expect(mockPopToTop).toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith('MainTabs', { screen: 'TodayTab', params: { screen: 'Today' } });
   });
 });
