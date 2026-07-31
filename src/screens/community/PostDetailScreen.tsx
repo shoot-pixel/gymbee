@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -22,6 +22,7 @@ import {
   ListRow,
   LikeBurst,
   ReportBlockSheet,
+  KeyboardAvoider,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -178,7 +179,7 @@ export function PostDetailScreen() {
       ) : !post ? (
         <EmptyState icon="circleAlert" title="Post unavailable" description="This post may have been removed." />
       ) : (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoider>
         <ScrollView
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -344,7 +345,7 @@ export function PostDetailScreen() {
             disabled={commentDraft.trim().length === 0}
           />
         </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoider>
       )}
 
       <BottomSheet visible={menuOpen} onClose={() => setMenuOpen(false)}>

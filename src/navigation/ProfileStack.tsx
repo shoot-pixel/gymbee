@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { ProfileStackParamList } from './types';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { SettingsScreen } from '../screens/profile/SettingsScreen';
+import { NotificationSettingsScreen } from '../screens/profile/NotificationSettingsScreen';
 import { AccountScreen } from '../screens/profile/AccountScreen';
 import { PrivacyScreen } from '../screens/profile/PrivacyScreen';
 import { BlockedUsersScreen } from '../screens/profile/BlockedUsersScreen';
@@ -17,6 +18,7 @@ export function ProfileStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       <Stack.Screen name="Account" component={AccountScreen} />
       <Stack.Screen name="Privacy" component={PrivacyScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />

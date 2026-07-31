@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, View, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Alert, Pressable, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { format, differenceInYears } from 'date-fns';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, Button, Header, BottomSheet } from '../../components/core';
+import { Text, TextField, Button, Header, BottomSheet, KeyboardAvoider } from '../../components/core';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../services/api/supabaseClient';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -76,6 +76,18 @@ export function SignUpScreen({ navigation }: Props) {
     setBirthDate(pickerDate);
     setBirthDateSheetOpen(false);
   };
+
+  // Must be a stable reference, not an inline arrow function passed
+  // directly to DateTimePicker — on Android the picker is an imperative
+  // dialog whose `showOrUpdatePicker` effect re-fires (reopening the dialog)
+  // whenever the `onChange` prop's identity changes. An inline arrow gets a
+  // new identity every render, including the render `setPickerDate` itself
+  // triggers, so picking a date reopened the same dialog immediately —
+  // "confirm" appeared to do nothing. iOS renders a real inline view, not an
+  // effect-driven dialog, so this never showed up there.
+  const onChangePickerDate = useCallback((_event: DateTimePickerEvent, date?: Date) => {
+    if (date) setPickerDate(date);
+  }, []);
 
   const onSubmit = async () => {
     setError(null);
@@ -180,10 +192,7 @@ export function SignUpScreen({ navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoider>
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
         <Header title="" />
         <ScrollView
@@ -298,12 +307,12 @@ export function SignUpScreen({ navigation }: Props) {
               mode="date"
               display="spinner"
               maximumDate={maxBirthDate}
-              onChange={(_event, date) => date && setPickerDate(date)}
+              onChange={onChangePickerDate}
             />
             <Button label="Confirm" onPress={onConfirmBirthDate} style={{ width: '100%' }} />
           </View>
         </BottomSheet>
       </SafeAreaView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }

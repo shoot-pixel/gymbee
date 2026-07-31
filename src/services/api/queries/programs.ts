@@ -58,6 +58,32 @@ export function useActiveProgramTree(userId: string | null) {
   });
 }
 
+/** Existence check across every program the athlete has ever generated —
+ * any status, not just 'active' — used to gate AI program (re)generation
+ * behind Premium: the first one (regardless of whether it happened during
+ * onboarding or later from the Programs tab) is free, every one after that
+ * isn't. Onboarding's own BuildFirstWeekScreen never inserts into
+ * `programs` at all (it's a deterministic, non-AI first-week seed via
+ * weekly_schedule) — generate-program (this table) is the only source of
+ * "an AI program," so this alone is enough to know whether the athlete has
+ * used their free one, no separate tracking column needed. */
+async function fetchHasEverGeneratedProgram(userId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('programs')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+export function useHasEverGeneratedProgram(userId: string | null) {
+  return useQuery({
+    queryKey: ['programs', 'hasEverGenerated', userId],
+    queryFn: () => fetchHasEverGeneratedProgram(userId as string),
+    enabled: userId != null,
+  });
+}
+
 async function fetchProgramTreeById(programId: string): Promise<ProgramTree> {
   const { data, error } = await supabase
     .from('programs')

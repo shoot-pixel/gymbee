@@ -79,7 +79,7 @@ jest.mock('../../../services/api/queries/exercises', () => ({
 const mockUpdateProfileMutate = jest.fn();
 
 jest.mock('../../../services/api/queries/profiles', () => ({
-  useProfile: jest.fn(() => ({ data: { id: 'user-1', equipment_access: ['barbell', 'dumbbell'] }, isLoading: false })),
+  useProfile: jest.fn(() => ({ data: { id: 'user-1', equipment_access: ['barbell', 'dumbbell'], is_premium: true }, isLoading: false })),
   useUpdateProfile: jest.fn(() => ({ mutate: mockUpdateProfileMutate })),
 }));
 
@@ -272,6 +272,27 @@ describe('ActiveExerciseScreen — live set recommendations', () => {
     const secondSet = useActiveWorkoutStore.getState().exercises[0].sets[1];
     expect(secondSet.loadKg).toBe(60);
     expect(queryByText(RECOMMENDATION.reason)).toBeNull();
+  });
+
+  it('never shows a recommendation for a non-Premium account — Adaptive Coaching Intelligence is gated', async () => {
+    const { useProfile } = jest.requireMock('../../../services/api/queries/profiles');
+    (useProfile as jest.Mock).mockReturnValueOnce({
+      data: { id: 'user-1', equipment_access: ['barbell', 'dumbbell'], is_premium: false },
+      isLoading: false,
+    });
+
+    const { getByLabelText, queryByText } = await render(<ActiveExerciseScreen />);
+
+    await fireEvent.press(getByLabelText('Set 1 incomplete'));
+    // Wait for the press to fully settle (the set flips to "complete")
+    // before asserting the recommendation banner never showed up — avoids
+    // a false-positive pass from checking too early.
+    await waitFor(() => expect(getByLabelText('Set 1 complete')).toBeTruthy());
+
+    expect(queryByText(RECOMMENDATION.reason)).toBeNull();
+    expect(mockSaveRecommendationMutate).not.toHaveBeenCalled();
+    const secondSet = useActiveWorkoutStore.getState().exercises[0].sets[1];
+    expect(secondSet.loadKg).toBe(60); // unchanged from the seeded fixture
   });
 
   it('keeps a completed set editable and pushes edits back to the persisted set', async () => {

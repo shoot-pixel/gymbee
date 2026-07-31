@@ -33,8 +33,19 @@ jest.mock('../../../services/api/queries/community', () => {
   };
 });
 
+const mockUseLiveFriendWorkouts = jest.fn();
+
+jest.mock('../../../services/api/queries/liveWorkouts', () => ({
+  useLiveFriendWorkouts: (...args: unknown[]) => mockUseLiveFriendWorkouts(...args),
+}));
+
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.requireMock('../../../services/api/queries/community').useLeaderboard.mockReturnValue({
+    data: LEADERBOARD,
+    isLoading: false,
+  });
+  mockUseLiveFriendWorkouts.mockReturnValue({ data: [] });
 });
 
 describe('LeaderboardScreen', () => {
@@ -59,5 +70,23 @@ describe('LeaderboardScreen', () => {
 
     const { getByText } = await render(<LeaderboardScreen />);
     await waitFor(() => expect(getByText('No friends yet')).toBeTruthy());
+  });
+
+  it('shows a live indicator only next to a friend who is currently mid-workout', async () => {
+    mockUseLiveFriendWorkouts.mockReturnValue({
+      data: [{ friend: { id: 'user-2' }, workoutLogId: 'log-1' }],
+    });
+
+    const { getByText, getAllByLabelText } = await render(<LeaderboardScreen />);
+    await waitFor(() => expect(getByText('Alex B.')).toBeTruthy());
+
+    expect(getAllByLabelText('Live now')).toHaveLength(1);
+  });
+
+  it('shows no live indicators when no friends are currently working out', async () => {
+    const { getByText, queryByLabelText } = await render(<LeaderboardScreen />);
+    await waitFor(() => expect(getByText('Alex B.')).toBeTruthy());
+
+    expect(queryByLabelText('Live now')).toBeNull();
   });
 });

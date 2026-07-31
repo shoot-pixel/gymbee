@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,6 +17,7 @@ import {
   Avatar,
   BottomSheet,
   EmptyState,
+  KeyboardAvoider,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useCreatePhotoPost } from '../../services/api/queries/posts';
@@ -186,7 +187,7 @@ export function UploadPhotoPostScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <Header title={title} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoider>
       <ScrollView
         contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
         keyboardShouldPersistTaps="handled"
@@ -221,7 +222,7 @@ export function UploadPhotoPostScreen() {
 
         <Button label="Post" onPress={onSubmit} disabled={!canSubmit} loading={createPost.isPending} />
       </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

@@ -96,7 +96,7 @@ describe('FriendProfileScreen', () => {
     await waitFor(() => expect(getByText('Alex B.')).toBeTruthy());
 
     await fireEvent.press(getByText('Add Friend'));
-    expect(mockSendMutate).toHaveBeenCalledWith('user-2');
+    expect(mockSendMutate).toHaveBeenCalledWith('user-2', expect.anything());
   });
 
   it('starts a conversation and navigates to it when Message is pressed', async () => {
@@ -124,10 +124,10 @@ describe('FriendProfileScreen', () => {
     await waitFor(() => expect(getByText('Accept')).toBeTruthy());
 
     await fireEvent.press(getByText('Accept'));
-    expect(mockAcceptMutate).toHaveBeenCalledWith('req-1');
+    expect(mockAcceptMutate).toHaveBeenCalledWith('req-1', expect.anything());
 
     await fireEvent.press(getByText('Decline'));
-    expect(mockDeclineMutate).toHaveBeenCalledWith('req-1');
+    expect(mockDeclineMutate).toHaveBeenCalledWith('req-1', expect.anything());
   });
 
   it('shows "Friends" once accepted', async () => {

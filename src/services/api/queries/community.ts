@@ -10,6 +10,7 @@ export type PublicProfile = {
   hide_stats_from_friends: boolean;
   hide_photos_from_friends: boolean;
   is_private: boolean;
+  is_premium: boolean;
 };
 
 export type LeaderboardEntry = PublicProfile & {
@@ -179,9 +180,45 @@ export function useIncomingFriendRequests(userId: string | null) {
   });
 }
 
+export type OutgoingFriendRequest = PublicProfile & { requestId: string; createdAt: string };
+
+async function fetchOutgoingFriendRequests(userId: string): Promise<OutgoingFriendRequest[]> {
+  const [{ data, error }, blockedIds] = await Promise.all([
+    supabase
+      .from('friend_requests')
+      .select('id, addressee_id, created_at')
+      .eq('requester_id', userId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false }),
+    fetchBlockedIds(userId),
+  ]);
+  if (error) throw error;
+  const rows = data.filter(row => !blockedIds.has(row.addressee_id));
+  if (rows.length === 0) return [];
+
+  const profiles = await fetchPublicProfiles(rows.map(row => row.addressee_id));
+  const profileById = new Map(profiles.map(profile => [profile.id, profile]));
+
+  const requests: OutgoingFriendRequest[] = [];
+  for (const row of rows) {
+    const profile = profileById.get(row.addressee_id);
+    if (profile) requests.push({ ...profile, requestId: row.id, createdAt: row.created_at });
+  }
+  return requests;
+}
+
+export function useOutgoingFriendRequests(userId: string | null) {
+  return useQuery({
+    queryKey: ['outgoingFriendRequests', userId],
+    queryFn: () => fetchOutgoingFriendRequests(userId as string),
+    enabled: userId != null,
+  });
+}
+
 function invalidateFriendQueries(queryClient: QueryClient, userId: string | null) {
   queryClient.invalidateQueries({ queryKey: ['friendRelationships', userId] });
   queryClient.invalidateQueries({ queryKey: ['incomingFriendRequests', userId] });
+  queryClient.invalidateQueries({ queryKey: ['outgoingFriendRequests', userId] });
   queryClient.invalidateQueries({ queryKey: ['leaderboard', userId] });
   queryClient.invalidateQueries({ queryKey: ['activityFeed', userId] });
 }
@@ -212,6 +249,30 @@ export function useSendFriendRequest(userId: string | null) {
           .from('friend_requests')
           .update({ status: 'accepted', resolved_at: new Date().toISOString() })
           .eq('id', reverse.id);
+        if (error) throw error;
+        return;
+      }
+
+      // A row from an earlier request in this exact direction may already
+      // exist — decline (unlike remove) leaves its row behind (status
+      // 'declined') rather than deleting it, see 0045_friend_request_resend.
+      // A second plain INSERT here would violate friend_requests'
+      // unique(requester_id, addressee_id) and throw, which is exactly what
+      // made "Add Friend" look like a no-op. Revive that row instead.
+      const { data: existing, error: existingError } = await supabase
+        .from('friend_requests')
+        .select('id, status')
+        .eq('requester_id', userId)
+        .eq('addressee_id', addresseeId)
+        .maybeSingle();
+      if (existingError) throw existingError;
+
+      if (existing) {
+        if (existing.status !== 'declined') return; // already pending or accepted
+        const { error } = await supabase
+          .from('friend_requests')
+          .update({ status: 'pending', resolved_at: null })
+          .eq('id', existing.id);
         if (error) throw error;
         return;
       }
@@ -362,31 +423,59 @@ function sanitizeSearchTerm(term: string): string {
   return term.replace(/[,()%_]/g, '');
 }
 
+/** A leading "@" signals "search by handle" (e.g. "@sam") but matches
+ * display name too either way — someone typing "@sam" almost certainly
+ * still wants a display-name match named Sam if no handle matches. Shared
+ * between the query and the screen's "keep typing" gate so they can't drift
+ * out of sync on what counts toward the minimum length. */
+export function normalizedSearchTerm(search: string): string {
+  return sanitizeSearchTerm(search.trim().replace(/^@/, ''));
+}
+
+/** Below this, don't search at all — a couple of characters matches too
+ * many unrelated athletes to be useful. Prefix matching (below) then means
+ * results only appear once typing is close to someone's actual name/handle,
+ * and naturally narrow toward a single athlete as more is typed, rather than
+ * showing the whole user base from the first keystroke. */
+export const MIN_SEARCH_LENGTH = 3;
+
 async function searchProfiles(search: string, excludeUserId: string): Promise<PublicProfile[]> {
-  // A leading "@" signals "search by handle" (e.g. "@sam") but matches
-  // display name too either way — someone typing "@sam" almost certainly
-  // still wants a display-name match named Sam if no handle matches.
-  const term = sanitizeSearchTerm(search.trim().replace(/^@/, ''));
-  if (!term) return [];
+  const term = normalizedSearchTerm(search);
+  if (term.length < MIN_SEARCH_LENGTH) return [];
 
   const [{ data, error }, blockedIds] = await Promise.all([
     supabase
       .from('public_profiles')
       .select('*')
-      .or(`display_name.ilike.%${term}%,handle.ilike.%${term}%`)
+      // Prefix match, not "contains anywhere" — otherwise a short query
+      // matches unrelated athletes with that substring buried mid-name.
+      .or(`display_name.ilike.${term}%,handle.ilike.${term}%`)
       .neq('id', excludeUserId)
       .limit(20),
     fetchBlockedIds(excludeUserId),
   ]);
   if (error) throw error;
-  return data.filter(profile => !blockedIds.has(profile.id));
+
+  // Rank the closest matches first: an exact name/handle match beats a
+  // prefix match, and among prefix matches a shorter name is a tighter fit
+  // to what's been typed so far (e.g. "Sam" over "Samantha" for query "sam")
+  // — so the list keeps narrowing toward one athlete as typing continues.
+  const lowerTerm = term.toLowerCase();
+  const closeness = (profile: PublicProfile): number => {
+    const name = profile.display_name?.toLowerCase() ?? '';
+    const handle = profile.handle?.toLowerCase() ?? '';
+    if (name === lowerTerm || handle === lowerTerm) return 0;
+    return Math.min(name.startsWith(lowerTerm) ? name.length : Infinity, handle.startsWith(lowerTerm) ? handle.length : Infinity);
+  };
+
+  return data.filter(profile => !blockedIds.has(profile.id)).sort((a, b) => closeness(a) - closeness(b));
 }
 
 export function useSearchProfiles(search: string, excludeUserId: string | null) {
   return useQuery({
     queryKey: ['searchProfiles', search, excludeUserId],
     queryFn: () => searchProfiles(search, excludeUserId as string),
-    enabled: excludeUserId != null && search.trim().length > 0,
+    enabled: excludeUserId != null && normalizedSearchTerm(search).length >= MIN_SEARCH_LENGTH,
   });
 }
 

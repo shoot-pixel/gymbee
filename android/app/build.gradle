@@ -2,6 +2,15 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// react-native-reanimated's build.gradle.kts reads this from the :app
+// module's own ext specifically (safeAppExtGet), not rootProject's — unlike
+// gesture-handler/screens/svg/image-picker, which is why the same property
+// also lives in the root android/build.gradle isn't enough on its own. Both
+// exist to short-circuit a `node --print ...` call these libraries fall
+// back to when this is unset, which fails under Android Studio (no
+// Homebrew node on its PATH — see nodeExecutableAndArgs below).
+ext.REACT_NATIVE_NODE_MODULES_DIR = new File(rootDir, "../node_modules/react-native").absolutePath
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -25,7 +34,14 @@ react {
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
-    // nodeExecutableAndArgs = ["node"]
+    //   Hardcoded (rather than left as bare "node") because Android Studio,
+    //   launched as a GUI app rather than from a terminal, doesn't inherit
+    //   the PATH your shell profile sets up — so it can't find a
+    //   Homebrew-installed node and every bundling task fails with "Exec
+    //   failed, error 2: No such file or directory". Same problem iOS's
+    //   ios/.xcode.env solves via NODE_BINARY. Run `which node` and update
+    //   this path if you installed Node somewhere else (nvm, etc).
+    nodeExecutableAndArgs = ["/opt/homebrew/bin/node"]
     //
     //   The command to run when bundling. By default is 'bundle'
     // bundleCommand = "ram-bundle"
@@ -77,13 +93,20 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    // namespace is the internal Kotlin/Java package (generated R class, etc.)
+    // and is independent of applicationId — it stays com.gymbee, matching
+    // the existing source layout at app/src/main/java/com/gymbee/, so no
+    // source files need to move for this rename.
     namespace "com.gymbee"
     defaultConfig {
-        applicationId "com.gymbee"
+        // Must exactly match the package name this app's Play Console
+        // listing was created under. Permanent once anything is uploaded —
+        // do not change this again after the first real release.
+        applicationId "com.setsocial.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 5
+        versionName "1.0.4"
         // Substitutes AndroidManifest.xml's usesCleartextTraffic="${usesCleartextTraffic}"
         // placeholder — unresolved, the manifest merger fails the build outright.
         // "false" matches this app's actual behavior (Supabase/API calls are all
@@ -98,15 +121,42 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Real release signing, once it's set up (see the "hasProperty" guard
+        // below) — reads everything from Gradle properties rather than
+        // hardcoding a path/passwords here, so the actual keystore and its
+        // credentials never enter this file or git history. To enable:
+        //   1. Generate a keystore, e.g.
+        //      keytool -genkeypair -v -storetype PKCS12 -keystore upload-keystore.jks \
+        //        -alias upload -keyalg RSA -keysize 2048 -validity 10000
+        //   2. Put these four lines in ~/.gradle/gradle.properties (your
+        //      machine's global file, NOT this repo's android/gradle.properties):
+        //        MYAPP_UPLOAD_STORE_FILE=/absolute/path/to/upload-keystore.jks
+        //        MYAPP_UPLOAD_KEY_ALIAS=upload
+        //        MYAPP_UPLOAD_STORE_PASSWORD=<store password>
+        //        MYAPP_UPLOAD_KEY_PASSWORD=<key password>
+        //   3. Run ./gradlew bundleRelease as normal — release builds will
+        //      now sign with this instead of falling back to debug.
+        // See https://reactnative.dev/docs/signed-apk-android for background.
+        if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+            release {
+                storeFile file(MYAPP_UPLOAD_STORE_FILE)
+                storePassword MYAPP_UPLOAD_STORE_PASSWORD
+                keyAlias MYAPP_UPLOAD_KEY_ALIAS
+                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Falls back to the debug keystore until MYAPP_UPLOAD_STORE_FILE
+            // etc. are set (see signingConfigs above) — keeps
+            // assembleRelease/bundleRelease working for anyone (or any CI
+            // job) that hasn't set up the real upload keystore yet, same as
+            // before this was wired up, rather than breaking their build.
+            signingConfig project.hasProperty('MYAPP_UPLOAD_STORE_FILE') ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }

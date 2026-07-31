@@ -106,6 +106,8 @@ export type ReportReason =
   | 'other';
 export type ReportTarget = 'post' | 'comment' | 'message' | 'conversation' | 'profile';
 export type ReportStatus = 'open' | 'actioned' | 'dismissed';
+export type SubscriptionSource = 'revenuecat' | 'manual_grant';
+export type SubscriptionStatus = 'active' | 'canceled' | 'expired';
 
 export interface Database {
   public: {
@@ -130,6 +132,11 @@ export interface Database {
           onboarding_completed: boolean;
           hide_stats_from_friends: boolean;
           hide_photos_from_friends: boolean;
+          /** Opts out of the Live Now rail/leaderboard indicator (see
+           * 0051_live_friend_workouts.sql) — friends stop seeing your
+           * current exercise while you're mid-workout. Doesn't affect
+           * anything else (posts, stats, At My Gym). */
+          hide_live_workout_from_friends: boolean;
           /** Instagram-style private-account toggle — true (the default)
            * means adding this athlete as a friend requires their approval;
            * false means a friend_requests row addressed to them is
@@ -141,6 +148,24 @@ export interface Database {
            * is compared against to decide whether it's still "unseen". */
           messages_seen_at: string;
           activity_seen_at: string;
+          /** Per-category push toggles from the Notifications settings
+           * screen — Messages has no UI toggle (always-on there) but still
+           * carries a column for schema symmetry; send-push checks it like
+           * any other category. */
+          push_messages_enabled: boolean;
+          push_friends_enabled: boolean;
+          push_activity_enabled: boolean;
+          push_ai_coach_enabled: boolean;
+          /** Set the first time the in-app permission primer is shown, so it
+           * never shows twice for the same athlete — see
+           * useNotificationPrimer. */
+          push_primer_shown_at: string | null;
+          /** Denormalized from subscriptions (0050_premium_subscriptions.sql)
+           * — kept correct exclusively by sync_is_premium(), never a client
+           * write. Deliberately absent from the Insert/Update types below:
+           * the DB itself revokes UPDATE on this column from `authenticated`,
+           * and this file shouldn't offer a type-safe way to attempt it. */
+          is_premium: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -163,9 +188,15 @@ export interface Database {
           onboarding_completed?: boolean;
           hide_stats_from_friends?: boolean;
           hide_photos_from_friends?: boolean;
+          hide_live_workout_from_friends?: boolean;
           is_private?: boolean;
           messages_seen_at?: string;
           activity_seen_at?: string;
+          push_messages_enabled?: boolean;
+          push_friends_enabled?: boolean;
+          push_activity_enabled?: boolean;
+          push_ai_coach_enabled?: boolean;
+          push_primer_shown_at?: string | null;
         };
         Update: {
           display_name?: string | null;
@@ -184,9 +215,15 @@ export interface Database {
           onboarding_completed?: boolean;
           hide_stats_from_friends?: boolean;
           hide_photos_from_friends?: boolean;
+          hide_live_workout_from_friends?: boolean;
           is_private?: boolean;
           messages_seen_at?: string;
           activity_seen_at?: string;
+          push_messages_enabled?: boolean;
+          push_friends_enabled?: boolean;
+          push_activity_enabled?: boolean;
+          push_ai_coach_enabled?: boolean;
+          push_primer_shown_at?: string | null;
         };
         Relationships: [];
       };
@@ -850,6 +887,25 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      push_tokens: {
+        Row: {
+          token: string;
+          user_id: string;
+          platform: 'ios';
+          created_at: string;
+          last_seen_at: string;
+        };
+        Insert: {
+          token: string;
+          user_id: string;
+          platform?: 'ios';
+          last_seen_at?: string;
+        };
+        Update: {
+          last_seen_at?: string;
+        };
+        Relationships: [];
+      };
       readiness_checkins: {
         Row: {
           id: string;
@@ -1126,6 +1182,27 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          source: SubscriptionSource;
+          status: SubscriptionStatus;
+          plan: string;
+          started_at: string;
+          expires_at: string | null;
+          revenuecat_customer_id: string | null;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        // Read-only from the client — every write goes through
+        // admin_grant_premium/admin_revoke_premium (SQL editor only) or the
+        // RevenueCat webhook handler (service_role). See 0050_premium_subscriptions.sql.
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -1138,6 +1215,7 @@ export interface Database {
           hide_stats_from_friends: boolean;
           hide_photos_from_friends: boolean;
           is_private: boolean;
+          is_premium: boolean;
         };
         Relationships: [];
       };

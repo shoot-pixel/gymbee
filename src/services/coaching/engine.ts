@@ -432,9 +432,15 @@ export class LocalCoachingEngine implements CoachingEngine {
 
   adaptScheduledWorkout({ exercises, readiness, painRisk }: AdaptScheduledWorkoutParams): AdaptationChange[] {
     const changes: AdaptationChange[] = [];
-    const now = Date.now();
+    // Deterministic (not Date.now()-based) so ids stay stable across recomputes —
+    // e.g. a background refetch of any readiness input while this screen is open
+    // — otherwise a user's accept/reject decisions get silently discarded because
+    // every recompute would look like a brand-new set of changes.
     let idCounter = 0;
-    const nextId = () => `adapt-${now}-${idCounter++}`;
+    const nextId = (adaptationType: string, targetExerciseId: string | null, fieldChanged: string) => {
+      idCounter += 1;
+      return `adapt-${adaptationType}-${targetExerciseId ?? 'workout'}-${fieldChanged}-${idCounter}`;
+    };
 
     if (painRisk.riskLevel === 'severe' || readiness.band === 'very_low') {
       const reason =
@@ -442,7 +448,7 @@ export class LocalCoachingEngine implements CoachingEngine {
           ? 'Reported pain matches warning-sign language — recommending recovery/mobility work instead of today’s planned session.'
           : readiness.summary;
       changes.push({
-        id: nextId(),
+        id: nextId('recovery_replacement', null, 'workout_type'),
         adaptationType: 'recovery_replacement',
         targetExerciseId: null,
         fieldChanged: 'workout_type',
@@ -462,7 +468,7 @@ export class LocalCoachingEngine implements CoachingEngine {
         const reducedSets = Math.max(1, Math.ceil(exercise.targetSets / 2));
         if (reducedSets < exercise.targetSets) {
           changes.push({
-            id: nextId(),
+            id: nextId('reduce_sets', exercise.exerciseId, 'target_sets'),
             adaptationType: 'reduce_sets',
             targetExerciseId: exercise.exerciseId,
             fieldChanged: 'target_sets',
@@ -475,7 +481,7 @@ export class LocalCoachingEngine implements CoachingEngine {
         }
         if (exercise.targetRpe != null) {
           changes.push({
-            id: nextId(),
+            id: nextId('reduce_rpe', exercise.exerciseId, 'target_rpe'),
             adaptationType: 'reduce_rpe',
             targetExerciseId: exercise.exerciseId,
             fieldChanged: 'target_rpe',
@@ -487,11 +493,11 @@ export class LocalCoachingEngine implements CoachingEngine {
           });
         }
         changes.push({
-          id: nextId(),
+          id: nextId('increase_rest', exercise.exerciseId, 'rest_seconds'),
           adaptationType: 'increase_rest',
           targetExerciseId: exercise.exerciseId,
           fieldChanged: 'rest_seconds',
-          originalValue: exercise.restSeconds,
+          originalValue: exercise.restSeconds ?? 90,
           updatedValue: (exercise.restSeconds ?? 90) + 45,
           reason,
           confidence: 0.6,
@@ -505,7 +511,7 @@ export class LocalCoachingEngine implements CoachingEngine {
       for (const exercise of exercises) {
         if (exercise.targetSets > 1) {
           changes.push({
-            id: nextId(),
+            id: nextId('reduce_sets', exercise.exerciseId, 'target_sets'),
             adaptationType: 'reduce_sets',
             targetExerciseId: exercise.exerciseId,
             fieldChanged: 'target_sets',
@@ -518,11 +524,11 @@ export class LocalCoachingEngine implements CoachingEngine {
         }
         const currentRest = exercise.restSeconds ?? 90;
         changes.push({
-          id: nextId(),
+          id: nextId('increase_rest', exercise.exerciseId, 'rest_seconds'),
           adaptationType: 'increase_rest',
           targetExerciseId: exercise.exerciseId,
           fieldChanged: 'rest_seconds',
-          originalValue: exercise.restSeconds,
+          originalValue: currentRest,
           updatedValue: currentRest + 30,
           reason: 'Extra rest to help manage today’s lower readiness.',
           confidence: 0.55,
@@ -530,7 +536,7 @@ export class LocalCoachingEngine implements CoachingEngine {
         });
         if (exercise.targetRpe != null) {
           changes.push({
-            id: nextId(),
+            id: nextId('reduce_rpe', exercise.exerciseId, 'target_rpe'),
             adaptationType: 'reduce_rpe',
             targetExerciseId: exercise.exerciseId,
             fieldChanged: 'target_rpe',
@@ -549,7 +555,7 @@ export class LocalCoachingEngine implements CoachingEngine {
       for (const exercise of exercises) {
         if (exercise.targetRpe != null) {
           changes.push({
-            id: nextId(),
+            id: nextId('reduce_rpe', exercise.exerciseId, 'target_rpe'),
             adaptationType: 'reduce_rpe',
             targetExerciseId: exercise.exerciseId,
             fieldChanged: 'target_rpe',

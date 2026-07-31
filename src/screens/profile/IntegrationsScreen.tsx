@@ -7,18 +7,27 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card, Header, Button, Icon, LoadingState } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import {
   useIntegrationConnections,
   useStartWhoopConnect,
   useStartSpotifyConnect,
   useDisconnectIntegration,
 } from '../../services/api/queries/integrations';
-import type { ProfileStackParamList } from '../../navigation/types';
+import type { ProfileStackParamList, RootStackParamList } from '../../navigation/types';
 import type { IntegrationProvider } from '../../types/database';
 import type { IconName } from '../../components/core';
 
 type Route = RouteProp<ProfileStackParamList, 'Integrations'>;
 type Nav = NativeStackNavigationProp<ProfileStackParamList>;
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
+
+/** Only Whoop is gated — Spotify stays free (see the approved Premium plan:
+ * Whoop sync is a power-user wearable feature, Spotify is a low-cost
+ * convenience nobody's paying $6.99/mo for on its own). */
+function requiresPremium(provider: IntegrationProvider): boolean {
+  return provider === 'whoop';
+}
 
 type IntegrationDef = {
   provider: IntegrationProvider;
@@ -72,12 +81,15 @@ function IntegrationCard({
   def,
   userId,
   initiallyExpanded,
+  isPremium,
 }: {
   def: IntegrationDef;
   userId: string | null;
   initiallyExpanded: boolean;
+  isPremium: boolean;
 }) {
   const theme = useTheme();
+  const rootNavigation = useNavigation<RootNav>();
   const { data: connections, isLoading, refetch } = useIntegrationConnections(userId);
   // Rules of hooks: both start-connect mutations are always called, then the
   // one matching this card's provider is picked below — same fixed-provider-
@@ -103,6 +115,10 @@ function IntegrationCard({
 
   const onConnect = async () => {
     if (!userId) return;
+    if (requiresPremium(def.provider) && !isPremium) {
+      rootNavigation.navigate('Paywall', { trigger: 'whoop' });
+      return;
+    }
     try {
       const { url } = await startConnect.mutateAsync();
       const canOpen = await Linking.canOpenURL(url);
@@ -172,6 +188,11 @@ function IntegrationCard({
             <Text variant="caption" color="secondary">
               {def.description}
             </Text>
+            {requiresPremium(def.provider) && !isPremium ? (
+              <Text variant="caption" style={{ color: theme.colors.semantic.warning, fontWeight: '600' }}>
+                Part of SetSocial Premium
+              </Text>
+            ) : null}
             {isConnected ? (
               <Button
                 label="Disconnect"
@@ -181,7 +202,9 @@ function IntegrationCard({
               />
             ) : (
               <Button
-                label={`Connect ${def.name}`}
+                label={requiresPremium(def.provider) && !isPremium ? `Unlock ${def.name}` : `Connect ${def.name}`}
+                icon={requiresPremium(def.provider) && !isPremium ? 'crown' : undefined}
+                gradientColors={requiresPremium(def.provider) && !isPremium ? theme.gradients.premium : undefined}
                 onPress={onConnect}
                 loading={startConnect.isPending}
               />
@@ -199,6 +222,7 @@ export function IntegrationsScreen() {
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
   const queryClient = useQueryClient();
+  const { data: profile } = useProfile(userId);
 
   // Only ever set when this screen was reached via the soset://whoop-callback
   // deep link (see RootNavigator's `linking` config) — a normal tap into
@@ -248,7 +272,13 @@ export function IntegrationsScreen() {
           Connect third-party fitness platforms to bring their data into SetSocial.
         </Text>
         {INTEGRATIONS.map(def => (
-          <IntegrationCard key={def.provider} def={def} userId={userId} initiallyExpanded={params?.status != null} />
+          <IntegrationCard
+            key={def.provider}
+            def={def}
+            userId={userId}
+            initiallyExpanded={params?.status != null}
+            isPremium={profile?.is_premium ?? false}
+          />
         ))}
       </ScrollView>
     </SafeAreaView>

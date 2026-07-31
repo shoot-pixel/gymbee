@@ -100,6 +100,12 @@ export const gradients = {
    * the same accent. Recovery uses the default `accent` sweep above. */
   sleep: ['#00BFFF', '#0090C7'] as const,
   strain: ['#FF8A3D', '#FF6A00'] as const,
+  /** SetSocial Premium's one accent — anchored to semantic.warning (#FFB454)
+   * rather than an unrelated hue, so premium-context UI (paywall, badge, the
+   * premium loading screen) reads as "this brand, upgraded" rather than a
+   * foreign skin. Used only in premium-specific contexts — everywhere else
+   * keeps the normal accent/gradient system untouched. */
+  premium: ['#FFD37A', '#FFB454'] as const,
 } as const;
 
 export const sizes = {

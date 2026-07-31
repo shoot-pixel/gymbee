@@ -37,6 +37,7 @@ jest.mock('../../../services/api/queries/comments', () => ({
 
 const mockUseSearchProfiles = jest.fn();
 const mockUseIncomingFriendRequests = jest.fn();
+const mockUseOutgoingFriendRequests = jest.fn();
 const mockAcceptMutate = jest.fn();
 const mockDeclineMutate = jest.fn();
 const mockSendMutate = jest.fn();
@@ -50,6 +51,7 @@ jest.mock('../../../services/api/queries/community', () => {
       data: { friendIds: new Set(), outgoingByAddressee: new Map(), incomingByRequester: new Map() },
     })),
     useIncomingFriendRequests: (...args: unknown[]) => mockUseIncomingFriendRequests(...args),
+    useOutgoingFriendRequests: (...args: unknown[]) => mockUseOutgoingFriendRequests(...args),
     useSendFriendRequest: jest.fn(() => ({ mutate: mockSendMutate, isPending: false })),
     useAcceptFriendRequest: jest.fn(() => ({ mutate: mockAcceptMutate, isPending: false })),
     useDeclineFriendRequest: jest.fn(() => ({ mutate: mockDeclineMutate, isPending: false })),
@@ -66,6 +68,7 @@ const mockUseProfile = jest.fn();
 
 jest.mock('../../../services/api/queries/profiles', () => ({
   useProfile: (...args: unknown[]) => mockUseProfile(...args),
+  useUpdateProfile: jest.fn(() => ({ mutate: jest.fn() })),
 }));
 
 const mockMarkMessagesSeenMutate = jest.fn();
@@ -75,6 +78,12 @@ jest.mock('../../../services/api/queries/notifications', () => ({
   useNotificationBadges: jest.fn(() => ({ hasUnreadMessages: false, hasUnseenActivity: false })),
   useMarkMessagesSeen: jest.fn(() => ({ mutate: mockMarkMessagesSeenMutate })),
   useMarkActivitySeen: jest.fn(() => ({ mutate: mockMarkActivitySeenMutate })),
+}));
+
+const mockUseLiveFriendWorkouts = jest.fn();
+
+jest.mock('../../../services/api/queries/liveWorkouts', () => ({
+  useLiveFriendWorkouts: (...args: unknown[]) => mockUseLiveFriendWorkouts(...args),
 }));
 
 const FRIEND_POST = {
@@ -96,7 +105,9 @@ beforeEach(() => {
   mockUseFriendsPosts.mockReturnValue({ data: [], isLoading: false });
   mockUseSearchProfiles.mockReturnValue({ data: [], isLoading: false });
   mockUseIncomingFriendRequests.mockReturnValue({ data: [] });
+  mockUseOutgoingFriendRequests.mockReturnValue({ data: [] });
   mockUseProfile.mockReturnValue({ data: { avatar_url: null, messages_seen_at: '2026-01-01T00:00:00.000Z', activity_seen_at: '2026-01-01T00:00:00.000Z' }, isLoading: false });
+  mockUseLiveFriendWorkouts.mockReturnValue({ data: [] });
   jest
     .requireMock('../../../services/api/queries/notifications')
     .useNotificationBadges.mockReturnValue({ hasUnreadMessages: false, hasUnseenActivity: false });
@@ -147,19 +158,25 @@ describe('CommunityPostsScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Profile', { screen: 'Profile' });
   });
 
-  it('shows an incoming friend-request card and lets you accept/decline', async () => {
+  it('shows a friend-requests summary banner reflecting both directions and navigates to the dedicated screen', async () => {
     mockUseIncomingFriendRequests.mockReturnValue({
       data: [{ id: 'user-3', display_name: 'Maya L.', avatar_url: null, requestId: 'req-1', createdAt: '2026-01-01' }],
     });
+    mockUseOutgoingFriendRequests.mockReturnValue({
+      data: [{ id: 'user-4', display_name: 'Jordan K.', avatar_url: null, requestId: 'req-2', createdAt: '2026-01-01' }],
+    });
 
     const { getByText } = await render(<CommunityPostsScreen />);
-    await waitFor(() => expect(getByText('Maya L.')).toBeTruthy());
+    await waitFor(() => expect(getByText('Friend Requests')).toBeTruthy());
+    expect(getByText('1 new · 1 sent')).toBeTruthy();
 
-    await fireEvent.press(getByText('Accept'));
-    expect(mockAcceptMutate).toHaveBeenCalledWith('req-1');
+    await fireEvent.press(getByText('Friend Requests'));
+    expect(mockNavigate).toHaveBeenCalledWith('FriendRequests');
+  });
 
-    await fireEvent.press(getByText('Decline'));
-    expect(mockDeclineMutate).toHaveBeenCalledWith('req-1');
+  it('shows a quiet summary when there are no pending requests either direction', async () => {
+    const { getByText } = await render(<CommunityPostsScreen />);
+    await waitFor(() => expect(getByText('No pending requests')).toBeTruthy());
   });
 
   it('marks messages as seen when opening Messages, only when there was something unread', async () => {
@@ -210,6 +227,63 @@ describe('CommunityPostsScreen', () => {
 
     await waitFor(() => expect(getByText('Jordan K.')).toBeTruthy());
     await fireEvent.press(getByText('Add Friend'));
-    expect(mockSendMutate).toHaveBeenCalledWith('user-4');
+    expect(mockSendMutate).toHaveBeenCalledWith('user-4', expect.anything());
+  });
+
+  it('prompts to keep typing instead of showing results for a too-short query', async () => {
+    mockUseSearchProfiles.mockReturnValue({
+      data: [{ id: 'user-4', display_name: 'Jordan K.', avatar_url: null }],
+      isLoading: false,
+    });
+
+    const { getByPlaceholderText, getByText, queryByText } = await render(<CommunityPostsScreen />);
+    fireEvent.changeText(getByPlaceholderText('Find athletes by name or @handle'), 'jo');
+
+    await waitFor(() => expect(getByText('Keep typing to search…')).toBeTruthy());
+    expect(queryByText('Jordan K.')).toBeNull();
+  });
+
+  it('does not count a leading "@" toward the minimum search length', async () => {
+    mockUseSearchProfiles.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByPlaceholderText, getByText } = await render(<CommunityPostsScreen />);
+    fireEvent.changeText(getByPlaceholderText('Find athletes by name or @handle'), '@jo');
+
+    await waitFor(() => expect(getByText('Keep typing to search…')).toBeTruthy());
+  });
+
+  it('hides the Live Now rail when no friends are currently working out', async () => {
+    const { queryByText } = await render(<CommunityPostsScreen />);
+    await waitFor(() => expect(queryByText('No posts yet')).toBeTruthy());
+    expect(queryByText('Live Now')).toBeNull();
+  });
+
+  it('shows the Live Now rail and opens the detail sheet for a live friend', async () => {
+    mockUseLiveFriendWorkouts.mockReturnValue({
+      data: [
+        {
+          friend: { id: 'friend-1', display_name: 'Priya N.', avatar_url: null },
+          workoutLogId: 'log-1',
+          startedAt: new Date(Date.now() - 24 * 60_000).toISOString(),
+          workoutTitle: 'Push Day',
+          exerciseId: 'ex-1',
+          exerciseName: 'Bench Press',
+          setsDone: 3,
+          bestLoadKg: 84,
+          bestReps: 5,
+          prLoadKg: 93,
+          prReps: 5,
+          atYourGym: true,
+        },
+      ],
+    });
+
+    const { getByText, getByLabelText } = await render(<CommunityPostsScreen />);
+    await waitFor(() => expect(getByText('Live Now')).toBeTruthy());
+    expect(getByText('At your gym!')).toBeTruthy();
+
+    await fireEvent.press(getByLabelText('Priya N., live now on Bench Press'));
+    await waitFor(() => expect(getByText('CURRENTLY ON')).toBeTruthy());
+    expect(getByText('3 sets done this exercise')).toBeTruthy();
   });
 });

@@ -243,6 +243,29 @@ describe('LocalCoachingEngine.adaptScheduledWorkout', () => {
     expect(changes.every(c => c.fieldChanged === 'target_rpe')).toBe(true);
     expect(changes[0]?.updatedValue).toBe(7.5);
   });
+
+  // Regression test: workout_adaptations.original_value is NOT NULL in the DB, but
+  // restSeconds (and targetRpe) are nullable on an exercise target. A prior version
+  // of this code passed exercise.restSeconds straight through as originalValue for
+  // the "increase_rest" change, so any exercise with no configured rest period made
+  // every insert for that workout fail its NOT NULL constraint on every attempt.
+  it('never proposes a change with a null originalValue or updatedValue, even when restSeconds/targetRpe are unset', () => {
+    const exercisesWithNulls: AdaptationExerciseTarget[] = [
+      { ...exercises[0], restSeconds: null, targetRpe: null },
+    ];
+    const bands: ReadinessResult['band'][] = ['very_low', 'low', 'moderate', 'high'];
+    for (const band of bands) {
+      const changes = engine.adaptScheduledWorkout({
+        exercises: exercisesWithNulls,
+        readiness: readiness(band),
+        painRisk: band === 'moderate' ? severePainRisk : noPainRisk,
+      });
+      for (const change of changes) {
+        expect(change.originalValue).not.toBeNull();
+        expect(change.updatedValue).not.toBeNull();
+      }
+    }
+  });
 });
 
 describe('LocalCoachingEngine.recommendNextSet', () => {

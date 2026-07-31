@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text } from './Text';
+import { KeyboardAvoider } from './KeyboardAvoider';
 
 const SHEET_MAX_HEIGHT = Dimensions.get('window').height * 0.8;
 const DISMISS_DISTANCE_RATIO = 0.3;
@@ -90,10 +91,7 @@ export function BottomSheet({ visible, onClose, onDismissed, title, children }: 
   return (
     <Modal visible={rendered} transparent statusBarTranslucent animationType="none" onRequestClose={onClose}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          style={{ flex: 1, justifyContent: 'flex-end' }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+        <KeyboardAvoider style={{ flex: 1, justifyContent: 'flex-end' }}>
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
             <Animated.View
               style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }, backdropStyle]}
@@ -147,7 +145,7 @@ export function BottomSheet({ visible, onClose, onDismissed, title, children }: 
               </SafeAreaView>
             </Animated.View>
           </GestureDetector>
-        </KeyboardAvoidingView>
+        </KeyboardAvoider>
       </GestureHandlerRootView>
     </Modal>
   );

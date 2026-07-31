@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, Button, Header, SegmentedControl } from '../../components/core';
+import { Text, TextField, Button, Header, SegmentedControl, KeyboardAvoider } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useCreateExercise } from '../../services/api/queries/exercises';
 import { isYoutubeUrl } from '../../utils/youtube';
@@ -52,10 +52,7 @@ export function AddExerciseScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
       <Header title="Add Exercise" />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoider>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, padding: theme.spacing.lg, gap: theme.spacing.lg }}
           keyboardShouldPersistTaps="handled"
@@ -103,7 +100,7 @@ export function AddExerciseScreen() {
             loading={createExercise.isPending}
           />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

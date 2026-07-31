@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useTheme } from '../../theme/ThemeProvider';
 import {
   Text,
@@ -16,6 +16,7 @@ import {
   BottomSheet,
   EmptyState,
   LoadingState,
+  KeyboardAvoider,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -53,6 +54,17 @@ export function TemplateEditorScreen() {
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
   const [pickDate, setPickDate] = useState(new Date());
   const [scheduling, setScheduling] = useState(false);
+
+  // Must be a stable reference, not an inline arrow function passed
+  // directly to DateTimePicker — on Android the picker is an imperative
+  // dialog whose show effect re-fires (reopening the dialog) whenever the
+  // `onChange` prop's identity changes, and an inline arrow gets a new
+  // identity on every render, including the one `setPickDate` itself
+  // triggers. Picking a date reopened the same dialog immediately instead
+  // of applying it. See SignUpScreen's identical fix.
+  const onChangePickDate = useCallback((_event: DateTimePickerEvent, date?: Date) => {
+    if (date) setPickDate(date);
+  }, []);
 
   // Mirror the server value into local state once it lands (edit mode) —
   // create mode starts blank and stays purely local until the first save.
@@ -156,6 +168,7 @@ export function TemplateEditorScreen() {
           ) : undefined
         }
       />
+      <KeyboardAvoider>
       {templateId && isLoading ? (
         <LoadingState />
       ) : (
@@ -275,6 +288,7 @@ export function TemplateEditorScreen() {
           )}
         </ScrollView>
       )}
+      </KeyboardAvoider>
 
       <BottomSheet
         visible={scheduleSheetOpen}
@@ -286,7 +300,7 @@ export function TemplateEditorScreen() {
             value={pickDate}
             mode="date"
             minimumDate={new Date()}
-            onChange={(_event, date) => date && setPickDate(date)}
+            onChange={onChangePickDate}
           />
           <Button label="Confirm Date" onPress={onConfirmSchedule} loading={scheduling} style={{ width: '100%' }} />
         </View>

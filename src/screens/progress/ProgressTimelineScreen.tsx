@@ -5,17 +5,19 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Header, ListRow, IconButton, LoadingState, EmptyState, type IconName } from '../../components/core';
+import { Text, Header, ListRow, IconButton, LoadingState, EmptyState, LockedFeatureCard, type IconName } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import { useLoggedSets, computePrEvents } from '../../services/api/queries/progress';
 import { useBodyMetrics } from '../../services/api/queries/bodyMetrics';
 import { useAllWorkoutLogs, useDeleteWorkoutLog } from '../../services/api/queries/workoutLogs';
 import { buildProgressTimeline, type TimelineEntry } from '../../utils/progressTimeline';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatWeight, unitLabel } from '../../utils/units';
-import type { ProgressStackParamList } from '../../navigation/types';
+import type { ProgressStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<ProgressStackParamList>;
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
 type ListItem =
   | { kind: 'header'; key: string; label: string }
@@ -66,7 +68,9 @@ function describeEntry(
 export function ProgressTimelineScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
+  const rootNavigation = useNavigation<RootNav>();
   const userId = useAuthStore(state => state.userId);
+  const { data: profile } = useProfile(userId);
   const unitPref = useUnitPreference();
 
   const { data: loggedSets, isLoading: setsLoading, refetch: refetchSets } = useLoggedSets(userId);
@@ -98,6 +102,24 @@ export function ProgressTimelineScreen() {
   }, [loggedSets, bodyMetrics, workoutLogs]);
 
   const listItems = useMemo(() => buildListItems(entries), [entries]);
+
+  // Safety net behind the dashboard's own gate on the entry point — this
+  // screen must never show the full timeline to a non-Premium account
+  // regardless of how it was reached.
+  if (!profile?.is_premium) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
+        <Header title="Progress Timeline" />
+        <View style={{ padding: theme.spacing.lg }}>
+          <LockedFeatureCard
+            title="Progress Timeline"
+            description="Your full training and PR history in one place — part of SetSocial Premium."
+            onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'analytics' })}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>

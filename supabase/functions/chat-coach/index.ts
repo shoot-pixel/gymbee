@@ -46,6 +46,12 @@ const CORS_HEADERS = {
 };
 
 const HISTORY_LIMIT = 20;
+// SetSocial Premium gate — keep in sync with the paywall copy
+// (src/screens/profile/PaywallScreen.tsx) and the approved pricing plan.
+// Enforced here, not just client-side, since this is the one call in the
+// app with real per-message LLM cost — a client-only check could be
+// bypassed by anyone willing to hit the function directly.
+const FREE_MESSAGES_PER_MONTH = 3;
 const MAX_TOOL_ITERATIONS = 8;
 // Supabase Edge Functions are wall-clock limited (150s free / 400s paid), not
 // CPU limited (async I/O like these DB/Anthropic calls doesn't count against
@@ -586,9 +592,35 @@ Deno.serve(async req => {
 
     const { data: profile } = await admin
       .from('profiles')
-      .select('display_name, goal, experience_level, days_per_week, injuries_notes')
+      .select('display_name, goal, experience_level, days_per_week, injuries_notes, is_premium')
       .eq('id', userId)
       .single();
+
+    if (!profile?.is_premium) {
+      // Approximate month boundary from the client's own local "today"
+      // (see the comment on `today` above) rather than this function's UTC
+      // clock — a few hours of slop at the edge of a month is fine for a
+      // soft usage cap, and this stays consistent with how `today` is
+      // already used everywhere else here.
+      const monthStart = `${today.slice(0, 7)}-01`;
+      const { count: messagesThisMonth, error: countError } = await admin
+        .from('chat_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', conversationId)
+        .eq('role', 'user')
+        .gte('created_at', monthStart);
+      if (countError) throw countError;
+
+      if ((messagesThisMonth ?? 0) >= FREE_MESSAGES_PER_MONTH) {
+        return json(
+          {
+            error: `You've used your ${FREE_MESSAGES_PER_MONTH} free AI Coach messages this month. Upgrade to SetSocial Premium for unlimited access.`,
+            code: 'free_limit_reached',
+          },
+          402,
+        );
+      }
+    }
 
     // Only present for athletes who've connected + synced Whoop (see
     // supabase/functions/whoop-sync) — absent for everyone else, which is

@@ -1,9 +1,9 @@
 import React from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Button, SelectableCard, TextField, StepProgress } from '../../components/core';
+import { Text, Button, SelectableCard, TextField, StepProgress, KeyboardAvoider } from '../../components/core';
 import { useOnboardingStore } from '../../store/onboardingStore';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import type { Sex } from '../../types/database';
@@ -39,11 +39,7 @@ export function BodyProfileScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? theme.spacing.xl : 0}
-      >
+      <KeyboardAvoider keyboardVerticalOffset={Platform.OS === 'ios' ? theme.spacing.xl : 0}>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, padding: theme.spacing.xl, gap: theme.spacing.lg }}
           keyboardShouldPersistTaps="handled"
@@ -110,7 +106,7 @@ export function BodyProfileScreen({ navigation }: Props) {
 
           <Button label="Next" onPress={() => navigation.navigate('ExperienceLevel')} disabled={!canContinue} />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

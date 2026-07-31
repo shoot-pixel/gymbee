@@ -20,6 +20,7 @@ import {
   TextField,
   Button,
   EmptyState,
+  PremiumBadge,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -39,6 +40,7 @@ import { useUploadAvatar, useUpdateProfile } from '../../services/api/queries/pr
 import { useUserPosts, useSignedPhotoUrls, postPhotoPaths } from '../../services/api/queries/posts';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, unitLabel } from '../../utils/units';
+import { getErrorMessage } from '../../utils/errors';
 import type { CommunityStackParamList } from '../../navigation/types';
 
 type Route = RouteProp<CommunityStackParamList, 'FriendProfile'>;
@@ -47,6 +49,14 @@ type Nav = NativeStackNavigationProp<CommunityStackParamList>;
 const BIO_MAX_LENGTH = 150;
 
 const PROFILE_GLOW_HEIGHT = 260;
+
+// friend_requests mutations fire-and-forget via .mutate() — without this,
+// a failure (e.g. a blocked user, a network drop) left the button just
+// sitting there with no visible change, indistinguishable from "the button
+// doesn't work" (see 0045_friend_request_resend.sql for the bug this
+// surfaced).
+const onFriendActionError = (err: unknown) =>
+  Alert.alert('Something went wrong', getErrorMessage(err, 'Please try again.'));
 
 export function FriendProfileScreen() {
   const theme = useTheme();
@@ -240,6 +250,7 @@ export function FriendProfileScreen() {
             <View style={{ marginTop: theme.spacing.sm }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xxs }}>
                 <Text variant="title">{profile?.display_name ?? 'Athlete'}</Text>
+                {profile?.is_premium ? <PremiumBadge /> : null}
                 {profile?.is_private ? (
                   <View accessible accessibilityLabel="Private account">
                     <Icon name="lock" size="sm" color={theme.colors.text.tertiary} />
@@ -323,10 +334,10 @@ export function FriendProfileScreen() {
                   displayName={profile?.display_name ?? 'this athlete'}
                   size="md"
                   loading={actionLoading}
-                  onSend={() => sendRequest.mutate(params.userId)}
-                  onAccept={() => requestId && acceptRequest.mutate(requestId)}
-                  onDecline={() => requestId && declineRequest.mutate(requestId)}
-                  onRemove={() => requestId && removeRequest.mutate(requestId)}
+                  onSend={() => sendRequest.mutate(params.userId, { onError: onFriendActionError })}
+                  onAccept={() => requestId && acceptRequest.mutate(requestId, { onError: onFriendActionError })}
+                  onDecline={() => requestId && declineRequest.mutate(requestId, { onError: onFriendActionError })}
+                  onRemove={() => requestId && removeRequest.mutate(requestId, { onError: onFriendActionError })}
                 />
               </View>
               <Button

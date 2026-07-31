@@ -1,4 +1,4 @@
-import { resolveFriendRequestState, type FriendRelationships } from '../community';
+import { resolveFriendRequestState, normalizedSearchTerm, type FriendRelationships } from '../community';
 
 function relationships(overrides: Partial<FriendRelationships> = {}): FriendRelationships {
   return {
@@ -50,5 +50,19 @@ describe('resolveFriendRequestState', () => {
       'user-2',
     );
     expect(result.state).toBe('friends');
+  });
+});
+
+describe('normalizedSearchTerm', () => {
+  it('trims whitespace', () => {
+    expect(normalizedSearchTerm('  jordan  ')).toBe('jordan');
+  });
+
+  it('strips a leading "@" so it does not count toward search length', () => {
+    expect(normalizedSearchTerm('@jordan')).toBe('jordan');
+  });
+
+  it('strips ilike wildcards and or-filter syntax characters', () => {
+    expect(normalizedSearchTerm('jo%rd_an,(x)')).toBe('jordanx');
   });
 });

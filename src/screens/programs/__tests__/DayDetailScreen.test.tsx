@@ -4,13 +4,14 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { DayDetailScreen } from '../DayDetailScreen';
 
 const mockNavigate = jest.fn();
+let mockRouteParams: { programDayId: string; date?: string } = { programDayId: 'day-1' };
 
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {
     ...actual,
     useNavigation: () => ({ navigate: mockNavigate, canGoBack: () => true }),
-    useRoute: () => ({ params: { programDayId: 'day-1' } }),
+    useRoute: () => ({ params: mockRouteParams }),
   };
 });
 
@@ -81,6 +82,7 @@ const CARDIO_DAY = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockUseProgramDay.mockReturnValue({ data: TRAINING_DAY, isLoading: false });
+  mockRouteParams = { programDayId: 'day-1' };
 });
 
 describe('DayDetailScreen', () => {
@@ -144,6 +146,18 @@ describe('DayDetailScreen', () => {
     const { getByText, queryByText } = await render(<DayDetailScreen />);
     await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
     expect(queryByText('Add Workout')).toBeNull();
+  });
+
+  it('greys out Start Workout and shows "Check back tomorrow!" when the viewed date is in the future', async () => {
+    const { addDays, format } = jest.requireActual('date-fns');
+    mockRouteParams = { programDayId: 'day-1', date: format(addDays(new Date(), 1), 'yyyy-MM-dd') };
+
+    const { getByText } = await render(<DayDetailScreen />);
+    await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
+
+    expect(getByText('Check back tomorrow!')).toBeTruthy();
+    await fireEvent.press(getByText('Start Workout'));
+    expect(mockNavigateToStartWorkout).not.toHaveBeenCalled();
   });
 
   it('offers Start Cardio (no exercise list) on a cardio day', async () => {

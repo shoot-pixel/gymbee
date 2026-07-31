@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
+import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card, Button, Header, IconButton, LoadingState } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
@@ -27,6 +28,7 @@ export function DayDetailScreen() {
   const createTemplateFromDay = useCreateTemplateFromProgramDay();
   const removeProgramExercise = useRemoveProgramExercise();
   const setDayType = useSetDayType();
+  const isFutureDay = params.date != null && params.date > format(new Date(), 'yyyy-MM-dd');
 
   const onSaveToLibrary = async () => {
     if (!userId || !day) return;
@@ -154,8 +156,14 @@ export function DayDetailScreen() {
 
                 <Button
                   label="Start Workout"
+                  disabled={isFutureDay}
                   onPress={() => navigateToStartWorkout(rootNavigation, { programDayId: day.id })}
                 />
+                {isFutureDay ? (
+                  <Text variant="caption" color="secondary" style={{ textAlign: 'center' }}>
+                    Check back tomorrow!
+                  </Text>
+                ) : null}
                 {featureFlags.aiCoaching ? (
                   <Button
                     label="Choose a workout variant"

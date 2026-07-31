@@ -1,4 +1,4 @@
-import { computeE1rmHistories, computeDailyVolume, computeWeeklyVolume, type LoggedSet } from '../progress';
+import { computeE1rmHistories, computeDailyVolume, computeWeeklyVolume, computeStrengthTrend, type LoggedSet } from '../progress';
 
 function loggedSet(overrides: Partial<LoggedSet>): LoggedSet {
   return {
@@ -78,5 +78,57 @@ describe('computeDailyVolume', () => {
 
     expect(computeWeeklyVolume(sets)).toHaveLength(1);
     expect(computeDailyVolume(sets)).toHaveLength(3);
+  });
+});
+
+describe('computeStrengthTrend', () => {
+  const now = new Date('2024-01-10T12:00:00.000Z'); // Wednesday
+
+  it('defaults to the last 7 days for the "1w" range', () => {
+    const sets = [
+      loggedSet({ id: 's1', loggedAt: '2024-01-09T09:00:00.000Z', loadKg: 100, reps: 5 }),
+      loggedSet({ id: 's2', loggedAt: '2024-01-01T09:00:00.000Z', loadKg: 100, reps: 5 }), // 9 days before `now` — outside 1w
+    ];
+
+    expect(computeStrengthTrend(sets, '1w', now)).toEqual([{ date: '2024-01-09', volume: 500 }]);
+  });
+
+  it('widens to the last 14 days for the "2w" range', () => {
+    const sets = [
+      loggedSet({ id: 's1', loggedAt: '2024-01-09T09:00:00.000Z', loadKg: 100, reps: 5 }),
+      loggedSet({ id: 's2', loggedAt: '2023-12-29T09:00:00.000Z', loadKg: 100, reps: 5 }), // 12 days before `now` — inside 2w
+      loggedSet({ id: 's3', loggedAt: '2023-12-01T09:00:00.000Z', loadKg: 100, reps: 5 }), // ~40 days before `now` — outside 2w
+    ];
+
+    expect(computeStrengthTrend(sets, '2w', now).map(p => p.date)).toEqual(['2023-12-29', '2024-01-09']);
+  });
+
+  it('widens to the last 30 days for the "1m" range', () => {
+    const sets = [
+      loggedSet({ id: 's1', loggedAt: '2023-12-15T09:00:00.000Z', loadKg: 100, reps: 5 }), // 26 days before `now` — inside 1m
+      loggedSet({ id: 's2', loggedAt: '2023-11-01T09:00:00.000Z', loadKg: 100, reps: 5 }), // over 2 months before — outside 1m
+    ];
+
+    expect(computeStrengthTrend(sets, '1m', now).map(p => p.date)).toEqual(['2023-12-15']);
+  });
+
+  it('buckets by calendar week rather than by day for the "ytd" range', () => {
+    const sets = [
+      loggedSet({ id: 's1', loggedAt: '2024-01-02T09:00:00.000Z', loadKg: 100, reps: 5 }), // same ISO week as s2
+      loggedSet({ id: 's2', loggedAt: '2024-01-04T09:00:00.000Z', loadKg: 100, reps: 5 }),
+    ];
+
+    const trend = computeStrengthTrend(sets, 'ytd', now);
+    expect(trend).toHaveLength(1);
+    expect(trend[0].volume).toBe(1000);
+  });
+
+  it('excludes sets from before the start of the year for the "ytd" range', () => {
+    const sets = [loggedSet({ id: 's1', loggedAt: '2023-12-15T09:00:00.000Z', loadKg: 100, reps: 5 })];
+    expect(computeStrengthTrend(sets, 'ytd', now)).toHaveLength(0);
+  });
+
+  it('ignores sets with no recorded load', () => {
+    expect(computeStrengthTrend([loggedSet({ loadKg: null })], '1w', now)).toHaveLength(0);
   });
 });

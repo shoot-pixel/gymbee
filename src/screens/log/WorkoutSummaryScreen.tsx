@@ -5,7 +5,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, TextField, SegmentedControl, StatTile, Icon, ListRow, LoadingState } from '../../components/core';
+import { Text, Card, Button, TextField, SegmentedControl, StatTile, Icon, ListRow, LoadingState, KeyboardAvoider } from '../../components/core';
 import { useActiveWorkoutStore, computeWorkoutStats, type ActiveExercise } from '../../store/activeWorkoutStore';
 import { useAuthStore } from '../../store/authStore';
 import { useCompleteWorkoutLog } from '../../services/api/queries/workoutLogs';
@@ -165,6 +165,7 @@ export function WorkoutSummaryScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
+      <KeyboardAvoider>
       <ScrollView
         contentContainerStyle={{ padding: theme.spacing.xl, gap: theme.spacing.lg }}
         keyboardShouldPersistTaps="handled"
@@ -331,6 +332,7 @@ export function WorkoutSummaryScreen() {
 
         <Button label="Save Workout" onPress={onSave} loading={completeWorkoutLog.isPending} />
       </ScrollView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

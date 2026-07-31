@@ -1,21 +1,47 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, Share, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { addWeeks, endOfWeek, format, startOfWeek } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, StatTile, Button, IconButton, TrendChart, ListRow, LoadingState } from '../../components/core';
+import { Text, Card, StatTile, Button, IconButton, TrendChart, ListRow, LoadingState, Header, LockedFeatureCard } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import { useWeeklyReviewData } from '../../services/api/queries/weeklyReview';
 import { coachingEngine } from '../../services/coaching';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, unitLabel } from '../../utils/units';
 import { formatEnumLabel } from '../../utils/exerciseMetadata';
+import type { RootStackParamList } from '../../navigation/types';
+
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
 export function WeeklyReviewScreen() {
   const theme = useTheme();
+  const rootNavigation = useNavigation<RootNav>();
   const userId = useAuthStore(state => state.userId);
+  const { data: profile } = useProfile(userId);
   const unitPref = useUnitPreference();
   const [weekOffset, setWeekOffset] = useState(0);
+
+  // Safety net behind the dashboard's own gate on the entry point — this
+  // screen must never show real Weekly Review data to a non-Premium
+  // account regardless of how it was reached.
+  if (!profile?.is_premium) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
+        <Header title="Weekly Review" />
+        <View style={{ padding: theme.spacing.lg }}>
+          <LockedFeatureCard
+            title="Weekly Review"
+            description="A weekly summary of your training, readiness, and consistency — part of SetSocial Premium."
+            onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'analytics' })}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const { weekStart, weekEnd } = useMemo(() => {
     const anchor = addWeeks(new Date(), weekOffset);

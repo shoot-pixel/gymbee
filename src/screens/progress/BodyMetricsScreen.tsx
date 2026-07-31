@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, StatTile, Button, TextField, TrendChart, Header, LoadingState } from '../../components/core';
+import { Text, Card, StatTile, Button, TextField, TrendChart, Header, LoadingState, KeyboardAvoider } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useBodyMetrics, useLogBodyMetric } from '../../services/api/queries/bodyMetrics';
 import { useProfile } from '../../services/api/queries/profiles';
@@ -57,6 +57,7 @@ export function BodyMetricsScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <Header title="Body Metrics" />
+      <KeyboardAvoider>
       <ScrollView
         contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
         keyboardShouldPersistTaps="handled"
@@ -139,6 +140,7 @@ export function BodyMetricsScreen() {
           </>
         )}
       </ScrollView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

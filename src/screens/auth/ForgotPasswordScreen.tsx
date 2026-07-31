@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, Button, Header } from '../../components/core';
+import { Text, TextField, Button, Header, KeyboardAvoider } from '../../components/core';
 import { useAuth } from '../../hooks/useAuth';
 import type { AuthStackParamList } from '../../navigation/types';
 
@@ -27,7 +27,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoider>
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
         <Header title="" />
         <View
@@ -81,6 +81,6 @@ export function ForgotPasswordScreen({ navigation }: Props) {
           </Text>
         </View>
       </SafeAreaView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }

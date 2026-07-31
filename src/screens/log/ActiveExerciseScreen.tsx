@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View, Alert } from 'react-native';
+import { Pressable, ScrollView, View, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { differenceInDays } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, TextField, Icon, ListRow, BottomSheet, LoadingState } from '../../components/core';
+import { Text, Card, Button, TextField, Icon, ListRow, BottomSheet, LoadingState, KeyboardAvoider } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
   useActiveWorkoutStore,
@@ -149,6 +149,7 @@ export function ActiveExerciseScreen() {
   const saveSubstitution = useSaveExerciseSubstitution();
   const { data: previousPerformance } = usePreviousExercisePerformance(exercise?.exerciseId ?? null, workoutLogId);
   const { data: profile } = useProfile(userId);
+  const isPremium = profile?.is_premium ?? false;
   const updateProfile = useUpdateProfile(userId);
   const { data: allExercises } = useExercises('');
   const { data: loggedSets } = useLoggedSets(userId);
@@ -407,25 +408,31 @@ export function ActiveExerciseScreen() {
           .sort((a, b) => a.setNumber - b.setNumber)[0];
         const nextSetNumber = nextDraft ? nextDraft.setNumber : null;
 
-        const recommendation = coachingEngine.recommendNextSet({
-          target: {
-            exerciseId: exercise.exerciseId,
-            targetSets: exercise.targetSets ?? updatedSets.length,
-            targetRepsMin: exercise.targetRepsMin ?? null,
-            targetRepsMax: exercise.targetRepsMax ?? null,
-            targetLoadKg: exercise.targetLoadKg ?? null,
-            targetRpe: exercise.targetRpe ?? null,
-            restSeconds: exercise.restSeconds ?? null,
-          },
-          completedSets: completedWorkingSets.map(s => ({
-            setNumber: s.setNumber,
-            reps: s.reps ?? 0,
-            loadKg: s.loadKg,
-            rpe: s.rpe,
-          })),
-          nextSetNumber,
-          readinessBand,
-        });
+        // Next-set weight/rep recommendations are a SetSocial Premium
+        // feature (Adaptive Coaching Intelligence) — a free account just
+        // logs sets manually with no auto-suggested banner, rather than
+        // computing a recommendation it's not allowed to show.
+        const recommendation = isPremium
+          ? coachingEngine.recommendNextSet({
+              target: {
+                exerciseId: exercise.exerciseId,
+                targetSets: exercise.targetSets ?? updatedSets.length,
+                targetRepsMin: exercise.targetRepsMin ?? null,
+                targetRepsMax: exercise.targetRepsMax ?? null,
+                targetLoadKg: exercise.targetLoadKg ?? null,
+                targetRpe: exercise.targetRpe ?? null,
+                restSeconds: exercise.restSeconds ?? null,
+              },
+              completedSets: completedWorkingSets.map(s => ({
+                setNumber: s.setNumber,
+                reps: s.reps ?? 0,
+                loadKg: s.loadKg,
+                rpe: s.rpe,
+              })),
+              nextSetNumber,
+              readinessBand,
+            })
+          : null;
 
         setPending(
           recommendation ? { recommendation, nextSetNumber, afterSetNumber: setRow.setNumber } : null,
@@ -512,7 +519,7 @@ export function ActiveExerciseScreen() {
         onOptionsPress={() => setOptionsSheetOpen(true)}
       />
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoider>
         <ScrollView
           contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
           keyboardShouldPersistTaps="handled"
@@ -610,7 +617,7 @@ export function ActiveExerciseScreen() {
             multiline
           />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
 
       <BottomSheet
         visible={optionsSheetOpen}

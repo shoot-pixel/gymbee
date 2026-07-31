@@ -24,7 +24,12 @@ export type OnboardingStackParamList = {
 export type TodayStackParamList = {
   Today: undefined;
   ProgramDetail: { programId: string };
-  DayDetail: { programDayId: string };
+  /** `date` (yyyy-MM-dd) is the calendar day this program day is being viewed
+   * for — used to grey out "Start Workout" when the viewed day hasn't
+   * arrived yet. Omitted when there's no specific date in view (e.g. reached
+   * outside a weekday/calendar context), in which case the screen has no
+   * future-day check to make. */
+  DayDetail: { programDayId: string; date?: string };
   ExerciseDetail: { exerciseId: string };
   TrainingDayDetail: { weeklyScheduleId: string; workoutTemplateId: string; dayOfWeek: number };
 };
@@ -33,7 +38,12 @@ export type TodayStackParamList = {
 export type ProgramsStackParamList = {
   Calendar: undefined;
   ProgramDetail: { programId: string };
-  DayDetail: { programDayId: string };
+  /** `date` (yyyy-MM-dd) is the calendar day this program day is being viewed
+   * for — used to grey out "Start Workout" when the viewed day hasn't
+   * arrived yet. Omitted when there's no specific date in view (e.g. reached
+   * outside a weekday/calendar context), in which case the screen has no
+   * future-day check to make. */
+  DayDetail: { programDayId: string; date?: string };
   ExercisePicker: { selectMode?: boolean; templateId?: string; programDayId?: string } | undefined;
   AddExercise: { selectMode?: boolean; templateId?: string; programDayId?: string } | undefined;
   Library: { pickMode?: boolean } | undefined;
@@ -83,6 +93,7 @@ export type CommunityStackParamList = {
   Leaderboard: undefined;
   Posts: undefined;
   FriendProfile: { userId: string };
+  FriendRequests: undefined;
   PostDetail: { postId: string };
   UploadPhotoPost: {
     mode: 'progress' | 'before_after';
@@ -104,6 +115,7 @@ export type CommunityStackParamList = {
 export type ProfileStackParamList = {
   Profile: undefined;
   Settings: undefined;
+  NotificationSettings: undefined;
   Account: undefined;
   Privacy: undefined;
   BlockedUsers: undefined;
@@ -132,6 +144,13 @@ export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   Profile: NavigatorScreenParams<ProfileStackParamList>;
   Chat: { conversationId?: string } | undefined;
+  /** Registered at the root (not nested in any one stack) so every gated
+   * feature — AI Chat, Whoop, analytics, the widget, program regen — can
+   * reach it the same way regardless of which stack it's pushed from:
+   * rootNavigation.navigate('Paywall'). `trigger` only affects the copy
+   * shown, purely for context ("why am I seeing this") — not enforcement,
+   * which always happens server-side via is_premium. */
+  Paywall: { trigger?: 'ai_chat' | 'whoop' | 'analytics' | 'widget' | 'program_regen' | 'adaptive_coaching' } | undefined;
 };
 
 declare global {

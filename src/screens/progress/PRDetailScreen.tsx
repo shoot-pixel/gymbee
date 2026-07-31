@@ -1,23 +1,29 @@
 import React, { useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, type RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, StatTile, TrendChart, Header, LoadingState } from '../../components/core';
+import { Text, Card, StatTile, TrendChart, Header, LoadingState, LockedFeatureCard } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import { useLoggedSets, computePrEvents, computeE1rmHistories } from '../../services/api/queries/progress';
 import { coachingEngine } from '../../services/coaching';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatWeight, unitLabel } from '../../utils/units';
-import type { ProgressStackParamList } from '../../navigation/types';
+import type { ProgressStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Route = RouteProp<ProgressStackParamList, 'PRDetail'>;
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
 export function PRDetailScreen() {
   const theme = useTheme();
+  const rootNavigation = useNavigation<RootNav>();
   const { params } = useRoute<Route>();
   const userId = useAuthStore(state => state.userId);
+  const { data: profile } = useProfile(userId);
+  const isPremium = profile?.is_premium ?? false;
   const { data: sets, isLoading } = useLoggedSets(userId);
   const unitPref = useUnitPreference();
 
@@ -68,12 +74,20 @@ export function PRDetailScreen() {
               </View>
             </View>
 
-            <Card variant="elevated">
-              <Text variant="subtitle">Est. 1RM progression</Text>
-              <View style={{ marginTop: theme.spacing.md }}>
-                <TrendChart points={exerciseEvents.map(e => e.e1rm)} />
-              </View>
-            </Card>
+            {isPremium ? (
+              <Card variant="elevated">
+                <Text variant="subtitle">Est. 1RM progression</Text>
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <TrendChart points={exerciseEvents.map(e => e.e1rm)} />
+                </View>
+              </Card>
+            ) : (
+              <LockedFeatureCard
+                title="Est. 1RM progression"
+                description="See how this lift has trended over time."
+                onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'analytics' })}
+              />
+            )}
 
             {prediction ? (
               <Card variant="elevated" style={{ gap: theme.spacing.xs }}>
@@ -84,29 +98,37 @@ export function PRDetailScreen() {
               </Card>
             ) : null}
 
-            <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
-              <Text variant="subtitle">PR history</Text>
-              {[...exerciseEvents].reverse().map((event, index) => (
-                <View
-                  key={`${event.loggedAt}-${index}`}
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    paddingVertical: theme.spacing.xs,
-                    borderTopWidth: index === 0 ? 0 : 1,
-                    borderTopColor: theme.colors.border.subtle,
-                  }}
-                >
-                  <Text variant="body" color="secondary">
-                    {format(new Date(event.loggedAt), 'MMM d, yyyy')}
-                  </Text>
-                  <Text variant="body">
-                    {formatWeight(event.loadKg, unitPref)}{unitLabel(unitPref)} × {event.reps} (
-                    {formatWeight(event.e1rm, unitPref)} {unitLabel(unitPref)} e1RM)
-                  </Text>
-                </View>
-              ))}
-            </Card>
+            {isPremium ? (
+              <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
+                <Text variant="subtitle">PR history</Text>
+                {[...exerciseEvents].reverse().map((event, index) => (
+                  <View
+                    key={`${event.loggedAt}-${index}`}
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      paddingVertical: theme.spacing.xs,
+                      borderTopWidth: index === 0 ? 0 : 1,
+                      borderTopColor: theme.colors.border.subtle,
+                    }}
+                  >
+                    <Text variant="body" color="secondary">
+                      {format(new Date(event.loggedAt), 'MMM d, yyyy')}
+                    </Text>
+                    <Text variant="body">
+                      {formatWeight(event.loadKg, unitPref)}{unitLabel(unitPref)} × {event.reps} (
+                      {formatWeight(event.e1rm, unitPref)} {unitLabel(unitPref)} e1RM)
+                    </Text>
+                  </View>
+                ))}
+              </Card>
+            ) : (
+              <LockedFeatureCard
+                title="Full PR history"
+                description="Every recorded PR for this exercise, not just your current best."
+                onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'analytics' })}
+              />
+            )}
           </>
         )}
       </ScrollView>

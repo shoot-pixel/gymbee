@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,33 +17,51 @@ import {
   ListRow,
   LoadingState,
   EmptyState,
+  KeyboardAvoider,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useChatUiStore } from '../../store/chatUiStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import {
   useConversation,
   useMessages,
   useInvalidateMessages,
   useClearChat,
 } from '../../services/api/queries/chat';
-import { sendChatMessage } from '../../services/api/edgeFunctions';
+import { sendChatMessage, EdgeFunctionError } from '../../services/api/edgeFunctions';
 import { supabase } from '../../services/api/supabaseClient';
 import type { RootStackParamList } from '../../navigation/types';
 import type { ChatRole } from '../../types/database';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+// Keep in sync with FREE_MESSAGES_PER_MONTH in
+// supabase/functions/chat-coach/index.ts — this is only the client-side
+// "X of 3 used" hint and a way to skip a wasted round trip once the count
+// is obviously already at the cap; the edge function is what actually
+// enforces it.
+const FREE_MESSAGES_PER_MONTH = 3;
+
 export function ChatScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const userId = useAuthStore(state => state.userId);
+  const { data: profile } = useProfile(userId);
+  const isPremium = profile?.is_premium ?? false;
   const { data: conversation } = useConversation(userId);
   const conversationId = conversation?.id ?? null;
   const { data: messages, isLoading } = useMessages(conversationId);
   const invalidateMessages = useInvalidateMessages(conversationId);
   const clearChat = useClearChat(conversationId);
   const queryClient = useQueryClient();
+
+  const messagesUsedThisMonth = React.useMemo(() => {
+    if (isPremium || !messages) return 0;
+    const monthStart = format(new Date(), 'yyyy-MM-01');
+    return messages.filter(m => m.role === 'user' && m.created_at >= monthStart).length;
+  }, [messages, isPremium]);
+  const atFreeLimit = !isPremium && messagesUsedThisMonth >= FREE_MESSAGES_PER_MONTH;
 
   const streamingBuffer = useChatUiStore(state => state.streamingBuffer);
   const appendToken = useChatUiStore(state => state.appendToken);
@@ -108,6 +126,10 @@ export function ChatScreen() {
   const onSend = async () => {
     const text = input.trim();
     if (!text || !conversationId || sending) return;
+    if (atFreeLimit) {
+      navigation.navigate('Paywall', { trigger: 'ai_chat' });
+      return;
+    }
     setInput('');
     setPendingUserText(text);
     setSending(true);
@@ -118,6 +140,11 @@ export function ChatScreen() {
     } catch (err) {
       setSending(false);
       setPendingUserText(null);
+      if (err instanceof EdgeFunctionError && err.code === 'free_limit_reached') {
+        setInput(text); // hand the draft back rather than discarding it
+        navigation.navigate('Paywall', { trigger: 'ai_chat' });
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Could not send that. Try again.');
     }
   };
@@ -166,10 +193,7 @@ export function ChatScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoider>
         {isLoading ? (
           <LoadingState />
         ) : (
@@ -205,6 +229,18 @@ export function ChatScreen() {
           </ScrollView>
         )}
 
+        {!isPremium ? (
+          <Text
+            variant="caption"
+            color="secondary"
+            style={{ textAlign: 'center', paddingHorizontal: theme.spacing.lg }}
+          >
+            {atFreeLimit
+              ? "You've used all your free messages this month — upgrade for unlimited AI Coach"
+              : `${messagesUsedThisMonth} of ${FREE_MESSAGES_PER_MONTH} free messages used this month`}
+          </Text>
+        ) : null}
+
         <View
           style={{
             flexDirection: 'row',
@@ -217,14 +253,20 @@ export function ChatScreen() {
             <TextField
               value={input}
               onChangeText={setInput}
-              placeholder="Ask your coach..."
+              placeholder={atFreeLimit ? 'Upgrade to keep chatting…' : 'Ask your coach...'}
               multiline
               editable={!sending}
             />
           </View>
-          <Button label="Send" onPress={onSend} disabled={!input.trim() || sending} loading={sending} />
+          <Button
+            label={atFreeLimit ? 'Upgrade' : 'Send'}
+            onPress={onSend}
+            disabled={!input.trim() || sending}
+            loading={sending}
+            gradientColors={atFreeLimit ? theme.gradients.premium : undefined}
+          />
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
 
       <BottomSheet visible={optionsSheetOpen} onClose={() => setOptionsSheetOpen(false)}>
         <ListRow title="Clear Chat" icon="trash" onPress={onClearChat} />

@@ -1,12 +1,13 @@
-import React, { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Header, Text, Card, ListRow, EmptyState, LoadingState } from '../../components/core';
+import { Header, Text, Card, ListRow, EmptyState, LoadingState, PremiumBadge } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useLeaderboard } from '../../services/api/queries/community';
+import { useLiveFriendWorkouts } from '../../services/api/queries/liveWorkouts';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, unitLabel } from '../../utils/units';
 import type { CommunityStackParamList } from '../../navigation/types';
@@ -20,6 +21,8 @@ export function LeaderboardScreen() {
   const unitPref = useUnitPreference();
 
   const { data: leaderboard, isLoading, refetch } = useLeaderboard(userId);
+  const { data: liveWorkouts } = useLiveFriendWorkouts(userId);
+  const liveFriendIds = useMemo(() => new Set((liveWorkouts ?? []).map(w => w.friend.id)), [liveWorkouts]);
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -57,7 +60,23 @@ export function LeaderboardScreen() {
               }}
             >
               <ListRow
-                title={entry.isSelf ? 'You' : (entry.display_name ?? 'Athlete')}
+                title={
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+                    <Text variant="body">{entry.isSelf ? 'You' : (entry.display_name ?? 'Athlete')}</Text>
+                    {liveFriendIds.has(entry.id) ? (
+                      <View
+                        accessibilityLabel="Live now"
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: theme.colors.accent.primary,
+                        }}
+                      />
+                    ) : null}
+                    {entry.is_premium ? <PremiumBadge /> : null}
+                  </View>
+                }
                 subtitle={`${entry.workoutsThisMonth} workout${entry.workoutsThisMonth === 1 ? '' : 's'} this month`}
                 leading={
                   <Text variant="subtitle" color="secondary" style={{ width: 24 }}>

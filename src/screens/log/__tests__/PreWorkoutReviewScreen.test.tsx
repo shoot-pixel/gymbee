@@ -3,18 +3,24 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { PreWorkoutReviewScreen } from '../PreWorkoutReviewScreen';
 
 const mockReplace = jest.fn();
+const mockNavigate = jest.fn();
 
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {
     ...actual,
-    useNavigation: () => ({ replace: mockReplace, navigate: jest.fn(), canGoBack: () => false }),
+    useNavigation: () => ({ replace: mockReplace, navigate: mockNavigate, canGoBack: () => false }),
     useRoute: () => ({ params: { programDayId: 'day-1' } }),
   };
 });
 
 jest.mock('../../../store/authStore', () => ({
   useAuthStore: (selector: (state: { userId: string | null }) => unknown) => selector({ userId: 'user-1' }),
+}));
+
+const mockUseProfile = jest.fn();
+jest.mock('../../../services/api/queries/profiles', () => ({
+  useProfile: (...args: unknown[]) => mockUseProfile(...args),
 }));
 
 jest.mock('../../../services/api/queries/programs', () => ({
@@ -121,6 +127,7 @@ beforeEach(() => {
   mockedEvaluateReadiness.mockReturnValue(READINESS_RESULT);
   mockedAssessPainRisk.mockReturnValue({ riskLevel: 'none', recommendation: '', stopAndSeekMedicalAttention: false });
   mockedAdaptScheduledWorkout.mockReturnValue([PROPOSED_ADAPTATION]);
+  mockUseProfile.mockReturnValue({ data: { is_premium: true } });
 });
 
 describe('PreWorkoutReviewScreen', () => {
@@ -130,6 +137,25 @@ describe('PreWorkoutReviewScreen', () => {
     expect(getByText('55')).toBeTruthy();
     expect(getByText('Bench Press')).toBeTruthy();
     expect(getAllByText(/Readiness appears lower than usual today/).length).toBeGreaterThan(0);
+  });
+
+  it('shows a Premium upsell instead of the adaptation, and starts the unmodified plan, for a free account', async () => {
+    mockUseProfile.mockReturnValue({ data: { is_premium: false } });
+
+    const { getByText, queryByText } = await render(<PreWorkoutReviewScreen />);
+
+    expect(getByText('55')).toBeTruthy(); // readiness score itself stays free
+    expect(getByText('Adaptive Coaching Intelligence')).toBeTruthy();
+    expect(queryByText('Bench Press')).toBeNull(); // the real adaptation card never rendered
+    expect(mockedAdaptScheduledWorkout).not.toHaveBeenCalled();
+
+    await fireEvent.press(getByText('Start Workout'));
+    // No adaptation to save — goes straight to the workout.
+    expect(mockMutateAsyncSave).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith('ActiveWorkoutOverview', { programDayId: 'day-1', scheduledWorkoutId: undefined });
+
+    await fireEvent.press(getByText('Unlock with Premium'));
+    expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'adaptive_coaching' });
   });
 
   it('rejecting the adaptation and starting the workout saves it as rejected, then navigates to ActiveWorkoutOverview', async () => {

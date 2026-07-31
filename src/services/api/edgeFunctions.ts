@@ -2,6 +2,18 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
 import type { TrainingGoal, ExperienceLevel, EquipmentType } from '../../types/database';
 
+/** Thrown by invokeFunction when the response body carries a `code` —
+ * lets a caller branch on a specific failure (e.g. chat-coach's
+ * 'free_limit_reached') without parsing `.message` text. */
+export class EdgeFunctionError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'EdgeFunctionError';
+    this.code = code;
+  }
+}
+
 async function invokeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(name, { body });
   if (error) {
@@ -9,13 +21,15 @@ async function invokeFunction<T>(name: string, body: Record<string, unknown>): P
     // actual reason is in the response body our function returned.
     if (error instanceof FunctionsHttpError) {
       let serverMessage: string | null = null;
+      let code: string | undefined;
       try {
         const errorBody = await error.context.json();
         serverMessage = errorBody?.error ?? null;
+        code = errorBody?.code;
       } catch {
         // Response body wasn't JSON — fall through to the generic error.
       }
-      throw new Error(serverMessage ?? error.message);
+      throw new EdgeFunctionError(serverMessage ?? error.message, code);
     }
     throw error;
   }

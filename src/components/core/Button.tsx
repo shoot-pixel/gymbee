@@ -19,6 +19,9 @@ type ButtonProps = {
   disabled?: boolean;
   loading?: boolean;
   style?: ViewStyle;
+  /** Overrides the default accent sweep for a `primary` button — e.g.
+   * `theme.gradients.premium` for a paywall CTA. Ignored for other variants. */
+  gradientColors?: readonly [string, string];
 };
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -33,6 +36,7 @@ export function Button({
   disabled,
   loading,
   style,
+  gradientColors,
 }: ButtonProps) {
   const theme = useTheme();
   const isDisabled = disabled || loading;
@@ -86,7 +90,7 @@ export function Button({
     >
       {variant === 'primary' ? (
         <LinearGradient
-          colors={[...theme.gradients.accent]}
+          colors={gradientColors ? [...gradientColors] : [...theme.gradients.accent]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}

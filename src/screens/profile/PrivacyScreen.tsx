@@ -50,6 +50,7 @@ export function PrivacyScreen(_props: Props) {
   const isPrivateAccount = profile?.is_private ?? true;
   const hideStats = profile?.hide_stats_from_friends ?? false;
   const hidePhotos = profile?.hide_photos_from_friends ?? false;
+  const hideLiveWorkout = profile?.hide_live_workout_from_friends ?? false;
   const isFullyPrivate = hideStats && hidePhotos;
 
   const setFullyPrivate = (value: boolean) => {
@@ -110,6 +111,14 @@ export function PrivacyScreen(_props: Props) {
                   description="Posts you've marked “Friends” become visible only to you — private posts are unaffected."
                   value={hidePhotos}
                   onChange={value => updateProfile.mutate({ hide_photos_from_friends: value })}
+                />
+              </View>
+              <View style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}>
+                <PrivacyToggleRow
+                  title="Hide live workout status"
+                  description="Friends won't see you in Live Now or on the leaderboard while you're mid-workout."
+                  value={hideLiveWorkout}
+                  onChange={value => updateProfile.mutate({ hide_live_workout_from_friends: value })}
                 />
               </View>
             </Card>

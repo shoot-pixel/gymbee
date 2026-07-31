@@ -14,6 +14,11 @@ jest.mock('../../../store/authStore', () => ({
   useAuthStore: (selector: (state: { userId: string | null }) => unknown) => selector({ userId: 'user-1' }),
 }));
 
+const mockUseProfile = jest.fn();
+jest.mock('../../../services/api/queries/profiles', () => ({
+  useProfile: (...args: unknown[]) => mockUseProfile(...args),
+}));
+
 jest.mock('../../../hooks/useUnitPreference', () => ({
   useUnitPreference: () => 'kg',
 }));
@@ -49,9 +54,22 @@ jest.mock('../../../services/api/queries/workoutLogs', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUseProfile.mockReturnValue({ data: { is_premium: true } });
 });
 
 describe('ProgressTimelineScreen', () => {
+  it('shows a locked upsell instead of the timeline for a free user', async () => {
+    mockUseProfile.mockReturnValue({ data: { is_premium: false } });
+
+    const { getByText, queryByText } = await render(<ProgressTimelineScreen />);
+
+    await waitFor(() => expect(getByText('Unlock with Premium')).toBeTruthy());
+    expect(queryByText('FEBRUARY 2024')).toBeNull();
+
+    await fireEvent.press(getByText('Unlock with Premium'));
+    expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'analytics' });
+  });
+
   it('renders merged entries grouped under a month header', async () => {
     const { getByText } = await render(<ProgressTimelineScreen />);
 

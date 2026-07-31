@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { format, startOfMonth, startOfWeek } from 'date-fns';
+import { format, startOfDay, startOfMonth, startOfWeek, startOfYear, subDays } from 'date-fns';
 import { supabase } from '../supabaseClient';
 
 export type LoggedSet = {
@@ -151,6 +151,49 @@ export function computeDailyVolume(
   }
   const sortedDates = Array.from(buckets.keys()).sort();
   return sortedDates.slice(-days).map(date => ({ date, volume: buckets.get(date) ?? 0 }));
+}
+
+export type StrengthTrendRange = '1w' | '2w' | '1m' | 'ytd';
+
+function strengthTrendRangeStart(range: StrengthTrendRange, now: Date): Date {
+  switch (range) {
+    case '1w':
+      return subDays(now, 6);
+    case '2w':
+      return subDays(now, 13);
+    case '1m':
+      return subDays(now, 29);
+    case 'ytd':
+      return startOfYear(now);
+  }
+}
+
+/**
+ * Strength Trend chart data for the Stats tab's user-selectable time range.
+ * '1w'/'2w'/'1m' bucket by calendar day (few enough points to stay readable);
+ * 'ytd' buckets by calendar week instead, since a day-by-day trend over up to
+ * a year would be far too many points to read as a line.
+ */
+export function computeStrengthTrend(
+  sets: LoggedSet[],
+  range: StrengthTrendRange,
+  now = new Date(),
+): { date: string; volume: number }[] {
+  const start = startOfDay(strengthTrendRangeStart(range, now));
+  const bucketByWeek = range === 'ytd';
+  const buckets = new Map<string, number>();
+  for (const set of sets) {
+    if (set.loadKg == null) continue;
+    const loggedAt = new Date(set.loggedAt);
+    if (loggedAt < start) continue;
+    const key = bucketByWeek
+      ? format(startOfWeek(loggedAt, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+      : format(loggedAt, 'yyyy-MM-dd');
+    buckets.set(key, (buckets.get(key) ?? 0) + set.loadKg * set.reps);
+  }
+  return Array.from(buckets.keys())
+    .sort()
+    .map(date => ({ date, volume: buckets.get(date) ?? 0 }));
 }
 
 export function totalVolumeThisMonth(sets: LoggedSet[]): number {

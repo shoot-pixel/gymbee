@@ -40,6 +40,7 @@ export function TrainingDayDetailScreen() {
   const thisWeekDateKey = format(thisWeekDate, 'yyyy-MM-dd');
   const { data: logsOnThisDate } = useWorkoutLogsInRange(userId, { from: thisWeekDateKey, to: thisWeekDateKey });
   const isCompletedThisWeek = (logsOnThisDate ?? []).length > 0;
+  const isFutureDay = thisWeekDateKey > format(new Date(), 'yyyy-MM-dd');
 
   const onStartWorkout = async () => {
     if (!userId || !template) return;
@@ -123,6 +124,13 @@ export function TrainingDayDetailScreen() {
                   Completed this week
                 </Text>
               </Card>
+            ) : isFutureDay ? (
+              <>
+                <Button label="Start Workout" disabled onPress={() => {}} />
+                <Text variant="caption" color="secondary" style={{ textAlign: 'center' }}>
+                  Check back tomorrow!
+                </Text>
+              </>
             ) : (
               <Button label="Start Workout" onPress={onStartWorkout} loading={startTemplateToday.isPending} />
             )}

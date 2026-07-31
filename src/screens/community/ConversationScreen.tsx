@@ -1,12 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View, Image } from 'react-native';
+import { Alert, Pressable, ScrollView, View, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Header, Text, Icon, IconButton, TextField, LoadingState, Avatar, ReportBlockSheet } from '../../components/core';
+import { Header, Text, Icon, IconButton, TextField, LoadingState, Avatar, ReportBlockSheet, KeyboardAvoider } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
   useConversation,
@@ -100,7 +100,7 @@ export function ConversationScreen() {
           ) : undefined
         }
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoider>
         {isLoading ? (
           <LoadingState />
         ) : (
@@ -204,7 +204,7 @@ export function ConversationScreen() {
             disabled={!body.trim() && !photo}
           />
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
 
       {conversation ? (
         <ReportBlockSheet

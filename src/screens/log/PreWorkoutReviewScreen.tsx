@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Alert, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -15,8 +15,11 @@ import {
   ProgressRing,
   LoadingState,
   Icon,
+  KeyboardAvoider,
+  LockedFeatureCard,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import { useProgramDay } from '../../services/api/queries/programs';
 import { useScheduledWorkout } from '../../services/api/queries/scheduledWorkouts';
 import {
@@ -27,10 +30,11 @@ import {
 } from '../../services/api/queries/coaching';
 import { coachingEngine, type AdaptationChange, type AdaptationExerciseTarget } from '../../services/coaching';
 import { trackEvent } from '../../services/analytics/analytics';
-import type { LogStackParamList } from '../../navigation/types';
+import type { LogStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Route = RouteProp<LogStackParamList, 'PreWorkoutReview'>;
 type LogNav = NativeStackNavigationProp<LogStackParamList>;
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
 const RATING_OPTIONS = [
   { value: '1', label: '1' },
@@ -49,8 +53,11 @@ type ExerciseTargetWithName = AdaptationExerciseTarget & { exerciseName: string 
 export function PreWorkoutReviewScreen() {
   const theme = useTheme();
   const logNavigation = useNavigation<LogNav>();
+  const rootNavigation = useNavigation<RootNav>();
   const { params } = useRoute<Route>();
   const userId = useAuthStore(state => state.userId);
+  const { data: profile } = useProfile(userId);
+  const isPremium = profile?.is_premium ?? false;
 
   const { data: programDay, isLoading: programDayLoading } = useProgramDay(params.programDayId);
   const { data: scheduledWorkout, isLoading: scheduledLoading } = useScheduledWorkout(params.scheduledWorkoutId);
@@ -121,10 +128,14 @@ export function PreWorkoutReviewScreen() {
     return coachingEngine.assessPainRisk(checkin?.hasPain ?? false, checkin?.painNotes ?? null);
   }, [readinessContext.inputs.checkin]);
 
+  // Adaptive Coaching Intelligence (auto readiness-based adjustments) is a
+  // SetSocial Premium feature — gated at the source, not just in the UI
+  // below, so a free account's onStartWorkout (which reads this same memo)
+  // can never end up silently applying/saving an adaptation either.
   const proposedAdaptations = useMemo<AdaptationChange[]>(() => {
-    if (!readiness || hasExistingReview || exerciseTargets.length === 0) return [];
+    if (!readiness || hasExistingReview || exerciseTargets.length === 0 || !isPremium) return [];
     return coachingEngine.adaptScheduledWorkout({ exercises: exerciseTargets, readiness, painRisk });
-  }, [readiness, painRisk, exerciseTargets, hasExistingReview]);
+  }, [readiness, painRisk, exerciseTargets, hasExistingReview, isPremium]);
 
   useEffect(() => {
     if (proposedAdaptations.length === 0) return;
@@ -154,14 +165,18 @@ export function PreWorkoutReviewScreen() {
   }, [proposedAdaptations]);
 
   const onSubmitCheckin = async () => {
-    await submitCheckin.mutateAsync({
-      sleepHours: sleepHours.trim() ? Number(sleepHours) : null,
-      sleepQuality: Number(sleepQuality),
-      soreness: Number(soreness),
-      stress: Number(stress),
-      hasPain: painToggle === 'yes',
-      painNotes: painToggle === 'yes' ? painNotes.trim() || null : null,
-    });
+    try {
+      await submitCheckin.mutateAsync({
+        sleepHours: sleepHours.trim() ? Number(sleepHours) : null,
+        sleepQuality: Number(sleepQuality),
+        soreness: Number(soreness),
+        stress: Number(stress),
+        hasPain: painToggle === 'yes',
+        painNotes: painToggle === 'yes' ? painNotes.trim() || null : null,
+      });
+    } catch (err) {
+      Alert.alert('Could not save check-in', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   const onRejectAll = () => {
@@ -185,14 +200,18 @@ export function PreWorkoutReviewScreen() {
     if (acceptedCount > 0) trackEvent('adaptation_accepted', { count: acceptedCount });
     if (rejectedCount > 0) trackEvent('adaptation_rejected', { count: rejectedCount });
 
-    await saveAdaptations.mutateAsync({
-      userId,
-      programDayId: params.programDayId ?? null,
-      scheduledWorkoutId: params.scheduledWorkoutId ?? null,
-      readinessCheckinId: readinessContext.checkinId,
-      decisions: proposedAdaptations.map(change => ({ change, accepted: decisions[change.id] ?? false })),
-    });
-    goToLogWorkout();
+    try {
+      await saveAdaptations.mutateAsync({
+        userId,
+        programDayId: params.programDayId ?? null,
+        scheduledWorkoutId: params.scheduledWorkoutId ?? null,
+        readinessCheckinId: readinessContext.checkinId,
+        decisions: proposedAdaptations.map(change => ({ change, accepted: decisions[change.id] ?? false })),
+      });
+      goToLogWorkout();
+    } catch (err) {
+      Alert.alert('Could not start workout', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   if (isLoading) {
@@ -208,6 +227,7 @@ export function PreWorkoutReviewScreen() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
         <Header title="Readiness Check-In" />
+        <KeyboardAvoider>
         <ScrollView
           contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
           keyboardShouldPersistTaps="handled"
@@ -259,6 +279,7 @@ export function PreWorkoutReviewScreen() {
           <Button label="Continue" onPress={onSubmitCheckin} loading={submitCheckin.isPending} />
           <Button label="Skip check-in" variant="ghost" onPress={() => setSkippedCheckin(true)} />
         </ScrollView>
+        </KeyboardAvoider>
       </SafeAreaView>
     );
   }
@@ -343,6 +364,12 @@ export function PreWorkoutReviewScreen() {
               You've already reviewed today's plan for this workout. Starting will use the changes you decided on.
             </Text>
           </Card>
+        ) : !isPremium ? (
+          <LockedFeatureCard
+            title="Adaptive Coaching Intelligence"
+            description="Premium automatically adjusts sets, weight, and rest based on your readiness — today's plan is unchanged."
+            onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'adaptive_coaching' })}
+          />
         ) : visibleAdaptations.length > 0 ? (
           <Card variant="flat" style={{ gap: theme.spacing.sm }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

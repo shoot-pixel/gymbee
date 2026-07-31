@@ -4,6 +4,7 @@ import type { CommunityStackParamList } from './types';
 import { LeaderboardScreen } from '../screens/community/LeaderboardScreen';
 import { CommunityPostsScreen } from '../screens/community/CommunityPostsScreen';
 import { FriendProfileScreen } from '../screens/community/FriendProfileScreen';
+import { FriendRequestsScreen } from '../screens/community/FriendRequestsScreen';
 import { PostDetailScreen } from '../screens/community/PostDetailScreen';
 import { UploadPhotoPostScreen } from '../screens/community/UploadPhotoPostScreen';
 import { FriendsListScreen } from '../screens/community/FriendsListScreen';
@@ -19,6 +20,7 @@ export function CommunityStack() {
       <Stack.Screen name="Posts" component={CommunityPostsScreen} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Stack.Screen name="FriendProfile" component={FriendProfileScreen} />
+      <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} />
       <Stack.Screen name="UploadPhotoPost" component={UploadPhotoPostScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="FriendsList" component={FriendsListScreen} />

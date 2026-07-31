@@ -61,4 +61,12 @@ describe('PrivacyScreen', () => {
       expect(getByText('People must send a friend request that you approve before you’re connected.')).toBeTruthy(),
     );
   });
+
+  it('lets the athlete hide their live workout status from friends', async () => {
+    const { getByText, getByLabelText } = await render(<PrivacyScreen {...props} />);
+    await waitFor(() => expect(getByText('Hide live workout status')).toBeTruthy());
+
+    await fireEvent(getByLabelText('Hide live workout status'), 'valueChange', true);
+    expect(mockUpdateProfileMutate).toHaveBeenCalledWith({ hide_live_workout_from_friends: true });
+  });
 });

@@ -3,7 +3,7 @@ import { Alert, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, TextField, Button, Card, Header, LoadingState } from '../../components/core';
+import { Text, TextField, Button, Card, Header, LoadingState, KeyboardAvoider } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useProfile, useUpdateProfile } from '../../services/api/queries/profiles';
 import { useAuth } from '../../hooks/useAuth';
@@ -114,6 +114,7 @@ export function AccountScreen(_props: Props) {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
       <Header title="Account" />
 
+      <KeyboardAvoider>
       {isLoading ? (
         <LoadingState />
       ) : (
@@ -222,6 +223,7 @@ export function AccountScreen(_props: Props) {
           </Card>
         </ScrollView>
       )}
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

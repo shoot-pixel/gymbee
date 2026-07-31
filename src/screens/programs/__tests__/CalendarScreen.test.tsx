@@ -24,14 +24,21 @@ jest.mock('../../../store/authStore', () => ({
 }));
 
 const mockUseActiveProgramTree = jest.fn();
+const mockUseHasEverGeneratedProgram = jest.fn();
 
 jest.mock('../../../services/api/queries/programs', () => {
   const actual = jest.requireActual('../../../services/api/queries/programs');
   return {
     ...actual,
     useActiveProgramTree: (...args: unknown[]) => mockUseActiveProgramTree(...args),
+    useHasEverGeneratedProgram: (...args: unknown[]) => mockUseHasEverGeneratedProgram(...args),
   };
 });
+
+const mockUseProfile = jest.fn();
+jest.mock('../../../services/api/queries/profiles', () => ({
+  useProfile: (...args: unknown[]) => mockUseProfile(...args),
+}));
 
 const mockUseScheduledWorkouts = jest.fn();
 
@@ -63,6 +70,11 @@ beforeEach(() => {
   mockUseWeeklySchedule.mockReturnValue({ data: [], isLoading: false, refetch: jest.fn() });
   mockUseWorkoutLogsInRange.mockReturnValue({ data: [], refetch: jest.fn() });
   mockUseScheduledWorkouts.mockReturnValue({ data: [], isLoading: false, refetch: jest.fn() });
+  // Fresh, never-generated-a-program user by default — matches most
+  // existing scenarios here (no program set up yet) and keeps the Premium
+  // gate a no-op unless a test explicitly opts into it.
+  mockUseHasEverGeneratedProgram.mockReturnValue({ data: false });
+  mockUseProfile.mockReturnValue({ data: { is_premium: false } });
 });
 
 describe('CalendarScreen', () => {
@@ -83,6 +95,29 @@ describe('CalendarScreen', () => {
     await fireEvent.press(getByLabelText('Library'));
 
     expect(mockNavigate).toHaveBeenCalledWith('Library', undefined);
+  });
+
+  it('sends a free user who has already generated a program to the paywall instead of the Ask Coach sheet', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+    mockUseHasEverGeneratedProgram.mockReturnValue({ data: true });
+
+    const { getByLabelText, queryByText } = await render(<CalendarScreen />);
+    await fireEvent.press(getByLabelText('Program'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'program_regen' });
+    expect(queryByText('How many days a week do you want to train?')).toBeNull();
+  });
+
+  it('still lets a Premium user regenerate freely', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+    mockUseHasEverGeneratedProgram.mockReturnValue({ data: true });
+    mockUseProfile.mockReturnValue({ data: { is_premium: true } });
+
+    const { getByLabelText, getByText } = await render(<CalendarScreen />);
+    await fireEvent.press(getByLabelText('Program'));
+
+    expect(getByText('Ask Coach to build you a custom program')).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalledWith('Paywall', expect.anything());
   });
 
   it('opens the Ask Coach sheet from the Program segment when there is no active program', async () => {

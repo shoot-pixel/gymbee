@@ -21,6 +21,8 @@ export function ScheduledWorkoutDetailScreen() {
   const { data: scheduled, isLoading } = useScheduledWorkout(params.scheduledWorkoutId);
   const deleteScheduledWorkout = useDeleteScheduledWorkout();
 
+  const isFutureDay = scheduled != null && scheduled.scheduled_date > format(new Date(), 'yyyy-MM-dd');
+
   const onDelete = () => {
     if (!scheduled) return;
     Alert.alert('Delete this workout?', "This can't be undone.", [
@@ -80,8 +82,14 @@ export function ScheduledWorkoutDetailScreen() {
 
             <Button
               label="Start Workout"
+              disabled={isFutureDay}
               onPress={() => navigateToStartWorkout(rootNavigation, { scheduledWorkoutId: scheduled.id })}
             />
+            {isFutureDay ? (
+              <Text variant="caption" color="secondary" style={{ textAlign: 'center' }}>
+                Check back tomorrow!
+              </Text>
+            ) : null}
             {featureFlags.aiCoaching ? (
               <Button
                 label="Choose a workout variant"

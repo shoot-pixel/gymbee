@@ -5,31 +5,50 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, StatTile, Card, TrendChart, ListRow, LoadingState } from '../../components/core';
+import { Text, StatTile, Card, TrendChart, SegmentedControl, ListRow, LoadingState, LockedFeatureCard } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
+import { useProfile } from '../../services/api/queries/profiles';
 import {
   useLoggedSets,
   computePrEvents,
-  computeWeeklyVolume,
-  computeDailyVolume,
+  computeStrengthTrend,
   computeE1rmHistories,
   totalVolumeThisMonth,
   prsThisMonth,
+  type StrengthTrendRange,
 } from '../../services/api/queries/progress';
 import { coachingEngine } from '../../services/coaching';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, formatWeight, unitLabel } from '../../utils/units';
-import type { ProgressStackParamList } from '../../navigation/types';
+import type { ProgressStackParamList, RootStackParamList } from '../../navigation/types';
 import { useIntegrationConnections } from '../../services/api/queries/integrations';
 import { useSyncWhoopMetrics } from '../../services/api/queries/whoop';
 import { WhoopMetricsSection } from './WhoopMetricsSection';
 
 type Nav = NativeStackNavigationProp<ProgressStackParamList>;
+type RootNav = NativeStackNavigationProp<RootStackParamList>;
+
+const STRENGTH_TREND_RANGE_OPTIONS: { value: StrengthTrendRange; label: string }[] = [
+  { value: '1w', label: '1W' },
+  { value: '2w', label: '2W' },
+  { value: '1m', label: '1M' },
+  { value: 'ytd', label: 'YTD' },
+];
+
+const STRENGTH_TREND_CAPTIONS: Record<StrengthTrendRange, string> = {
+  '1w': 'Training volume, last 7 days',
+  '2w': 'Training volume, last 14 days',
+  '1m': 'Training volume, last 30 days',
+  ytd: 'Training volume, year to date',
+};
 
 export function ProgressDashboardScreen() {
   const theme = useTheme();
   const navigation = useNavigation<Nav>();
+  const rootNavigation = useNavigation<RootNav>();
   const userId = useAuthStore(state => state.userId);
+  const { data: profile } = useProfile(userId);
+  const isPremium = profile?.is_premium ?? false;
   const { data: sets, isLoading, refetch } = useLoggedSets(userId);
   const unitPref = useUnitPreference();
   const { data: integrationConnections } = useIntegrationConnections(userId);
@@ -54,14 +73,12 @@ export function ProgressDashboardScreen() {
   }, [refetch, isWhoopConnected, userId, syncWhoopMetrics]);
 
   const events = useMemo(() => (sets ? computePrEvents(sets) : []), [sets]);
-  const weeklyVolume = useMemo(() => (sets ? computeWeeklyVolume(sets) : []), [sets]);
-  // A brand-new (or lightly-tested) account's sets rarely span two calendar
-  // weeks yet — computeWeeklyVolume needs at least two week-buckets to draw
-  // a line, so fall back to daily buckets rather than showing an empty
-  // trend for someone who has, in fact, already logged a few workouts.
-  const dailyVolume = useMemo(() => (sets ? computeDailyVolume(sets) : []), [sets]);
-  const hasWeeklyTrend = weeklyVolume.length >= 2;
-  const strengthTrendPoints = (hasWeeklyTrend ? weeklyVolume : dailyVolume).map(w => w.volume);
+  const [strengthTrendRange, setStrengthTrendRange] = useState<StrengthTrendRange>('1w');
+  const strengthTrend = useMemo(
+    () => (sets ? computeStrengthTrend(sets, strengthTrendRange) : []),
+    [sets, strengthTrendRange],
+  );
+  const strengthTrendPoints = strengthTrend.map(w => w.volume);
   const volumeThisMonth = sets ? totalVolumeThisMonth(sets) : 0;
   const prCountThisMonth = prsThisMonth(events);
   const recentPrs = [...events].reverse().slice(0, 5);
@@ -102,20 +119,33 @@ export function ProgressDashboardScreen() {
               </View>
             </View>
 
-            <Card variant="elevated">
-              <Text variant="subtitle">Strength trend</Text>
-              <Text variant="caption" color="secondary" style={{ marginTop: 2 }}>
-                {hasWeeklyTrend
-                  ? `Weekly training volume, last ${weeklyVolume.length} weeks`
-                  : `Training volume, last ${dailyVolume.length || 14} days`}
-              </Text>
-              <View style={{ marginTop: theme.spacing.md }}>
-                <TrendChart
-                  points={strengthTrendPoints}
-                  emptyLabel="Log a few workouts to see your trend"
-                />
-              </View>
-            </Card>
+            {isPremium ? (
+              <Card variant="elevated">
+                <Text variant="subtitle">Strength trend</Text>
+                <Text variant="caption" color="secondary" style={{ marginTop: 2 }}>
+                  {STRENGTH_TREND_CAPTIONS[strengthTrendRange]}
+                </Text>
+                <View style={{ marginTop: theme.spacing.sm }}>
+                  <SegmentedControl
+                    options={STRENGTH_TREND_RANGE_OPTIONS}
+                    value={strengthTrendRange}
+                    onChange={setStrengthTrendRange}
+                  />
+                </View>
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <TrendChart
+                    points={strengthTrendPoints}
+                    emptyLabel="Log a few workouts to see your trend"
+                  />
+                </View>
+              </Card>
+            ) : (
+              <LockedFeatureCard
+                title="Strength trend"
+                description="See your training volume trend over time."
+                onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'analytics' })}
+              />
+            )}
 
             <Card variant="elevated" style={{ gap: 0 }}>
               <Text variant="subtitle" style={{ marginBottom: theme.spacing.xs }}>
@@ -164,8 +194,13 @@ export function ProgressDashboardScreen() {
             <Card variant="elevated" style={{ gap: 0 }}>
               <ListRow
                 title="Weekly Review"
+                icon={isPremium ? undefined : 'lock'}
                 showChevron
-                onPress={() => navigation.navigate('WeeklyReview')}
+                onPress={() =>
+                  isPremium
+                    ? navigation.navigate('WeeklyReview')
+                    : rootNavigation.navigate('Paywall', { trigger: 'analytics' })
+                }
               />
               <ListRow
                 title="Body Metrics"
@@ -175,8 +210,13 @@ export function ProgressDashboardScreen() {
               />
               <ListRow
                 title="Progress Timeline"
+                icon={isPremium ? undefined : 'lock'}
                 showChevron
-                onPress={() => navigation.navigate('ProgressTimeline')}
+                onPress={() =>
+                  isPremium
+                    ? navigation.navigate('ProgressTimeline')
+                    : rootNavigation.navigate('Paywall', { trigger: 'analytics' })
+                }
                 style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
               />
             </Card>

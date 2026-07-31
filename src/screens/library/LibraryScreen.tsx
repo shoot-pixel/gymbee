@@ -5,7 +5,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useTheme } from '../../theme/ThemeProvider';
 import {
   Text,
@@ -74,6 +74,17 @@ export function LibraryScreen() {
   const [pickDate, setPickDate] = useState(new Date());
   const [scheduling, setScheduling] = useState(false);
   const [savingDayId, setSavingDayId] = useState<string | null>(null);
+
+  // Must be a stable reference, not an inline arrow function passed
+  // directly to DateTimePicker — on Android the picker is an imperative
+  // dialog whose show effect re-fires (reopening the dialog) whenever the
+  // `onChange` prop's identity changes, and an inline arrow gets a new
+  // identity on every render, including the one `setPickDate` itself
+  // triggers. Picking a date reopened the same dialog immediately instead
+  // of applying it. See SignUpScreen's identical fix.
+  const onChangePickDate = useCallback((_event: DateTimePickerEvent, date?: Date) => {
+    if (date) setPickDate(date);
+  }, []);
 
   const filteredDays = (programDays ?? []).filter(day => {
     if (!search.trim()) return true;
@@ -349,7 +360,7 @@ export function LibraryScreen() {
             value={pickDate}
             mode="date"
             minimumDate={new Date()}
-            onChange={(_event, date) => date && setPickDate(date)}
+            onChange={onChangePickDate}
           />
           <Button label="Confirm Date" onPress={onConfirmSchedule} loading={scheduling} style={{ width: '100%' }} />
         </View>

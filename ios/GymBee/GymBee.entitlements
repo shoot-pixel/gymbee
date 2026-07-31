@@ -6,5 +6,19 @@
 	<array>
 		<string>group.com.soset.app.widget</string>
 	</array>
+	<!-- 'development' talks to APNs' sandbox host — matches
+	     APNS_ENVIRONMENT=sandbox on the send-push Edge Function. Xcode swaps
+	     this to 'production' automatically for App Store / TestFlight
+	     archives signed with a distribution profile; APNS_ENVIRONMENT must be
+	     flipped to 'production' at the same time or sends will silently
+	     target the wrong APNs host. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- Lets the Messages push use interruption-level: time-sensitive to
+	     break through Focus/DND, per the reviewed design spec. Requires the
+	     Time Sensitive Notifications capability to also be enabled for this
+	     App ID in the Apple Developer portal. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
 </dict>
 </plist>

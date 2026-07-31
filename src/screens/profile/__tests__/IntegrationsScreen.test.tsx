@@ -4,6 +4,7 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { IntegrationsScreen } from '../IntegrationsScreen';
 
 const mockSetParams = jest.fn();
+const mockNavigate = jest.fn();
 const mockInvalidateQueries = jest.fn();
 let mockRouteParams: { status?: 'success' | 'error'; message?: string } | undefined;
 
@@ -18,7 +19,7 @@ jest.mock('@react-navigation/native', () => {
   const { useEffect } = require('react');
   return {
     ...actual,
-    useNavigation: () => ({ canGoBack: () => true, setParams: mockSetParams }),
+    useNavigation: () => ({ canGoBack: () => true, setParams: mockSetParams, navigate: mockNavigate }),
     useRoute: () => ({ params: mockRouteParams }),
     // The real hook needs a live NavigationContainer to know about focus
     // events — for these tests, running the callback once like a plain
@@ -29,6 +30,11 @@ jest.mock('@react-navigation/native', () => {
 
 jest.mock('../../../store/authStore', () => ({
   useAuthStore: (selector: (state: { userId: string | null }) => unknown) => selector({ userId: 'user-1' }),
+}));
+
+const mockUseProfile = jest.fn();
+jest.mock('../../../services/api/queries/profiles', () => ({
+  useProfile: (...args: unknown[]) => mockUseProfile(...args),
 }));
 
 const mockUseIntegrationConnections = jest.fn();
@@ -48,6 +54,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRouteParams = undefined;
   mockUseIntegrationConnections.mockReturnValue({ data: [], isLoading: false, refetch: mockRefetch });
+  // Premium by default — most of these tests exercise the OAuth mechanics,
+  // not the Premium gate, which gets its own tests below.
+  mockUseProfile.mockReturnValue({ data: { is_premium: true }, isLoading: false });
   jest.spyOn(Linking, 'canOpenURL').mockResolvedValue(true);
   jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never);
 });
@@ -116,6 +125,33 @@ describe('IntegrationsScreen', () => {
     );
     expect(Linking.openURL).not.toHaveBeenCalled();
     alertSpy.mockRestore();
+  });
+
+  it('sends a free (non-Premium) user to the paywall instead of starting Whoop OAuth', async () => {
+    mockUseProfile.mockReturnValue({ data: { is_premium: false }, isLoading: false });
+
+    const { getByText } = await render(<IntegrationsScreen />);
+    await waitFor(() => expect(getByText('Whoop')).toBeTruthy());
+    await fireEvent.press(getByText('Whoop'));
+    await fireEvent.press(getByText('Unlock Whoop'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'whoop' });
+    expect(mockStartConnectMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('still lets a free user connect Spotify — only Whoop is gated', async () => {
+    mockUseProfile.mockReturnValue({ data: { is_premium: false }, isLoading: false });
+    mockStartSpotifyConnectMutateAsync.mockResolvedValue({
+      url: 'https://accounts.spotify.com/authorize?state=abc',
+    });
+
+    const { getByText } = await render(<IntegrationsScreen />);
+    await waitFor(() => expect(getByText('Spotify')).toBeTruthy());
+    await fireEvent.press(getByText('Spotify'));
+    await fireEvent.press(getByText('Connect Spotify'));
+
+    await waitFor(() => expect(mockStartSpotifyConnectMutateAsync).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('shows Connected status and a Disconnect action once a connection has an access token', async () => {

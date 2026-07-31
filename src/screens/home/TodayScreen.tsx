@@ -398,8 +398,12 @@ export function TodayScreen() {
   // with latest metrics" half of the widget's refresh contract — the other
   // half (the daily 6 AM rollover) lives entirely on the widget extension's
   // own timeline policy and needs nothing from this screen.
+  // The widget itself is a SetSocial Premium perk — a free athlete simply
+  // never gets synced, so any widget they've added via iOS's own UI just
+  // sits on whatever it last showed (or its native-side empty state)
+  // instead of updating with real data.
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !profile?.is_premium) return;
     syncWidget(
       buildWidgetPayload({
         today,
@@ -415,6 +419,7 @@ export function TodayScreen() {
     );
   }, [
     isLoading,
+    profile?.is_premium,
     today,
     todayFocusSummary,
     todayPlan,
@@ -725,7 +730,12 @@ export function TodayScreen() {
                   <Button
                     label="View Day"
                     variant="secondary"
-                    onPress={() => todayNavigation.navigate('DayDetail', { programDayId: resolvedSelected.day.id })}
+                    onPress={() =>
+                      todayNavigation.navigate('DayDetail', {
+                        programDayId: resolvedSelected.day.id,
+                        date: dateKey(selectedDate),
+                      })
+                    }
                   />
                 )}
               </Card>

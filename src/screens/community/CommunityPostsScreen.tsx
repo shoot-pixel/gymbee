@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -10,7 +10,6 @@ import {
   Icon,
   type IconName,
   Text,
-  Card,
   TextField,
   ListRow,
   LoadingState,
@@ -18,13 +17,17 @@ import {
   Avatar,
   Badge,
   ReportBlockSheet,
+  PremiumBadge,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
   useSearchProfiles,
+  normalizedSearchTerm,
+  MIN_SEARCH_LENGTH,
   useFriendRelationships,
   resolveFriendRequestState,
   useIncomingFriendRequests,
+  useOutgoingFriendRequests,
   useSendFriendRequest,
   useAcceptFriendRequest,
   useDeclineFriendRequest,
@@ -34,12 +37,16 @@ import { useFriendsPosts, useSignedPhotoUrls, postPhotoPaths, type FriendPost } 
 import { useLikeCounts } from '../../services/api/queries/likes';
 import { useCommentCounts } from '../../services/api/queries/comments';
 import { useProfile } from '../../services/api/queries/profiles';
+import { useLiveFriendWorkouts } from '../../services/api/queries/liveWorkouts';
 import {
   useNotificationBadges,
   useMarkMessagesSeen,
   useMarkActivitySeen,
 } from '../../services/api/queries/notifications';
 import { EditorialFeed } from './EditorialFeed';
+import { LiveNowRail } from './LiveNowRail';
+import { NotificationPrimerSheet } from '../../components/push/NotificationPrimerSheet';
+import { getErrorMessage } from '../../utils/errors';
 import type { CommunityStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<CommunityStackParamList>;
@@ -57,6 +64,14 @@ type HubTileProps = {
  * rather than a bare icon, so "where do I go" reads at a glance instead of
  * needing to decode a row of unlabeled glyphs (see the At My Gym /
  * Messages / Leaderboard row this replaced). */
+// friend_requests mutations fire-and-forget via .mutate() — without this,
+// a failure (e.g. a blocked user, a network drop) left the button just
+// sitting there with no visible change, indistinguishable from "the button
+// doesn't work" (see 0045_friend_request_resend.sql for the bug this
+// surfaced).
+const onFriendActionError = (err: unknown) =>
+  Alert.alert('Something went wrong', getErrorMessage(err, 'Please try again.'));
+
 function HubTile({ icon, label, tint, dotVisible, onPress }: HubTileProps) {
   const theme = useTheme();
   return (
@@ -99,12 +114,14 @@ export function CommunityPostsScreen() {
   const { data: searchResults, isLoading: searching } = useSearchProfiles(search, userId);
   const { data: relationships, refetch: refetchRelationships } = useFriendRelationships(userId);
   const { data: incomingRequests, refetch: refetchIncomingRequests } = useIncomingFriendRequests(userId);
+  const { data: outgoingRequests, refetch: refetchOutgoingRequests } = useOutgoingFriendRequests(userId);
   const sendRequest = useSendFriendRequest(userId);
   const acceptRequest = useAcceptFriendRequest(userId);
   const declineRequest = useDeclineFriendRequest(userId);
   const removeRequest = useRemoveFriendRequest(userId);
 
   const { data: profile } = useProfile(userId);
+  const { data: liveWorkouts } = useLiveFriendWorkouts(userId);
   const { hasUnreadMessages, hasUnseenActivity } = useNotificationBadges(userId, {
     messagesSeenAt: profile?.messages_seen_at,
     activitySeenAt: profile?.activity_seen_at,
@@ -112,8 +129,27 @@ export function CommunityPostsScreen() {
   const markMessagesSeen = useMarkMessagesSeen(userId);
   const markActivitySeen = useMarkActivitySeen(userId);
 
+  // Fires once per athlete, the first time they land on the Social tab with
+  // a loaded profile that's never seen the primer — see push_primer_shown_at
+  // (0043_push_notifications.sql) and the reviewed design spec's opt-in flow.
+  const [showNotificationPrimer, setShowNotificationPrimer] = useState(false);
+  useEffect(() => {
+    if (profile && !profile.push_primer_shown_at) setShowNotificationPrimer(true);
+  }, [profile]);
+
   const actionLoading =
     sendRequest.isPending || acceptRequest.isPending || declineRequest.isPending || removeRequest.isPending;
+
+  const incomingCount = incomingRequests?.length ?? 0;
+  const outgoingCount = outgoingRequests?.length ?? 0;
+  const friendRequestsSummary =
+    incomingCount > 0 && outgoingCount > 0
+      ? `${incomingCount} new · ${outgoingCount} sent`
+      : incomingCount > 0
+        ? `${incomingCount} new request${incomingCount === 1 ? '' : 's'}`
+        : outgoingCount > 0
+          ? `${outgoingCount} sent`
+          : 'No pending requests';
 
   const onOpenMessages = () => {
     navigation.navigate('Messages');
@@ -141,6 +177,7 @@ export function CommunityPostsScreen() {
         refetchPosts(),
         refetchRelationships(),
         refetchIncomingRequests(),
+        refetchOutgoingRequests(),
         refetchPhotoUrls(),
         refetchLikeCounts(),
         refetchCommentCounts(),
@@ -152,6 +189,7 @@ export function CommunityPostsScreen() {
     refetchPosts,
     refetchRelationships,
     refetchIncomingRequests,
+    refetchOutgoingRequests,
     refetchPhotoUrls,
     refetchLikeCounts,
     refetchCommentCounts,
@@ -198,6 +236,8 @@ export function CommunityPostsScreen() {
         <HubTile icon="user" label="My Profile" tint={theme.colors.accent.primary} dotVisible={hasUnseenActivity} onPress={onOpenOwnProfile} />
       </View>
 
+      {!search.trim() ? <LiveNowRail workouts={liveWorkouts ?? []} /> : null}
+
       <View style={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
         <TextField
           placeholder="Find athletes by name or @handle"
@@ -213,7 +253,11 @@ export function CommunityPostsScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          {searching ? (
+          {normalizedSearchTerm(search).length < MIN_SEARCH_LENGTH ? (
+            <Text variant="body" color="secondary">
+              Keep typing to search…
+            </Text>
+          ) : searching ? (
             <LoadingState fill={false} />
           ) : searchResults?.length === 0 ? (
             <Text variant="body" color="secondary">
@@ -225,7 +269,12 @@ export function CommunityPostsScreen() {
               return (
                 <ListRow
                   key={profile.id}
-                  title={profile.display_name ?? 'Athlete'}
+                  title={
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+                      <Text variant="body">{profile.display_name ?? 'Athlete'}</Text>
+                      {profile.is_premium ? <PremiumBadge /> : null}
+                    </View>
+                  }
                   subtitle={profile.handle ? `@${profile.handle}` : undefined}
                   leading={<Avatar uri={profile.avatar_url} size={40} />}
                   onPress={() => navigation.navigate('FriendProfile', { userId: profile.id })}
@@ -234,10 +283,10 @@ export function CommunityPostsScreen() {
                       state={state}
                       displayName={profile.display_name ?? 'this athlete'}
                       loading={actionLoading}
-                      onSend={() => sendRequest.mutate(profile.id)}
-                      onAccept={() => requestId && acceptRequest.mutate(requestId)}
-                      onDecline={() => requestId && declineRequest.mutate(requestId)}
-                      onRemove={() => requestId && removeRequest.mutate(requestId)}
+                      onSend={() => sendRequest.mutate(profile.id, { onError: onFriendActionError })}
+                      onAccept={() => requestId && acceptRequest.mutate(requestId, { onError: onFriendActionError })}
+                      onDecline={() => requestId && declineRequest.mutate(requestId, { onError: onFriendActionError })}
+                      onRemove={() => requestId && removeRequest.mutate(requestId, { onError: onFriendActionError })}
                     />
                   }
                 />
@@ -252,33 +301,44 @@ export function CommunityPostsScreen() {
           keyboardDismissMode="on-drag"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
         >
-          {incomingRequests && incomingRequests.length > 0 ? (
-            <Card
-              variant="elevated"
-              style={{ gap: theme.spacing.sm, marginHorizontal: theme.spacing.lg }}
+          <Pressable
+            onPress={() => navigation.navigate('FriendRequests')}
+            accessibilityLabel={`Friend Requests, ${friendRequestsSummary}`}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: theme.spacing.md,
+              marginHorizontal: theme.spacing.lg,
+              padding: theme.spacing.md,
+              backgroundColor: theme.colors.bg.surface,
+              borderWidth: 1,
+              borderColor: theme.colors.border.subtle,
+              borderRadius: theme.radii.lg,
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: theme.radii.md,
+                backgroundColor: `${theme.colors.accent.blue}1F`,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
-              <Text variant="subtitle">Friend requests</Text>
-              {incomingRequests.map((request, index) => (
-                <ListRow
-                  key={request.requestId}
-                  title={request.display_name ?? 'Athlete'}
-                  onPress={() => navigation.navigate('FriendProfile', { userId: request.id })}
-                  trailing={
-                    <FriendRequestButton
-                      state="incoming"
-                      displayName={request.display_name ?? 'this athlete'}
-                      loading={actionLoading}
-                      onSend={() => {}}
-                      onAccept={() => acceptRequest.mutate(request.requestId)}
-                      onDecline={() => declineRequest.mutate(request.requestId)}
-                      onRemove={() => {}}
-                    />
-                  }
-                  style={index > 0 ? { borderTopWidth: 1, borderTopColor: theme.colors.border.subtle } : undefined}
-                />
-              ))}
-            </Card>
-          ) : null}
+              <Icon name="users" size="md" color={theme.colors.accent.blue} />
+              <Badge visible={!!incomingRequests && incomingRequests.length > 0} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text variant="body" style={{ fontWeight: '600' }}>
+                Friend Requests
+              </Text>
+              <Text variant="caption" color="secondary">
+                {friendRequestsSummary}
+              </Text>
+            </View>
+            <Icon name="chevronRight" size="sm" color={theme.colors.text.tertiary} />
+          </Pressable>
 
           <EditorialFeed
             posts={posts ?? []}
@@ -304,6 +364,12 @@ export function CommunityPostsScreen() {
         reportedUserId={reportingPost?.user_id ?? ''}
         reportedUserName={reportingPost?.displayName ?? undefined}
         onBlocked={() => setReportingPost(null)}
+      />
+
+      <NotificationPrimerSheet
+        visible={showNotificationPrimer}
+        userId={userId}
+        onClose={() => setShowNotificationPrimer(false)}
       />
     </SafeAreaView>
   );

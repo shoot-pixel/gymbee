@@ -3,8 +3,22 @@ import { Share } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { WeeklyReviewScreen } from '../WeeklyReviewScreen';
 
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => {
+  const actual = jest.requireActual('@react-navigation/native');
+  return {
+    ...actual,
+    useNavigation: () => ({ navigate: mockNavigate, canGoBack: () => true }),
+  };
+});
+
 jest.mock('../../../store/authStore', () => ({
   useAuthStore: (selector: (state: { userId: string | null }) => unknown) => selector({ userId: 'user-1' }),
+}));
+
+const mockUseProfile = jest.fn();
+jest.mock('../../../services/api/queries/profiles', () => ({
+  useProfile: (...args: unknown[]) => mockUseProfile(...args),
 }));
 
 jest.mock('../../../hooks/useUnitPreference', () => ({
@@ -61,7 +75,23 @@ jest.mock('../../../services/coaching', () => ({
   },
 }));
 
+beforeEach(() => {
+  mockUseProfile.mockReturnValue({ data: { is_premium: true } });
+});
+
 describe('WeeklyReviewScreen', () => {
+  it('shows a locked upsell instead of the review for a free user', async () => {
+    mockUseProfile.mockReturnValue({ data: { is_premium: false } });
+
+    const { getByText, queryByText } = await render(<WeeklyReviewScreen />);
+
+    await waitFor(() => expect(getByText('Unlock with Premium')).toBeTruthy());
+    expect(queryByText(REVIEW_RESULT.summary)).toBeNull();
+
+    await fireEvent.press(getByText('Unlock with Premium'));
+    expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'analytics' });
+  });
+
   it('renders the summary and stat cards from the computed review', async () => {
     const { getByText } = await render(<WeeklyReviewScreen />);
 

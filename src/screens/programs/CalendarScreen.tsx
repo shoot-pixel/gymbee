@@ -20,7 +20,8 @@ import {
   TextField,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
-import { useActiveProgramTree } from '../../services/api/queries/programs';
+import { useProfile } from '../../services/api/queries/profiles';
+import { useActiveProgramTree, useHasEverGeneratedProgram } from '../../services/api/queries/programs';
 import { useScheduledWorkouts } from '../../services/api/queries/scheduledWorkouts';
 import { useWorkoutLogsInRange } from '../../services/api/queries/workoutLogs';
 import { useWeeklySchedule, getWeeklyScheduleForDate } from '../../services/api/queries/weeklySchedule';
@@ -61,7 +62,9 @@ type Segment = 'thisWeek' | 'library' | 'program';
 export function CalendarScreen() {
   const theme = useTheme();
   const userId = useAuthStore(state => state.userId);
+  const { data: profile } = useProfile(userId);
   const { data: program, isLoading, refetch: refetchProgram } = useActiveProgramTree(userId);
+  const { data: hasEverGeneratedProgram } = useHasEverGeneratedProgram(userId);
   const { data: weeklySchedule, isLoading: weeklyScheduleLoading, refetch: refetchWeeklySchedule } = useWeeklySchedule(userId);
   const navigation = useNavigation<NativeStackNavigationProp<ProgramsStackParamList>>();
   const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -219,6 +222,18 @@ export function CalendarScreen() {
     </View>
   );
 
+  // The first AI program (however it's reached) is free; every one after
+  // that is a Premium "rebuild your program" action — see
+  // useHasEverGeneratedProgram's own comment for why a plain existence
+  // check on `programs` is enough, no separate tracking column needed.
+  const openGenerateProgramFlow = () => {
+    if (hasEverGeneratedProgram && !profile?.is_premium) {
+      rootNavigation.navigate('Paywall', { trigger: 'program_regen' });
+      return;
+    }
+    setGenerateProgramSheetOpen(true);
+  };
+
   const onChangeSegment = (value: Segment) => {
     setSegment(value);
     if (value === 'library') {
@@ -227,7 +242,7 @@ export function CalendarScreen() {
       if (program) {
         navigation.navigate('ProgramDetail', { programId: program.id });
       } else {
-        setGenerateProgramSheetOpen(true);
+        openGenerateProgramFlow();
       }
     }
   };
@@ -330,7 +345,11 @@ export function CalendarScreen() {
                                 date: format(date, 'yyyy-MM-dd'),
                               })
                           : resolved.kind === 'programTraining'
-                            ? () => navigation.navigate('DayDetail', { programDayId: resolved.day.id })
+                            ? () =>
+                              navigation.navigate('DayDetail', {
+                                programDayId: resolved.day.id,
+                                date: format(date, 'yyyy-MM-dd'),
+                              })
                             : () => setRestDayChoiceFor(dayOfWeek);
 
                 const trailing =
@@ -463,7 +482,7 @@ export function CalendarScreen() {
             title="Ask Coach to build you a custom program"
             icon="messageCircle"
             showChevron
-            onPress={() => setGenerateProgramSheetOpen(true)}
+            onPress={openGenerateProgramFlow}
           />
         ) : (
           <Pressable onPress={() => navigation.navigate('ProgramDetail', { programId: program.id })}>

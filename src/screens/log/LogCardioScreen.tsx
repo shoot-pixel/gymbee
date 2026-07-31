@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { Alert, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, Header, TextField, SelectableCard, SegmentedControl, LoadingState } from '../../components/core';
+import { Text, Card, Button, Header, TextField, SelectableCard, SegmentedControl, LoadingState, KeyboardAvoider } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useCardioActivities, useSaveCardioLog } from '../../services/api/queries/cardioLogs';
 import { useLatestBodyWeight, useLogBodyMetric } from '../../services/api/queries/bodyMetrics';
@@ -154,7 +154,7 @@ export function LogCardioScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }}>
       <Header title="Log Cardio" />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoider>
       <ScrollView
         contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
         keyboardShouldPersistTaps="handled"
@@ -289,7 +289,7 @@ export function LogCardioScreen() {
 
         <Button label="Save Session" onPress={onSave} disabled={!canSave} loading={saveCardioLog.isPending} />
       </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

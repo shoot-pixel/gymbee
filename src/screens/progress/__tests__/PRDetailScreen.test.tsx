@@ -15,6 +15,11 @@ jest.mock('../../../store/authStore', () => ({
   useAuthStore: (selector: (state: { userId: string | null }) => unknown) => selector({ userId: 'user-1' }),
 }));
 
+const mockUseProfile = jest.fn();
+jest.mock('../../../services/api/queries/profiles', () => ({
+  useProfile: (...args: unknown[]) => mockUseProfile(...args),
+}));
+
 jest.mock('../../../hooks/useUnitPreference', () => ({
   useUnitPreference: () => 'kg',
 }));
@@ -38,9 +43,21 @@ jest.mock('../../../services/coaching', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUseProfile.mockReturnValue({ data: { is_premium: true } });
 });
 
 describe('PRDetailScreen', () => {
+  it('shows a locked upsell instead of the chart/history for a free user', async () => {
+    mockUseProfile.mockReturnValue({ data: { is_premium: false } });
+    mockPredictPersonalRecords.mockReturnValue([]);
+
+    const { getByText, queryByText } = await render(<PRDetailScreen />);
+
+    await waitFor(() => expect(getByText('Full PR history')).toBeTruthy());
+    expect(getByText('Est. 1RM progression')).toBeTruthy();
+    expect(queryByText('PR history')).toBeNull();
+  });
+
   it('renders a Future You card when a prediction exists for this exercise', async () => {
     mockPredictPersonalRecords.mockReturnValue([
       {

@@ -402,6 +402,19 @@ Design their program now.`;
       .eq('id', userId);
     if (profileError) throw profileError;
 
+    // Best-effort — a push failure here shouldn't fail program generation
+    // itself, since the program row is already committed and the client's
+    // own success path doesn't depend on this at all.
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ type: 'ai_program_ready', user_id: userId, program_id: program.id }),
+      });
+    } catch (pushErr) {
+      console.error('send-push call failed', pushErr);
+    }
+
     return json({ program_id: program.id }, 200);
   } catch (err) {
     console.error(err);

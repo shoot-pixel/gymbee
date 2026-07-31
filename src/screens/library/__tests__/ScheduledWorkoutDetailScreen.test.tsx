@@ -1,7 +1,9 @@
 import React from 'react';
 import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { addDays, format } from 'date-fns';
 import { ScheduledWorkoutDetailScreen } from '../ScheduledWorkoutDetailScreen';
+import { useScheduledWorkout } from '../../../services/api/queries/scheduledWorkouts';
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
@@ -15,8 +17,10 @@ jest.mock('@react-navigation/native', () => {
   };
 });
 
+const mockNavigateToStartWorkout = jest.fn();
+
 jest.mock('../../../navigation/startWorkoutFlow', () => ({
-  navigateToStartWorkout: jest.fn(),
+  navigateToStartWorkout: (...args: unknown[]) => mockNavigateToStartWorkout(...args),
   navigateToChooseVariant: jest.fn(),
 }));
 
@@ -80,5 +84,24 @@ describe('ScheduledWorkoutDetailScreen', () => {
     expect(mockGoBack).not.toHaveBeenCalled();
 
     alertSpy.mockRestore();
+  });
+
+  it('greys out Start Workout and shows "Check back tomorrow!" for a future scheduled date', async () => {
+    (useScheduledWorkout as jest.Mock).mockReturnValueOnce({
+      data: {
+        id: 'sw-1',
+        name: 'Test Workout',
+        scheduled_date: format(addDays(new Date(), 1), 'yyyy-MM-dd'),
+        scheduled_workout_exercises: [],
+      },
+      isLoading: false,
+    });
+
+    const { getByText } = await render(<ScheduledWorkoutDetailScreen />);
+    await waitFor(() => expect(getByText('Test Workout')).toBeTruthy());
+
+    expect(getByText('Check back tomorrow!')).toBeTruthy();
+    await fireEvent.press(getByText('Start Workout'));
+    expect(mockNavigateToStartWorkout).not.toHaveBeenCalled();
   });
 });

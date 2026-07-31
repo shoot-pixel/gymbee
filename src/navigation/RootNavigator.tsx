@@ -6,11 +6,16 @@ import { useAuthStore } from '../store/authStore';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAppBootstrap } from '../hooks/useAppBootstrap';
 import { LoadingScreen, MIN_DISPLAY_DURATION_MS } from '../screens/LoadingScreen';
+import { PremiumLoadingScreen } from '../screens/PremiumLoadingScreen';
+import { useProfile } from '../services/api/queries/profiles';
 import { AuthStack } from './AuthStack';
 import { OnboardingStack } from './OnboardingStack';
 import { AppShell } from './AppShell';
 import { ProfileStack } from './ProfileStack';
 import { ChatScreen } from '../screens/chat/ChatScreen';
+import { PaywallScreen } from '../screens/profile/PaywallScreen';
+import { navigationRef } from './navigationRef';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -46,6 +51,15 @@ export function RootNavigator() {
   // (Auth/Onboarding) this is a no-op and reports ready immediately.
   const needsBootstrap = hydrated && isAuthenticated && onboardingCompleted;
   const { ready: bootstrapped } = useAppBootstrap({ enabled: needsBootstrap, userId });
+  // useAppBootstrap prefetches this under the identical ['profile', userId]
+  // query key, so by the time `bootstrapped` flips true this reads straight
+  // from cache — no extra request, no loading flicker before the swap below.
+  const { data: profile } = useProfile(needsBootstrap ? userId : null);
+  // Registers the device's push token and wires notification-tap deep
+  // links once the athlete is actually signed in — a no-op (and no-op
+  // cleanup) otherwise. Lives above the loading-screen early return so it
+  // stays mounted for the app's whole authenticated lifetime.
+  usePushNotifications(needsBootstrap ? userId : null);
 
   // Splash always stays up for MIN_DISPLAY_DURATION_MS, regardless of how
   // fast hydration/bootstrap resolve, so its animation is always seen
@@ -57,7 +71,7 @@ export function RootNavigator() {
   }, []);
 
   if (!hydrated || (needsBootstrap && !bootstrapped) || !minDurationElapsed) {
-    return <LoadingScreen />;
+    return profile?.is_premium ? <PremiumLoadingScreen /> : <LoadingScreen />;
   }
 
   const navTheme: NavTheme = {
@@ -73,7 +87,7 @@ export function RootNavigator() {
   };
 
   return (
-    <NavigationContainer theme={navTheme} linking={linking}>
+    <NavigationContainer ref={navigationRef} theme={navTheme} linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthStack} />
@@ -92,6 +106,11 @@ export function RootNavigator() {
               // covered by the keyboard. See ChatFab/ChatScreen for the rest
               // of the keyboard-handling fix.
               options={{ presentation: 'fullScreenModal', headerShown: false }}
+            />
+            <Stack.Screen
+              name="Paywall"
+              component={PaywallScreen}
+              options={{ presentation: 'modal', headerShown: false }}
             />
           </>
         )}
