@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -47,18 +47,28 @@ export function PostDetailScreen() {
   const { params } = useRoute<Route>();
   const userId = useAuthStore(state => state.userId);
 
-  const { data: post, isLoading } = usePost(params.postId);
+  const { data: post, isLoading, refetch: refetchPost } = usePost(params.postId);
   const { data: owner } = useFriendProfile(post?.user_id ?? null);
   const updatePost = useUpdatePost(userId);
   const deletePost = useDeletePost(userId);
 
-  const { data: comments } = useComments(params.postId);
+  const { data: comments, refetch: refetchComments } = useComments(params.postId);
   const createComment = useCreateComment(params.postId, userId);
   const deleteComment = useDeleteComment(params.postId);
   const [commentDraft, setCommentDraft] = useState('');
 
-  const { data: likes } = useLikes(params.postId, userId);
+  const { data: likes, refetch: refetchLikes } = useLikes(params.postId, userId);
   const toggleLike = useToggleLike(params.postId, userId);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchPost(), refetchComments(), refetchLikes()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchPost, refetchComments, refetchLikes]);
   const likedByMe = likes?.likedByMe ?? false;
   const [likeBurstTrigger, setLikeBurstTrigger] = useState(0);
 
@@ -81,14 +91,20 @@ export function PostDetailScreen() {
 
   const isSelf = post != null && post.user_id === userId;
 
-  const goToOwnerProfile = () => {
-    if (!post || isSelf) return;
-    // Only reachable when viewing a friend's post, which only ever happens
-    // when this screen was pushed from CommunityStack (ActivityFeed or a
-    // friend's own posts grid) — FriendProfile isn't a ProfileStack route.
+  // Shared by the post owner row and every comment row below — reachable
+  // whenever this screen was pushed from CommunityStack (ActivityFeed, a
+  // friend's own posts grid, or a comment by some third friend), which is
+  // the only place FriendProfile is a registered route.
+  const goToProfile = (targetUserId: string) => {
+    if (targetUserId === userId) return;
     (navigation as NativeStackNavigationProp<CommunityStackParamList>).navigate('FriendProfile', {
-      userId: post.user_id,
+      userId: targetUserId,
     });
+  };
+
+  const goToOwnerProfile = () => {
+    if (!post) return;
+    goToProfile(post.user_id);
   };
 
   const onSaveEdit = async () => {
@@ -184,13 +200,14 @@ export function PostDetailScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
         >
           <Pressable
             onPress={goToOwnerProfile}
             disabled={isSelf}
             style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}
           >
-            <Avatar uri={owner?.avatar_url} size={40} />
+            <Avatar uri={owner?.avatar_url} focalX={owner?.avatar_focal_x} focalY={owner?.avatar_focal_y} size={40} />
             <View style={{ flex: 1 }}>
               <Text variant="subtitle">{isSelf ? 'You' : (owner?.display_name ?? 'Athlete')}</Text>
               <Text variant="caption" color="secondary">
@@ -283,18 +300,26 @@ export function PostDetailScreen() {
             </Text>
             {(comments ?? []).map(comment => (
               <View key={comment.id} style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-                <Avatar uri={comment.avatarUrl} size={32} />
-                <View style={{ flex: 1 }}>
-                  <Text variant="body" style={{ fontWeight: '600' }}>
-                    {comment.displayName ?? 'Athlete'}
-                  </Text>
-                  <Text variant="body" color="secondary">
-                    {comment.body}
-                  </Text>
-                  <Text variant="caption" color="tertiary">
-                    {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                  </Text>
-                </View>
+                <Pressable
+                  onPress={() => goToProfile(comment.user_id)}
+                  disabled={comment.user_id === userId}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View ${comment.displayName ?? 'athlete'}'s profile`}
+                  style={{ flexDirection: 'row', gap: theme.spacing.sm, flex: 1 }}
+                >
+                  <Avatar uri={comment.avatarUrl} focalX={comment.avatarFocalX} focalY={comment.avatarFocalY} size={32} />
+                  <View style={{ flex: 1 }}>
+                    <Text variant="body" style={{ fontWeight: '600' }}>
+                      {comment.displayName ?? 'Athlete'}
+                    </Text>
+                    <Text variant="body" color="secondary">
+                      {comment.body}
+                    </Text>
+                    <Text variant="caption" color="tertiary">
+                      {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                    </Text>
+                  </View>
+                </Pressable>
                 {comment.user_id === userId || isSelf ? (
                   <IconButton
                     name="trash"

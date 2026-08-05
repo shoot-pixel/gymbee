@@ -6,7 +6,12 @@ import { fetchFriendIds, fetchPublicProfiles, type PublicProfile } from './commu
 import type { Database, PostVisibility } from '../../../types/database';
 
 export type Post = Database['public']['Tables']['posts']['Row'];
-export type FriendPost = Post & { displayName: string | null; avatarUrl: string | null };
+export type FriendPost = Post & {
+  displayName: string | null;
+  avatarUrl: string | null;
+  avatarFocalX: number;
+  avatarFocalY: number;
+};
 
 type PhotoInput = { uri: string; contentType: string };
 
@@ -159,6 +164,8 @@ export async function fetchFriendsPosts(userId: string): Promise<FriendPost[]> {
     ...row,
     displayName: profileById.get(row.user_id)?.display_name ?? null,
     avatarUrl: profileById.get(row.user_id)?.avatar_url ?? null,
+    avatarFocalX: profileById.get(row.user_id)?.avatar_focal_x ?? 0.5,
+    avatarFocalY: profileById.get(row.user_id)?.avatar_focal_y ?? 0.5,
   }));
 }
 

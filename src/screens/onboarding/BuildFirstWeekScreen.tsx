@@ -49,13 +49,13 @@ export function BuildFirstWeekScreen(_props: Props) {
         <View>
           <Text variant="title">One more thing</Text>
           <Text variant="body" color="secondary">
-            Your coach can put your first week on the calendar right now.
+            Arnold can put your first week on the calendar right now.
           </Text>
         </View>
 
         <AiCard>
           <Text variant="label" color="secondary">
-            COACH
+            ARNOLD
           </Text>
           <Text variant="subtitle">
             Want me to build your first week? {plan.length} days, one muscle group a day, so nothing gets missed.

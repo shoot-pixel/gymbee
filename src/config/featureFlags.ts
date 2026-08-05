@@ -13,6 +13,7 @@ export type FeatureFlags = {
   coachingMemory: boolean;
   exerciseIntelligence: boolean;
   communityChallenges: boolean;
+  nutritionTracking: boolean;
 };
 
 export const featureFlags: FeatureFlags = {
@@ -25,4 +26,5 @@ export const featureFlags: FeatureFlags = {
   coachingMemory: true,
   exerciseIntelligence: true,
   communityChallenges: false,
+  nutritionTracking: true,
 };

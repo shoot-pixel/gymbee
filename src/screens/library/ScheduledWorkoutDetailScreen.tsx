@@ -1,5 +1,5 @@
-import React from 'react';
-import { Alert, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card, Button, Header, IconButton, LoadingState } from '../../components/core';
 import { useScheduledWorkout, useDeleteScheduledWorkout } from '../../services/api/queries/scheduledWorkouts';
+import { buildWorkoutSnapshot } from '../../services/api/queries/workoutShares';
 import { navigateToStartWorkout, navigateToChooseVariant } from '../../navigation/startWorkoutFlow';
 import { featureFlags } from '../../config/featureFlags';
 import type { RootStackParamList, ProgramsStackParamList } from '../../navigation/types';
@@ -20,8 +21,30 @@ export function ScheduledWorkoutDetailScreen() {
   const { params } = useRoute<Route>();
   const { data: scheduled, isLoading } = useScheduledWorkout(params.scheduledWorkoutId);
   const deleteScheduledWorkout = useDeleteScheduledWorkout();
+  const [sharing, setSharing] = useState(false);
 
   const isFutureDay = scheduled != null && scheduled.scheduled_date > format(new Date(), 'yyyy-MM-dd');
+
+  const onShare = async () => {
+    if (!scheduled || sharing) return;
+    setSharing(true);
+    try {
+      const payload = {
+        workout: await buildWorkoutSnapshot(
+          { name: scheduled.name, notes: scheduled.notes, estimatedDurationMinutes: null },
+          scheduled.scheduled_workout_exercises,
+        ),
+      };
+      rootNavigation.navigate('MainTabs', {
+        screen: 'ProgramsTab',
+        params: { screen: 'ShareWorkout', params: { shareType: 'single_workout', title: scheduled.name, payload } },
+      });
+    } catch (err) {
+      Alert.alert('Could not prepare this workout to share', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const onDelete = () => {
     if (!scheduled) return;
@@ -48,7 +71,10 @@ export function ScheduledWorkoutDetailScreen() {
         title={scheduled?.name ?? 'Workout'}
         right={
           scheduled ? (
-            <IconButton name="trash" variant="ghost" accessibilityLabel="Delete workout" onPress={onDelete} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+              <IconButton name="share" variant="ghost" accessibilityLabel="Share this workout" onPress={onShare} disabled={sharing} />
+              <IconButton name="trash" variant="ghost" accessibilityLabel="Delete workout" onPress={onDelete} />
+            </View>
           ) : undefined
         }
       />

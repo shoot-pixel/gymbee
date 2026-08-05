@@ -24,6 +24,12 @@ jest.mock('../../../navigation/startWorkoutFlow', () => ({
   navigateToChooseVariant: jest.fn(),
 }));
 
+const mockBuildWorkoutSnapshot = jest.fn();
+
+jest.mock('../../../services/api/queries/workoutShares', () => ({
+  buildWorkoutSnapshot: (...args: unknown[]) => mockBuildWorkoutSnapshot(...args),
+}));
+
 const mockDeleteScheduledWorkoutMutateAsync = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../../services/api/queries/scheduledWorkouts', () => ({
@@ -84,6 +90,26 @@ describe('ScheduledWorkoutDetailScreen', () => {
     expect(mockGoBack).not.toHaveBeenCalled();
 
     alertSpy.mockRestore();
+  });
+
+  it('shares this scheduled workout and navigates to ShareWorkout', async () => {
+    const snapshot = { name: 'Test Workout', notes: null, estimatedDurationMinutes: null, exercises: [] };
+    mockBuildWorkoutSnapshot.mockResolvedValue(snapshot);
+
+    const { getByLabelText, getByText } = await render(<ScheduledWorkoutDetailScreen />);
+    await waitFor(() => expect(getByText('Test Workout')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Share this workout'));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('MainTabs', {
+        screen: 'ProgramsTab',
+        params: {
+          screen: 'ShareWorkout',
+          params: { shareType: 'single_workout', title: 'Test Workout', payload: { workout: snapshot } },
+        },
+      }),
+    );
   });
 
   it('greys out Start Workout and shows "Check back tomorrow!" for a future scheduled date', async () => {

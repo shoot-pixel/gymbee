@@ -14,6 +14,7 @@ import { AssignTrainingDayScreen } from '../screens/programs/AssignTrainingDaySc
 import { AssignCardioDayScreen } from '../screens/programs/AssignCardioDayScreen';
 import { TrainingDayDetailScreen } from '../screens/programs/TrainingDayDetailScreen';
 import { WorkoutLogDetailScreen } from '../screens/programs/WorkoutLogDetailScreen';
+import { ShareWorkoutScreen } from '../screens/programs/ShareWorkoutScreen';
 
 const Stack = createNativeStackNavigator<ProgramsStackParamList>();
 
@@ -33,6 +34,7 @@ export function ProgramsStack() {
       <Stack.Screen name="AssignCardioDay" component={AssignCardioDayScreen} />
       <Stack.Screen name="TrainingDayDetail" component={TrainingDayDetailScreen} />
       <Stack.Screen name="WorkoutLogDetail" component={WorkoutLogDetailScreen} />
+      <Stack.Screen name="ShareWorkout" component={ShareWorkoutScreen} />
     </Stack.Navigator>
   );
 }

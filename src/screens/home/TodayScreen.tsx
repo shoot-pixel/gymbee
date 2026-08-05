@@ -3,9 +3,9 @@ import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { addDays, endOfWeek, format, isFuture, isSameDay, isSameWeek, isToday as isDateToday, startOfWeek } from 'date-fns';
+import { addDays, endOfDay, endOfWeek, format, isFuture, isSameDay, isSameWeek, isToday as isDateToday, startOfDay, startOfWeek } from 'date-fns';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Text, Card, Button, ProgressRing, ListRow, LoadingState, Icon, Avatar, IconButton, type IconName } from '../../components/core';
+import { Text, Card, Button, ListRow, LoadingState, Icon, IconButton } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
   useActiveProgramTree,
@@ -25,6 +25,9 @@ import {
   getWeeklyScheduleForDate,
   type WeeklyScheduleEntry,
 } from '../../services/api/queries/weeklySchedule';
+import { useDayOverrides } from '../../services/api/queries/dayOverrides';
+import { useFoodLogEntriesInRange } from '../../services/api/queries/foodLog';
+import { useLatestBodyWeight } from '../../services/api/queries/bodyMetrics';
 
 /** This screen doesn't know about Cardio Day yet (see dayPlan.ts for the
  * screen that does) — a cardio weekly_schedule entry has no
@@ -42,7 +45,8 @@ function asTrainingEntry(entry: WeeklyScheduleEntry | null): TrainingWeeklyEntry
   return entry as TrainingWeeklyEntry;
 }
 import { useWorkoutTemplate } from '../../services/api/queries/workoutTemplates';
-import { useLoggedSets, computePrEvents } from '../../services/api/queries/progress';
+import { useLoggedSets, computePrEvents, computeE1rmHistories } from '../../services/api/queries/progress';
+import { useUnitPreference } from '../../hooks/useUnitPreference';
 import {
   useTrainingPatterns,
   useSyncTrainingPatterns,
@@ -51,33 +55,31 @@ import {
 import { useReadinessContext } from '../../services/api/queries/coaching';
 import { useIntegrationConnections } from '../../services/api/queries/integrations';
 import { useSyncWhoopMetrics } from '../../services/api/queries/whoop';
+import { useFocusModeStore } from '../../store/focusModeStore';
 import { coachingEngine } from '../../services/coaching';
-import type { TodayPlanContext, TrainingPatternType } from '../../services/coaching';
+import { featureFlags } from '../../config/featureFlags';
+import type { TodayPlanContext } from '../../services/coaching';
 import { computeStreak } from '../../utils/streak';
 import { estimateWorkoutMinutes } from '../../utils/workoutTiming';
-import { navigateToStartWorkout } from '../../navigation/startWorkoutFlow';
+import { calculateAge, computeDailyEnergyTotals, computeMacroTargets } from '../../utils/energyBalance';
+import { navigateToStartWorkout, navigateToContinueWorkout } from '../../navigation/startWorkoutFlow';
+import { useActiveWorkoutStore } from '../../store/activeWorkoutStore';
 import { buildWidgetPayload } from '../../services/widget/buildWidgetPayload';
 import { syncWidget } from '../../services/widget/nativeWidgetBridge';
 import { WeekTimeline } from './WeekTimeline';
 import { AiSummaryCard } from './AiSummaryCard';
+import { TodayHeroCard } from './TodayHeroCard';
+import { EnergyTodayCard } from './EnergyTodayCard';
 import { CompletedWorkoutCard } from './CompletedWorkoutCard';
 import { CompletedCardioCard } from './CompletedCardioCard';
-import { FriendsActivitySection } from './FriendsActivitySection';
-import { useFriendsPosts, useSignedPhotoUrls, postPhotoPaths, type FriendPost } from '../../services/api/queries/posts';
+import { QuickCheckinCard } from './QuickCheckinCard';
+import { StreakRiskNudge } from './StreakRiskNudge';
+import { StatsRail } from './StatsRail';
+import { MoreForYouCard } from './MoreForYouCard';
+import { useFriendsPosts } from '../../services/api/queries/posts';
+import { useLiveFriendWorkouts } from '../../services/api/queries/liveWorkouts';
 import { trackEvent } from '../../services/analytics/analytics';
 import type { RootStackParamList, TodayStackParamList } from '../../navigation/types';
-
-const FRIENDS_ACTIVITY_PREVIEW_LIMIT = 3;
-
-const PATTERN_ICON: Record<TrainingPatternType, IconName> = {
-  inconsistent_weekday: 'calendar',
-  declining_consistency: 'trendingDown',
-  recurring_pain: 'circleAlert',
-  rpe_creep: 'trendingUp',
-  low_sleep_pattern: 'moon',
-};
-
-const MAX_INSIGHTS_SHOWN = 2;
 
 const RANGE_PAST_DAYS = TODAY_RANGE_PAST_DAYS;
 const RANGE_FUTURE_DAYS = TODAY_RANGE_FUTURE_DAYS;
@@ -97,6 +99,12 @@ function greeting(hour: number): string {
 function estimateMinutes(exercises: ProgramExerciseWithExercise[]): number | null {
   return estimateWorkoutMinutes(
     exercises.map(pe => ({ targetSets: pe.target_sets, restSeconds: pe.rest_seconds })),
+  );
+}
+
+function estimateWeeklyMinutes(exercises: { target_sets: number; rest_seconds: number | null }[]): number | null {
+  return estimateWorkoutMinutes(
+    exercises.map(te => ({ targetSets: te.target_sets, restSeconds: te.rest_seconds })),
   );
 }
 
@@ -125,10 +133,15 @@ export function TodayScreen() {
     to: rangeTo,
   });
   const { data: weeklySchedule, refetch: refetchWeeklySchedule } = useWeeklySchedule(userId);
+  const { data: dayOverrides, refetch: refetchDayOverrides } = useDayOverrides(userId, {
+    from: rangeFrom,
+    to: rangeTo,
+  });
   const { data: loggedSets, refetch: refetchLoggedSets } = useLoggedSets(userId);
   const { data: integrationConnections } = useIntegrationConnections(userId);
   const isWhoopConnected = integrationConnections?.some(c => c.provider === 'whoop' && c.access_token != null) ?? false;
   const syncWhoopMetrics = useSyncWhoopMetrics();
+  const focusModeEnabled = useFocusModeStore(state => state.focusModeEnabled);
   const readinessContext = useReadinessContext(userId);
   const readiness = useMemo(
     () => (readinessContext.isLoading ? null : coachingEngine.evaluateReadiness(readinessContext.inputs)),
@@ -161,34 +174,19 @@ export function TodayScreen() {
     isError: friendsPostsError,
     refetch: refetchFriendsPosts,
   } = useFriendsPosts(userId);
-  const friendsActivityPreview = useMemo(
-    () => (friendsPosts ?? []).slice(0, FRIENDS_ACTIVITY_PREVIEW_LIMIT),
-    [friendsPosts],
-  );
-  const { data: friendsActivityPhotoUrls } = useSignedPhotoUrls(friendsActivityPreview.flatMap(postPhotoPaths));
-  const hasTrackedFriendsActivityView = useRef(false);
-  useEffect(() => {
-    if (friendsPostsLoading || friendsPostsError || hasTrackedFriendsActivityView.current) return;
-    hasTrackedFriendsActivityView.current = true;
-    trackEvent('friends_posts_viewed', { count: friendsActivityPreview.length });
-  }, [friendsPostsLoading, friendsPostsError, friendsActivityPreview.length]);
-
-  const onFriendActivityCardPress = (post: FriendPost) => {
-    trackEvent('friends_posts_card_tapped', { entry_type: post.post_type });
-    rootNavigation.navigate('MainTabs', {
-      screen: 'CommunityTab',
-      params: { screen: 'PostDetail', params: { postId: post.id } },
-    });
-  };
 
   const onFriendsActivityViewAll = () => {
     trackEvent('friends_posts_view_all_tapped');
     rootNavigation.navigate('MainTabs', { screen: 'CommunityTab', params: { screen: 'Posts' } });
   };
 
-  const onFriendsActivityRetry = () => {
-    trackEvent('friends_posts_retry_tapped');
-    refetchFriendsPosts();
+  // Promoted from the Community tab's own Live Now rail — same data, just
+  // surfaced from Home too as a one-line summary (see MoreForYouCard). The
+  // full per-friend rail with live stats stays on the Community tab, which
+  // is exactly where this points.
+  const { data: liveFriendWorkouts } = useLiveFriendWorkouts(userId);
+  const onViewLiveNow = () => {
+    rootNavigation.navigate('MainTabs', { screen: 'CommunityTab', params: { screen: 'Posts' } });
   };
 
   const completedDates = useMemo(
@@ -208,10 +206,28 @@ export function TodayScreen() {
     () => new Set((weeklySchedule ?? []).map(entry => entry.day_of_week)),
     [weeklySchedule],
   );
+  const dayOverridesByDate = useMemo(
+    () => new Map((dayOverrides ?? []).map(o => [o.date, o.status])),
+    [dayOverrides],
+  );
   const prEvents = useMemo(() => (loggedSets ? computePrEvents(loggedSets) : []), [loggedSets]);
   const prDates = useMemo(
     () => new Set(prEvents.map(e => dateKey(new Date(e.loggedAt)))),
     [prEvents],
+  );
+  const unitPref = useUnitPreference();
+  // Reuses the same loggedSets query this screen already fetches — the
+  // single highest-confidence forecast is already sorted to the front by
+  // predictPersonalRecords itself.
+  const e1rmHistories = useMemo(() => computeE1rmHistories(loggedSets ?? []), [loggedSets]);
+  const topPrPrediction = useMemo(
+    () =>
+      coachingEngine.predictPersonalRecords({
+        exerciseHistories: e1rmHistories,
+        asOf: dateKey(today),
+        unitPref,
+      })[0] ?? null,
+    [e1rmHistories, today, unitPref],
   );
   const streak = useMemo(
     () => computeStreak(program, completedDates, today, weeklySchedule),
@@ -220,17 +236,42 @@ export function TodayScreen() {
 
   const weekStart = startOfWeek(today, { weekStartsOn: 0 });
   const weekEnd = endOfWeek(today, { weekStartsOn: 0 });
+  const weekStartKey = dateKey(weekStart);
+  const weekEndKey = dateKey(weekEnd);
   const sessionsThisWeek = useMemo(
-    () =>
-      [...completedDates].filter(key => {
-        const d = new Date(key);
-        return d >= weekStart && d <= weekEnd;
-      }).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [completedDates],
+    // String comparison, not `new Date(key)` — completedDates' keys are bare
+    // yyyy-MM-dd strings, which the native Date constructor parses as UTC
+    // midnight; comparing that against weekStart/weekEnd (local-time Date
+    // objects) silently misclassifies dates near either boundary in any
+    // negative-UTC-offset timezone, the same class of bug called out
+    // elsewhere in this file (see PrForecastCard's parseISO comment).
+    // yyyy-MM-dd sorts lexicographically the same as chronologically, so a
+    // plain string comparison sidesteps parsing entirely.
+    () => [...completedDates].filter(key => key >= weekStartKey && key <= weekEndKey).length,
+    [completedDates, weekStartKey, weekEndKey],
   );
-  const weeklyTarget = program?.days_per_week ?? 0;
-  const weeklyProgress = weeklyTarget > 0 ? Math.min(1, sessionsThisWeek / weeklyTarget) : 0;
+  // Not just program?.days_per_week — that's blind to one-off scheduled
+  // workouts and the recurring weekly schedule, so an athlete using either
+  // of those instead of (or alongside) an AI program would always see a
+  // target of 0. Walks the same three-tier resolution todayPlan uses for a
+  // single day (scheduled_workouts > weekly non-cardio entry > program
+  // training day) across every day of the week instead.
+  const weeklyTarget = useMemo(() => {
+    let count = 0;
+    for (let cursor = weekStart; cursor <= weekEnd; cursor = addDays(cursor, 1)) {
+      if (scheduledByDate.has(dateKey(cursor))) {
+        count++;
+        continue;
+      }
+      if (asTrainingEntry(getWeeklyScheduleForDate(weeklySchedule, cursor))) {
+        count++;
+        continue;
+      }
+      const resolved = getProgramDayForDate(program, cursor);
+      if (resolved && !resolved.day.is_rest_day) count++;
+    }
+    return count;
+  }, [weekStart, weekEnd, scheduledByDate, weeklySchedule, program]);
 
   const resolvedSelected = getProgramDayForDate(program, selectedDate);
   const scheduledSelected = scheduledByDate.get(dateKey(selectedDate));
@@ -391,14 +432,14 @@ export function TodayScreen() {
   );
 
   // Keeps the Home Screen/Lock Screen widget in sync with whatever this
-  // screen itself just showed — same headline/summary/band AiSummaryCard
-  // renders, same day-plan data CalendarScreen's "what's next" reads from.
-  // Fires on every refetch that lands here (pull-to-refresh, refocus, a
-  // Whoop sync completing), which is the "whenever the app is refreshed
-  // with latest metrics" half of the widget's refresh contract — the other
-  // half (the daily 6 AM rollover) lives entirely on the widget extension's
-  // own timeline policy and needs nothing from this screen.
-  // The widget itself is a SetSocial Premium perk — a free athlete simply
+  // screen itself just showed — same headline/summary/band the hero
+  // card/AiSummaryCard renders, same day-plan data CalendarScreen's "what's
+  // next" reads from. Fires on every refetch that lands here (pull-to-refresh,
+  // refocus, a Whoop sync completing), which is the "whenever the app is
+  // refreshed with latest metrics" half of the widget's refresh contract —
+  // the other half (the daily 6 AM rollover) lives entirely on the widget
+  // extension's own timeline policy and needs nothing from this screen.
+  // The widget itself is a SetSocial Pro perk — a free athlete simply
   // never gets synced, so any widget they've added via iOS's own UI just
   // sits on whatever it last showed (or its native-side empty state)
   // instead of updating with real data.
@@ -434,9 +475,9 @@ export function TodayScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Fire-and-forget, like WhoopMetricsSection's own focus-triggered sync —
-    // a slow or failed Whoop round-trip shouldn't hold up the rest of the
-    // pull-to-refresh. Its onSuccess invalidates the whoopMetrics query,
+    // Fire-and-forget, like the Whoop metrics query's own focus-triggered
+    // sync — a slow or failed Whoop round-trip shouldn't hold up the rest of
+    // the pull-to-refresh. Its onSuccess invalidates the whoopMetrics query,
     // which readinessContext (and today's AI focus summary) reads from.
     if (isWhoopConnected && userId) {
       syncWhoopMetrics.mutate(userId);
@@ -449,6 +490,7 @@ export function TodayScreen() {
         refetchWeeklySchedule(),
         refetchLoggedSets(),
         refetchFriendsPosts(),
+        refetchDayOverrides(),
       ]);
     } finally {
       setRefreshing(false);
@@ -460,6 +502,7 @@ export function TodayScreen() {
     refetchWeeklySchedule,
     refetchLoggedSets,
     refetchFriendsPosts,
+    refetchDayOverrides,
     isWhoopConnected,
     userId,
     syncWhoopMetrics,
@@ -490,6 +533,173 @@ export function TodayScreen() {
     }
   };
 
+  // Today's plan and the AI coach summary merge into one hero card only for
+  // the common case: today is selected, it isn't already completed, and
+  // there's an actual plan with a "Start Workout" CTA to attach the summary
+  // to. Every other case (a rest day, nothing scheduled, or any past/future
+  // date being browsed via WeekTimeline) keeps the coach summary and the
+  // plan as two separate cards, exactly as before — merging AI commentary
+  // into "nothing scheduled" or a browsed-past-day card doesn't make sense,
+  // and isn't what the approved design shows.
+  const mergeBranch: 'scheduled' | 'weekly' | 'resolved' | null =
+    !isSelectedToday || isSelectedCompleted
+      ? null
+      : scheduledSelected
+        ? 'scheduled'
+        : weeklyScheduleSelected
+          ? 'weekly'
+          : resolvedSelected && !resolvedSelected.day.is_rest_day
+            ? 'resolved'
+            : null;
+
+  // activeWorkoutStore is a single global slot (see its own file) with no
+  // per-plan-branch id knowable ahead of time for the "weekly recurring"
+  // origin (starting one materializes a brand-new scheduled_workouts row on
+  // the fly) — so rather than id-matching against today's resolved plan,
+  // "in progress for today" is just "there's an active session, and it was
+  // started today." Date-scoped so an abandoned multi-day-old session never
+  // misleadingly reads as in-progress for today's card.
+  const activeWorkoutLogId = useActiveWorkoutStore(state => state.workoutLogId);
+  const activeWorkoutSource = useActiveWorkoutStore(state => state.source);
+  const activeWorkoutStartedAt = useActiveWorkoutStore(state => state.startedAt);
+  const hasInProgressWorkoutToday =
+    activeWorkoutLogId != null &&
+    activeWorkoutStartedAt != null &&
+    isSameDay(new Date(activeWorkoutStartedAt), today);
+
+  let heroProps: {
+    planLabel: string;
+    planTitle: string;
+    planMeta: string | null;
+    ctaLabel: string;
+    onCtaPress: () => void;
+    ctaLoading?: boolean;
+  } | null = null;
+
+  if (mergeBranch === 'scheduled' && scheduledSelected) {
+    heroProps = {
+      planLabel: 'SCHEDULED',
+      planTitle: scheduledSelected.name,
+      planMeta: null,
+      ctaLabel: 'Start Workout',
+      onCtaPress: () => goToLogWorkout(undefined, scheduledSelected.id),
+    };
+  } else if (mergeBranch === 'weekly' && weeklyScheduleSelected) {
+    // `weeklyScheduleSelected.workout_templates.workout_template_exercises`
+    // only selects order_index (see weeklySchedule.ts — it exists to count
+    // exercises for WeekTimeline, not describe them); `selectedWeeklyTemplate`
+    // is the same one the non-merge branch below already fetches full
+    // target_sets/rest_seconds detail from via useWorkoutTemplate.
+    const exerciseCount = weeklyScheduleSelected.workout_templates.workout_template_exercises.length;
+    const minutes = selectedWeeklyTemplate ? estimateWeeklyMinutes(selectedWeeklyTemplate.workout_template_exercises) : null;
+    heroProps = {
+      planLabel: `${format(selectedDate, 'EEEE').toUpperCase()} · EVERY WEEK`,
+      planTitle: weeklyScheduleSelected.workout_templates.name,
+      planMeta: `${exerciseCount} exercise${exerciseCount === 1 ? '' : 's'}${minutes ? ` · ~${minutes} min` : ''}`,
+      ctaLabel: 'Start Workout',
+      onCtaPress: onStartWeeklyTemplate,
+      ctaLoading: startTemplateToday.isPending,
+    };
+  } else if (mergeBranch === 'resolved' && resolvedSelected) {
+    const exerciseCount = resolvedSelected.day.program_exercises.length;
+    const minutes = estimateMinutes(resolvedSelected.day.program_exercises);
+    heroProps = {
+      planLabel: `WEEK ${resolvedSelected.week.week_number}${resolvedSelected.week.deload ? ' · DELOAD' : ''}`,
+      planTitle: resolvedSelected.day.title ?? 'Training Day',
+      planMeta: `${exerciseCount} exercise${exerciseCount === 1 ? '' : 's'}${minutes ? ` · ~${minutes} min` : ''}`,
+      ctaLabel: 'Start Workout',
+      onCtaPress: () => goToLogWorkout(resolvedSelected.day.id),
+    };
+  }
+
+  // Overrides uniformly across whichever branch just built heroProps,
+  // rather than threading this into each branch individually — a session
+  // already in progress means "continue," regardless of whether it
+  // originated from a one-off scheduled workout, the weekly recurring
+  // schedule, or the AI-generated program.
+  if (heroProps && hasInProgressWorkoutToday) {
+    heroProps = {
+      ...heroProps,
+      planLabel: 'IN PROGRESS',
+      ctaLabel: 'Continue Workout',
+      ctaLoading: false,
+      onCtaPress: () => navigateToContinueWorkout(rootNavigation, activeWorkoutSource),
+    };
+  }
+
+  // Energy-balance card data — see src/utils/energyBalance.ts. Reuses
+  // workoutLogs (already fetched above for the calendar/streak) rather than
+  // a second query, and only adds one new network round trip: today's
+  // food_log_entries.
+  const foodRangeFrom = useMemo(() => startOfDay(today).toISOString(), [today]);
+  const foodRangeTo = useMemo(() => endOfDay(today).toISOString(), [today]);
+  const { data: foodEntries } = useFoodLogEntriesInRange(userId, { from: foodRangeFrom, to: foodRangeTo });
+  const { data: latestWeightKg } = useLatestBodyWeight(userId);
+
+  const todaysWorkoutLogs = useMemo(
+    () => (workoutLogs ?? []).filter(log => dateKey(new Date(log.completedAt)) === dateKey(today)),
+    [workoutLogs, today],
+  );
+  const strengthSessionMinutes = useMemo(
+    () =>
+      todaysWorkoutLogs
+        .filter(log => log.cardio == null)
+        .reduce(
+          (sum, log) => sum + Math.max(0, (new Date(log.completedAt).getTime() - new Date(log.startedAt).getTime()) / 60_000),
+          0,
+        ),
+    [todaysWorkoutLogs],
+  );
+  const todaysCardioCalories = useMemo(
+    () => todaysWorkoutLogs.reduce((sum, log) => sum + (log.cardio?.estimatedCalories ?? 0), 0),
+    [todaysWorkoutLogs],
+  );
+
+  const nutritionGoal = profile?.nutrition_goal ?? 'maintain';
+  const age = profile?.birth_date ? calculateAge(profile.birth_date) : null;
+
+  const energyTotals = useMemo(
+    () =>
+      computeDailyEnergyTotals({
+        foodEntries: foodEntries ?? [],
+        strengthSessionMinutes,
+        cardioCalories: todaysCardioCalories,
+        weightKg: latestWeightKg ?? null,
+        heightCm: profile?.height_cm ?? null,
+        age,
+        sex: profile?.sex ?? null,
+        goal: nutritionGoal,
+      }),
+    [foodEntries, strengthSessionMinutes, todaysCardioCalories, latestWeightKg, profile?.height_cm, age, profile?.sex, nutritionGoal],
+  );
+
+  const macroTargets = useMemo(
+    () => computeMacroTargets({ weightKg: latestWeightKg ?? null, targetIntake: energyTotals.targetIntake, goal: nutritionGoal }),
+    [latestWeightKg, energyTotals.targetIntake, nutritionGoal],
+  );
+
+  // Same evening cutoff StreakRiskNudge uses for "it's getting late" —
+  // applied to the day's last expected meal instead of training.
+  const hasEveningMealGap = today.getHours() >= 17 && !(foodEntries ?? []).some(entry => entry.meal_type === 'dinner');
+
+  const energySummary = useMemo(
+    () =>
+      coachingEngine.generateEnergySummary({
+        goal: nutritionGoal,
+        caloriesIn: energyTotals.caloriesIn,
+        caloriesOut: energyTotals.caloriesOut,
+        net: energyTotals.net,
+        targetIntake: energyTotals.targetIntake,
+        proteinG: energyTotals.proteinG,
+        proteinTargetG: macroTargets.proteinTargetG,
+        entriesLoggedToday: (foodEntries ?? []).length,
+        hasEveningMealGap,
+      }),
+    [nutritionGoal, energyTotals, macroTargets.proteinTargetG, foodEntries, hasEveningMealGap],
+  );
+
+  const goToLogFood = () => todayNavigation.navigate('LogFood');
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <ScrollView
@@ -506,19 +716,45 @@ export function TodayScreen() {
               {greeting(today.getHours())}{firstName ? `, ${firstName}` : ''}
             </Text>
           </View>
-          <Avatar
-            uri={profile?.avatar_url}
-            size={40}
-            onPress={() => rootNavigation.navigate('Profile', { screen: 'Profile' })}
+          <IconButton
+            name="menu"
+            variant="ghost"
+            accessibilityLabel="Settings"
+            onPress={() => rootNavigation.navigate('Profile', { screen: 'Settings' })}
           />
         </View>
 
-        <AiSummaryCard
-          headline={todayFocusSummary.headline}
-          summary={todayFocusSummary.summary}
-          band={todayFocusSummary.band}
-          isRestDay={todayPlan.kind === 'rest_day'}
-        />
+        {heroProps ? (
+          <TodayHeroCard
+            headline={todayFocusSummary.headline}
+            summary={todayFocusSummary.summary}
+            band={todayFocusSummary.band}
+            readiness={readiness}
+            {...heroProps}
+          />
+        ) : (
+          <AiSummaryCard
+            headline={todayFocusSummary.headline}
+            summary={todayFocusSummary.summary}
+            band={todayFocusSummary.band}
+            isRestDay={todayPlan.kind === 'rest_day'}
+            readiness={readiness}
+          />
+        )}
+
+        {featureFlags.nutritionTracking ? (
+          <EnergyTodayCard
+            entries={foodEntries ?? []}
+            totals={energyTotals}
+            goal={nutritionGoal}
+            macroTargets={macroTargets}
+            insightHeadline={energySummary.headline}
+            insightBody={energySummary.body}
+            onLogMeal={goToLogFood}
+          />
+        ) : null}
+
+        <QuickCheckinCard userId={userId} />
 
         {isLoading ? (
           <LoadingState fill={false} />
@@ -529,63 +765,13 @@ export function TodayScreen() {
             cardioDates={cardioDates}
             scheduledDates={new Set(scheduledByDate.keys())}
             weeklyScheduleDaysOfWeek={weeklyScheduleDaysOfWeek}
+            overrides={dayOverridesByDate}
             prDates={prDates}
             streak={streak}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
           />
         )}
-
-        {activePatterns.length > 0 ? (
-          <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
-            <Text variant="subtitle">Coach Insight</Text>
-            {activePatterns.slice(0, MAX_INSIGHTS_SHOWN).map((pattern, index) => (
-              <View
-                key={pattern.id}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'flex-start',
-                  gap: theme.spacing.sm,
-                  paddingTop: index > 0 ? theme.spacing.sm : 0,
-                  borderTopWidth: index > 0 ? 1 : 0,
-                  borderTopColor: theme.colors.border.subtle,
-                }}
-              >
-                <Icon name={PATTERN_ICON[pattern.pattern_type]} size="sm" color={theme.colors.accent.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text variant="body" style={{ fontWeight: '700' }}>
-                    {pattern.title}
-                  </Text>
-                  <Text variant="caption" color="secondary">
-                    {pattern.detail}
-                  </Text>
-                </View>
-                <IconButton
-                  name="x"
-                  variant="ghost"
-                  size={28}
-                  accessibilityLabel="Dismiss insight"
-                  onPress={() => userId && dismissPattern.mutate({ id: pattern.id, userId })}
-                />
-              </View>
-            ))}
-          </Card>
-        ) : null}
-
-        {!isLoading && program ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
-            <ProgressRing progress={weeklyProgress} size={56} strokeWidth={6} centerValue={`${sessionsThisWeek}/${weeklyTarget}`} />
-            <View style={{ flex: 1 }}>
-              <Text variant="subtitle">
-                {sessionsThisWeek >= weeklyTarget && weeklyTarget > 0 ? 'Week complete' : 'On track this week'}
-              </Text>
-              <Text variant="caption" color="tertiary">
-                {Math.max(weeklyTarget - sessionsThisWeek, 0)} session{weeklyTarget - sessionsThisWeek === 1 ? '' : 's'} left
-                {streak > 0 ? ` · ${streak} day streak` : ''}
-              </Text>
-            </View>
-          </View>
-        ) : null}
 
         {isLoading ? null : (
           <>
@@ -606,7 +792,7 @@ export function TodayScreen() {
                 isPr={isSelectedPr}
                 summary={selectedDaySummary}
               />
-            ) : scheduledSelected ? (
+            ) : mergeBranch === 'scheduled' ? null : scheduledSelected ? (
               <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
                 <View>
                   <Text variant="label" color="secondary">
@@ -614,17 +800,9 @@ export function TodayScreen() {
                   </Text>
                   <Text variant="title">{scheduledSelected.name}</Text>
                 </View>
-                {isSelectedToday ? (
-                  <Button label="Start Workout" onPress={() => goToLogWorkout(undefined, scheduledSelected.id)} />
-                ) : (
-                  <Button
-                    label="View Day"
-                    variant="secondary"
-                    onPress={() => goToScheduledDetail(scheduledSelected.id)}
-                  />
-                )}
+                <Button label="View Day" variant="secondary" onPress={() => goToScheduledDetail(scheduledSelected.id)} />
               </Card>
-            ) : weeklyScheduleSelected ? (
+            ) : mergeBranch === 'weekly' ? null : weeklyScheduleSelected ? (
               <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
                 <View>
                   <Text variant="label" color="secondary">
@@ -661,21 +839,17 @@ export function TodayScreen() {
                   </View>
                 ) : null}
 
-                {isSelectedToday ? (
-                  <Button label="Start Workout" onPress={onStartWeeklyTemplate} loading={startTemplateToday.isPending} />
-                ) : (
-                  <Button
-                    label="View Day"
-                    variant="secondary"
-                    onPress={() =>
-                      goToTrainingDayDetail(
-                        weeklyScheduleSelected.id,
-                        weeklyScheduleSelected.workout_template_id,
-                        weeklyScheduleSelected.day_of_week,
-                      )
-                    }
-                  />
-                )}
+                <Button
+                  label="View Day"
+                  variant="secondary"
+                  onPress={() =>
+                    goToTrainingDayDetail(
+                      weeklyScheduleSelected.id,
+                      weeklyScheduleSelected.workout_template_id,
+                      weeklyScheduleSelected.day_of_week,
+                    )
+                  }
+                />
               </Card>
             ) : resolvedSelected?.day.is_rest_day ? (
               <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl }}>
@@ -685,7 +859,7 @@ export function TodayScreen() {
                   Recovery is part of the program. Back at it next session.
                 </Text>
               </Card>
-            ) : resolvedSelected ? (
+            ) : mergeBranch === 'resolved' ? null : resolvedSelected ? (
               <Card variant="elevated" style={{ gap: theme.spacing.sm }}>
                 <View>
                   <Text variant="label" color="secondary">
@@ -724,20 +898,16 @@ export function TodayScreen() {
                   ) : null}
                 </View>
 
-                {isSelectedToday ? (
-                  <Button label="Start Workout" onPress={() => goToLogWorkout(resolvedSelected.day.id)} />
-                ) : (
-                  <Button
-                    label="View Day"
-                    variant="secondary"
-                    onPress={() =>
-                      todayNavigation.navigate('DayDetail', {
-                        programDayId: resolvedSelected.day.id,
-                        date: dateKey(selectedDate),
-                      })
-                    }
-                  />
-                )}
+                <Button
+                  label="View Day"
+                  variant="secondary"
+                  onPress={() =>
+                    todayNavigation.navigate('DayDetail', {
+                      programDayId: resolvedSelected.day.id,
+                      date: dateKey(selectedDate),
+                    })
+                  }
+                />
               </Card>
             ) : (
               <Card variant="elevated" style={{ alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl }}>
@@ -752,32 +922,31 @@ export function TodayScreen() {
               </Card>
             )}
 
-            {!program ? (
-              <Card
-                variant="elevated"
-                style={{ alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.xl }}
-              >
-                <ProgressRing progress={0} centerValue="0/0" label="sets today" />
-                <Text variant="body" color="secondary" style={{ textAlign: 'center' }}>
-                  Set up a training day, or generate a program with AI, from the Training tab.
-                </Text>
-                <Button
-                  label="Go to Training"
-                  onPress={() =>
-                    rootNavigation.navigate('MainTabs', { screen: 'ProgramsTab', params: { screen: 'Calendar' } })
-                  }
-                />
-              </Card>
-            ) : null}
+            <StatsRail userId={userId} prediction={topPrPrediction} unitPref={unitPref} streak={streak} />
 
-            <FriendsActivitySection
-              posts={friendsActivityPreview}
-              photoUrls={friendsActivityPhotoUrls ?? {}}
-              isLoading={friendsPostsLoading}
-              isError={friendsPostsError}
-              onRetry={onFriendsActivityRetry}
-              onCardPress={onFriendActivityCardPress}
-              onViewAllPress={onFriendsActivityViewAll}
+            <StreakRiskNudge
+              streak={streak}
+              hour={today.getHours()}
+              isTodayCompleted={isTodayCompleted}
+              hasPlanToday={todayPlan.kind === 'training_day' || todayPlan.kind === 'scheduled'}
+            />
+
+            <MoreForYouCard
+              userId={userId}
+              focusModeEnabled={focusModeEnabled}
+              isWhoopConnected={isWhoopConnected}
+              activePatterns={activePatterns}
+              onDismissPattern={patternId => userId && dismissPattern.mutate({ id: patternId, userId })}
+              hasProgram={!!program}
+              sessionsThisWeek={sessionsThisWeek}
+              weeklyTarget={weeklyTarget}
+              streak={streak}
+              liveFriendWorkouts={liveFriendWorkouts ?? []}
+              onViewLiveNow={onViewLiveNow}
+              friendsPostsCount={friendsPosts?.length ?? 0}
+              friendsPostsLoading={friendsPostsLoading}
+              friendsPostsError={friendsPostsError}
+              onFriendsActivityViewAll={onFriendsActivityViewAll}
             />
           </>
         )}

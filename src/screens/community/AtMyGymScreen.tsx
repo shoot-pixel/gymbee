@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -49,11 +49,21 @@ export function AtMyGymScreen() {
   const userId = useAuthStore(state => state.userId);
   const [checkingIn, setCheckingIn] = useState(false);
 
-  const { data: myCheckin, isLoading: myCheckinLoading } = useMyCheckin(userId);
+  const { data: myCheckin, isLoading: myCheckinLoading, refetch: refetchMyCheckin } = useMyCheckin(userId);
   const checkIn = useCheckIn(userId);
   const checkOut = useCheckOut(userId);
   const isCheckedIn = myCheckin != null;
-  const { data: nearby, isLoading: nearbyLoading } = useNearbyCheckins(isCheckedIn);
+  const { data: nearby, isLoading: nearbyLoading, refetch: refetchNearby } = useNearbyCheckins(isCheckedIn);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchMyCheckin(), refetchNearby()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchMyCheckin, refetchNearby]);
 
   const onCheckIn = async () => {
     setCheckingIn(true);
@@ -79,7 +89,7 @@ export function AtMyGymScreen() {
       key={athlete.id}
       title={athlete.display_name ?? 'Athlete'}
       subtitle={formatDistance(athlete.distanceMeters)}
-      leading={<Avatar uri={athlete.avatar_url} size={40} />}
+      leading={<Avatar uri={athlete.avatar_url} focalX={athlete.avatar_focal_x} focalY={athlete.avatar_focal_y} size={40} />}
       showChevron
       onPress={() => navigation.navigate('FriendProfile', { userId: athlete.id })}
     />
@@ -88,7 +98,10 @@ export function AtMyGymScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg.base }} edges={['top']}>
       <Header title="At My Gym" />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.lg }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+      >
         {myCheckinLoading ? (
           <LoadingState fill={false} />
         ) : !isCheckedIn ? (

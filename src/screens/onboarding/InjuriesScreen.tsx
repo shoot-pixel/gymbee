@@ -44,7 +44,7 @@ export function InjuriesScreen({ navigation }: Props) {
             <View>
               <Text variant="title">Any injuries or limitations?</Text>
               <Text variant="body" color="secondary">
-                Optional — your coach will work around these.
+                Optional — Arnold will work around these.
               </Text>
             </View>
           </View>

@@ -33,9 +33,20 @@ export type DemoMediaType = 'video' | 'image';
 export type ExerciseDefaultMetric = 'weight_lb' | 'weight_kg' | 'weight_pct' | 'reps' | 'time';
 export type ProgramSource = 'ai_generated' | 'manual' | 'template';
 export type DayType = 'training' | 'rest' | 'cardio';
+export type DayOverrideStatus = 'rest' | 'missed';
 export type CardioEffort = 'easy' | 'moderate' | 'hard';
 export type ProgramStatus = 'active' | 'completed' | 'archived';
 export type ChatRole = 'user' | 'assistant';
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+/** Body-composition intent — a separate axis from TrainingGoal (how you
+ * train, not what you're trying to do to your body composition). */
+export type NutritionGoal = 'cut' | 'bulk' | 'maintain';
+/** 'pending' entries (from an unconfirmed AI photo estimate) never count
+ * toward the Home energy card's totals until the athlete confirms/edits
+ * them — see 0063_food_photo_logging.sql. Manual entries default straight
+ * to 'confirmed'. */
+export type FoodLogStatus = 'pending' | 'confirmed' | 'skipped';
+export type FoodLogConfidence = 'high' | 'medium' | 'low';
 export type AdaptationType =
   | 'reduce_sets'
   | 'reduce_weight'
@@ -108,6 +119,8 @@ export type ReportTarget = 'post' | 'comment' | 'message' | 'conversation' | 'pr
 export type ReportStatus = 'open' | 'actioned' | 'dismissed';
 export type SubscriptionSource = 'revenuecat' | 'manual_grant';
 export type SubscriptionStatus = 'active' | 'canceled' | 'expired';
+export type WorkoutShareType = 'single_workout' | 'weekly_plan';
+export type WorkoutShareStatus = 'pending' | 'accepted' | 'declined';
 
 export interface Database {
   public: {
@@ -118,6 +131,11 @@ export interface Database {
           email: string;
           display_name: string | null;
           avatar_url: string | null;
+          /** Normalized 0-1 fraction of the source photo's own bounding box —
+           * same convention as CSS `object-position` — that the circular
+           * Avatar crop centers on. (0.5, 0.5) is a plain center crop. */
+          avatar_focal_x: number;
+          avatar_focal_y: number;
           handle: string | null;
           bio: string | null;
           birth_date: string | null;
@@ -125,6 +143,11 @@ export interface Database {
           sex: Sex | null;
           experience_level: ExperienceLevel | null;
           goal: TrainingGoal | null;
+          /** Body-composition intent (0062_food_logging.sql) — defaults
+           * 'maintain' for every existing athlete since none of them ever
+           * chose one; onboarding/settings UI to set it explicitly is a
+           * later phase. */
+          nutrition_goal: NutritionGoal;
           days_per_week: number | null;
           equipment_access: string[];
           injuries_notes: string | null;
@@ -156,10 +179,19 @@ export interface Database {
           push_friends_enabled: boolean;
           push_activity_enabled: boolean;
           push_ai_coach_enabled: boolean;
+          /** Sub-toggle under push_ai_coach_enabled — send-push requires
+           * both before sending a meal-gap reminder. */
+          push_meal_reminders_enabled: boolean;
           /** Set the first time the in-app permission primer is shown, so it
            * never shows twice for the same athlete — see
            * useNotificationPrimer. */
           push_primer_shown_at: string | null;
+          /** IANA zone name (e.g. "America/New_York"), synced from the
+           * client's own Intl.DateTimeFormat().resolvedOptions().timeZone
+           * on app start (see useSyncTimezone) — the proactive-coach cron
+           * sweep is the first thing that ever needs a user's local time
+           * server-side. Null until synced; treated as UTC until then. */
+          timezone: string | null;
           /** Denormalized from subscriptions (0050_premium_subscriptions.sql)
            * — kept correct exclusively by sync_is_premium(), never a client
            * write. Deliberately absent from the Insert/Update types below:
@@ -174,6 +206,8 @@ export interface Database {
           email: string;
           display_name?: string | null;
           avatar_url?: string | null;
+          avatar_focal_x?: number;
+          avatar_focal_y?: number;
           handle?: string | null;
           bio?: string | null;
           birth_date?: string | null;
@@ -181,6 +215,7 @@ export interface Database {
           sex?: Sex | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
+          nutrition_goal?: NutritionGoal;
           days_per_week?: number | null;
           equipment_access?: string[];
           injuries_notes?: string | null;
@@ -196,11 +231,15 @@ export interface Database {
           push_friends_enabled?: boolean;
           push_activity_enabled?: boolean;
           push_ai_coach_enabled?: boolean;
+          push_meal_reminders_enabled?: boolean;
           push_primer_shown_at?: string | null;
+          timezone?: string | null;
         };
         Update: {
           display_name?: string | null;
           avatar_url?: string | null;
+          avatar_focal_x?: number;
+          avatar_focal_y?: number;
           handle?: string | null;
           bio?: string | null;
           birth_date?: string | null;
@@ -208,6 +247,7 @@ export interface Database {
           sex?: Sex | null;
           experience_level?: ExperienceLevel | null;
           goal?: TrainingGoal | null;
+          nutrition_goal?: NutritionGoal;
           days_per_week?: number | null;
           equipment_access?: string[];
           injuries_notes?: string | null;
@@ -223,7 +263,9 @@ export interface Database {
           push_friends_enabled?: boolean;
           push_activity_enabled?: boolean;
           push_ai_coach_enabled?: boolean;
+          push_meal_reminders_enabled?: boolean;
           push_primer_shown_at?: string | null;
+          timezone?: string | null;
         };
         Relationships: [];
       };
@@ -546,6 +588,24 @@ export interface Database {
         };
         Relationships: [];
       };
+      day_overrides: {
+        Row: {
+          id: string;
+          user_id: string;
+          date: string;
+          status: DayOverrideStatus;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          date: string;
+          status: DayOverrideStatus;
+        };
+        Update: {
+          status?: DayOverrideStatus;
+        };
+        Relationships: [];
+      };
       workout_logs: {
         Row: {
           id: string;
@@ -665,6 +725,49 @@ export interface Database {
         };
         Relationships: [];
       };
+      food_log_entries: {
+        Row: {
+          id: string;
+          user_id: string;
+          logged_at: string;
+          name: string;
+          meal_type: MealType | null;
+          calories: number;
+          protein_g: number;
+          carbs_g: number;
+          fat_g: number;
+          status: FoodLogStatus;
+          confidence: FoodLogConfidence | null;
+          photo_path: string | null;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          logged_at?: string;
+          name: string;
+          meal_type?: MealType | null;
+          calories: number;
+          protein_g?: number;
+          carbs_g?: number;
+          fat_g?: number;
+          status?: FoodLogStatus;
+          confidence?: FoodLogConfidence | null;
+          photo_path?: string | null;
+        };
+        Update: {
+          logged_at?: string;
+          name?: string;
+          meal_type?: MealType | null;
+          calories?: number;
+          protein_g?: number;
+          carbs_g?: number;
+          fat_g?: number;
+          status?: FoodLogStatus;
+          confidence?: FoodLogConfidence | null;
+          photo_path?: string | null;
+        };
+        Relationships: [];
+      };
       chat_conversations: {
         Row: {
           id: string;
@@ -682,13 +785,22 @@ export interface Database {
           id: string;
           conversation_id: string;
           role: ChatRole;
-          content: string;
+          content: string | null;
+          /** Path within the private `chat-photos` bucket — a food photo
+           * the athlete attached, or null for a plain-text message. */
+          photo_path: string | null;
+          /** Set on the assistant reply that resulted in a food estimate
+           * (see chat-coach's log_food_estimate tool) — the client renders
+           * FoodEstimateCard instead of plain text when this is present. */
+          food_log_entry_id: string | null;
           created_at: string;
         };
         Insert: {
           conversation_id: string;
           role: ChatRole;
-          content: string;
+          content?: string | null;
+          photo_path?: string | null;
+          food_log_entry_id?: string | null;
         };
         Update: never;
         Relationships: [];
@@ -844,6 +956,14 @@ export interface Database {
            * "do I have an unread message here" exclude threads whose last
            * message was the caller's own, without a second query. */
           last_message_sender_id: string | null;
+          /** "Delete conversation" is per-participant, not a real delete —
+           * whichever side hid it stops seeing it in their inbox until the
+           * other side sends a new message (dm_touch_conversation resets
+           * both back to false). Never written directly by the client —
+           * only via the set_dm_conversation_hidden() RPC, so it's absent
+           * from Update below. */
+          hidden_for_requester: boolean;
+          hidden_for_recipient: boolean;
         };
         Insert: {
           requester_id: string;
@@ -862,6 +982,7 @@ export interface Database {
           sender_id: string;
           body: string | null;
           photo_path: string | null;
+          workout_share_id: string | null;
           created_at: string;
         };
         Insert: {
@@ -869,6 +990,7 @@ export interface Database {
           sender_id: string;
           body?: string | null;
           photo_path?: string | null;
+          workout_share_id?: string | null;
         };
         Update: never;
         Relationships: [];
@@ -885,6 +1007,37 @@ export interface Database {
           user_id: string;
         };
         Update: never;
+        Relationships: [];
+      };
+      /** `payload`'s shape depends on `share_type` — see WorkoutSnapshot /
+       * SingleWorkoutPayload / WeeklyPlanPayload in
+       * services/api/queries/workoutShares.ts. Kept as a plain `unknown`
+       * jsonb here (not a discriminated union) since Supabase's own jsonb
+       * columns are untyped at this layer everywhere else in this file too. */
+      workout_shares: {
+        Row: {
+          id: string;
+          sender_id: string;
+          recipient_id: string;
+          share_type: WorkoutShareType;
+          title: string;
+          payload: unknown;
+          status: WorkoutShareStatus;
+          created_at: string;
+          responded_at: string | null;
+        };
+        Insert: {
+          sender_id: string;
+          recipient_id: string;
+          share_type: WorkoutShareType;
+          title: string;
+          payload: unknown;
+          status?: WorkoutShareStatus;
+        };
+        Update: {
+          status?: WorkoutShareStatus;
+          responded_at?: string | null;
+        };
         Relationships: [];
       };
       push_tokens: {
@@ -917,6 +1070,7 @@ export interface Database {
           stress: number | null;
           has_pain: boolean;
           pain_notes: string | null;
+          notes: string | null;
           resting_heart_rate: number | null;
           hrv_ms: number | null;
           wearable_recovery_score: number | null;
@@ -931,6 +1085,7 @@ export interface Database {
           stress?: number | null;
           has_pain?: boolean;
           pain_notes?: string | null;
+          notes?: string | null;
           resting_heart_rate?: number | null;
           hrv_ms?: number | null;
           wearable_recovery_score?: number | null;
@@ -942,6 +1097,7 @@ export interface Database {
           stress?: number | null;
           has_pain?: boolean;
           pain_notes?: string | null;
+          notes?: string | null;
           resting_heart_rate?: number | null;
           hrv_ms?: number | null;
           wearable_recovery_score?: number | null;
@@ -1210,6 +1366,8 @@ export interface Database {
           id: string;
           display_name: string | null;
           avatar_url: string | null;
+          avatar_focal_x: number;
+          avatar_focal_y: number;
           handle: string | null;
           bio: string | null;
           hide_stats_from_friends: boolean;

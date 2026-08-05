@@ -64,6 +64,7 @@ export function useSubmitReadinessCheckin(userId: string | null) {
       stress?: number | null;
       hasPain?: boolean;
       painNotes?: string | null;
+      notes?: string | null;
     }) => {
       if (!userId) throw new Error('Not signed in');
       const checkinDate = todayKey();
@@ -79,6 +80,7 @@ export function useSubmitReadinessCheckin(userId: string | null) {
             stress: params.stress ?? null,
             has_pain: params.hasPain ?? false,
             pain_notes: params.painNotes ?? null,
+            notes: params.notes ?? null,
           },
           { onConflict: 'user_id,checkin_date' },
         )
@@ -102,6 +104,7 @@ function checkinRowToInput(row: ReadinessCheckinRow | null | undefined): Readine
     stress: row.stress,
     hasPain: row.has_pain,
     painNotes: row.pain_notes,
+    notes: row.notes,
   };
 }
 

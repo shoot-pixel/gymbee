@@ -44,6 +44,12 @@ jest.mock('../../../services/api/queries/workoutLogs', () => ({
   useWorkoutLogsInRange: (...args: unknown[]) => mockUseWorkoutLogsInRange(...args),
 }));
 
+const mockBuildWorkoutSnapshot = jest.fn();
+
+jest.mock('../../../services/api/queries/workoutShares', () => ({
+  buildWorkoutSnapshot: (...args: unknown[]) => mockBuildWorkoutSnapshot(...args),
+}));
+
 const TEMPLATE = {
   id: 'template-1',
   name: 'Ultimate Core Day',
@@ -114,5 +120,30 @@ describe('TrainingDayDetailScreen', () => {
     await waitFor(() => expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ id: 'ws-1', userId: 'user-1' }));
     expect(mockGoBack).toHaveBeenCalled();
     alertSpy.mockRestore();
+  });
+
+  it('builds a snapshot and navigates to ShareWorkout when "Share this workout" is tapped', async () => {
+    const snapshot = { name: 'Ultimate Core Day', notes: null, estimatedDurationMinutes: null, exercises: [] };
+    mockBuildWorkoutSnapshot.mockResolvedValue(snapshot);
+
+    const { getByLabelText, getByText } = await render(<TrainingDayDetailScreen />);
+    await waitFor(() => expect(getByText('Ultimate Core Day')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Training day options'));
+    await fireEvent.press(getByText('Share this workout'));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('MainTabs', {
+        screen: 'ProgramsTab',
+        params: {
+          screen: 'ShareWorkout',
+          params: { shareType: 'single_workout', title: 'Ultimate Core Day', payload: { workout: snapshot } },
+        },
+      }),
+    );
+    expect(mockBuildWorkoutSnapshot).toHaveBeenCalledWith(
+      { name: 'Ultimate Core Day', notes: undefined, estimatedDurationMinutes: undefined },
+      TEMPLATE.workout_template_exercises,
+    );
   });
 });

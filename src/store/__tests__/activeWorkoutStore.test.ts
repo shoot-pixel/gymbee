@@ -1,4 +1,5 @@
 import { useActiveWorkoutStore } from '../activeWorkoutStore';
+import { useRestTimerPreferenceStore } from '../restTimerPreferenceStore';
 
 const EXERCISE = { exerciseId: 'ex1', exerciseName: 'Bench Press', targetSets: 1 };
 
@@ -13,10 +14,12 @@ function seedWorkout() {
 beforeEach(() => {
   jest.useFakeTimers();
   useActiveWorkoutStore.getState().reset();
+  useRestTimerPreferenceStore.getState().setRestTimerEnabled(true);
 });
 
 afterEach(() => {
   useActiveWorkoutStore.getState().reset();
+  useRestTimerPreferenceStore.getState().setRestTimerEnabled(true);
   jest.useRealTimers();
 });
 
@@ -80,6 +83,44 @@ describe('activeWorkoutStore rest timer', () => {
     // The new session's rest timer was never started, so it should still read 0.
     expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
     expect(useActiveWorkoutStore.getState().restRunning).toBe(false);
+  });
+
+  it('correctly catches up after a gap with no ticks in between, simulating the app being backgrounded', () => {
+    // RN suspends JS timer callbacks while backgrounded — the interval
+    // doesn't fire extra times to "catch up" on its own, it just doesn't
+    // fire at all until the app resumes. Advance the fake clock directly
+    // (not jest.advanceTimersByTime, which would fire the pending interval
+    // callbacks) to reproduce that exact gap, then fire a single tick like
+    // the AppState 'active' listener does on resume.
+    seedWorkout();
+    useActiveWorkoutStore.getState().startRestTimer(60);
+    jest.setSystemTime(Date.now() + 45_000);
+
+    useActiveWorkoutStore.getState().tickRestTimer();
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(15);
+    expect(useActiveWorkoutStore.getState().restRunning).toBe(true);
+  });
+
+  it('correctly completes (not stalls) when the backgrounded gap outlasts the remaining rest time', () => {
+    seedWorkout();
+    useActiveWorkoutStore.getState().startRestTimer(20);
+    jest.setSystemTime(Date.now() + 45_000);
+
+    useActiveWorkoutStore.getState().tickRestTimer();
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
+    expect(useActiveWorkoutStore.getState().restRunning).toBe(false);
+  });
+
+  it('does not start a rest timer when the Settings preference is disabled', () => {
+    seedWorkout();
+    useRestTimerPreferenceStore.getState().setRestTimerEnabled(false);
+
+    useActiveWorkoutStore.getState().startRestTimer(60);
+    expect(useActiveWorkoutStore.getState().restRunning).toBe(false);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
+
+    jest.advanceTimersByTime(5000);
+    expect(useActiveWorkoutStore.getState().restSecondsRemaining).toBe(0);
   });
 });
 

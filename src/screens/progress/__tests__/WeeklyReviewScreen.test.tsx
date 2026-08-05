@@ -85,10 +85,10 @@ describe('WeeklyReviewScreen', () => {
 
     const { getByText, queryByText } = await render(<WeeklyReviewScreen />);
 
-    await waitFor(() => expect(getByText('Unlock with Premium')).toBeTruthy());
+    await waitFor(() => expect(getByText('Unlock with Pro')).toBeTruthy());
     expect(queryByText(REVIEW_RESULT.summary)).toBeNull();
 
-    await fireEvent.press(getByText('Unlock with Premium'));
+    await fireEvent.press(getByText('Unlock with Pro'));
     expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'analytics' });
   });
 

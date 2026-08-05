@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { useTheme } from '../../theme/ThemeProvider';
+import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
+import { useTheme, type Theme } from '../../theme/ThemeProvider';
 import {
   Text,
   TextField,
@@ -28,8 +29,11 @@ import {
   useInvalidateMessages,
   useClearChat,
 } from '../../services/api/queries/chat';
+import { useUploadFoodPhoto, useSignedFoodPhotoUrls } from '../../services/api/queries/foodLog';
 import { sendChatMessage, EdgeFunctionError } from '../../services/api/edgeFunctions';
 import { supabase } from '../../services/api/supabaseClient';
+import { FoodEstimateCard } from './FoodEstimateCard';
+import { featureFlags } from '../../config/featureFlags';
 import type { RootStackParamList } from '../../navigation/types';
 import type { ChatRole } from '../../types/database';
 
@@ -68,15 +72,29 @@ export function ChatScreen() {
   const resetStreamingBuffer = useChatUiStore(state => state.resetStreamingBuffer);
 
   const [input, setInput] = useState('');
+  const [attachedPhoto, setAttachedPhoto] = useState<{ uri: string; contentType: string } | null>(null);
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
+  const [pendingUserPhotoUri, setPendingUserPhotoUri] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  const [attachSheetOpen, setAttachSheetOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const uploadFoodPhoto = useUploadFoodPhoto(userId);
+
+  // One batched signed-URL request for every photo this conversation
+  // references, not one per bubble — same convention useSignedPhotoUrls
+  // already established for posts (see foodLog.ts's doc comment).
+  const photoPaths = useMemo(
+    () => (messages ?? []).map(m => m.photo_path).filter((p): p is string => p != null),
+    [messages],
+  );
+  const { data: signedPhotoUrls } = useSignedFoodPhotoUrls(photoPaths);
 
   const onClearChat = () => {
     setOptionsSheetOpen(false);
-    Alert.alert('Clear this chat?', "This can't be undone — your coach won't remember this conversation.", [
+    Alert.alert('Clear this chat?', "This can't be undone — Arnold won't remember this conversation.", [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
@@ -106,6 +124,7 @@ export function ChatScreen() {
       .on('broadcast', { event: 'done' }, () => {
         resetStreamingBuffer();
         setPendingUserText(null);
+        setPendingUserPhotoUri(null);
         setSending(false);
         invalidateMessages();
         // Cheap no-op if the coach didn't touch the schedule this turn — but
@@ -123,30 +142,97 @@ export function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
+  // Single send path for both text-only and photo(+caption) turns — a photo
+  // is staged via attachedPhoto (see onPickPhoto below) rather than uploaded
+  // and sent the instant it's picked, so the athlete can still add a note
+  // ("log this for breakfast") before it goes out.
   const onSend = async () => {
     const text = input.trim();
-    if (!text || !conversationId || sending) return;
+    const photo = attachedPhoto;
+    if ((!text && !photo) || !conversationId || sending) return;
     if (atFreeLimit) {
       navigation.navigate('Paywall', { trigger: 'ai_chat' });
       return;
     }
     setInput('');
-    setPendingUserText(text);
+    setAttachedPhoto(null);
+    setPendingUserText(text || null);
+    setPendingUserPhotoUri(photo?.uri ?? null);
     setSending(true);
     setError(null);
     resetStreamingBuffer();
     try {
-      await sendChatMessage(conversationId, text, format(new Date(), 'yyyy-MM-dd'));
+      let photoPath: string | undefined;
+      if (photo) {
+        setUploadingPhoto(true);
+        photoPath = await uploadFoodPhoto.mutateAsync(photo);
+        setUploadingPhoto(false);
+      }
+      await sendChatMessage(conversationId, text, format(new Date(), 'yyyy-MM-dd'), photoPath);
     } catch (err) {
       setSending(false);
+      setUploadingPhoto(false);
+      setPendingUserPhotoUri(null);
       setPendingUserText(null);
       if (err instanceof EdgeFunctionError && err.code === 'free_limit_reached') {
         setInput(text); // hand the draft back rather than discarding it
+        setAttachedPhoto(photo);
         navigation.navigate('Paywall', { trigger: 'ai_chat' });
         return;
       }
       setError(err instanceof Error ? err.message : 'Could not send that. Try again.');
     }
+  };
+
+  // BottomSheet's Modal stays natively presented through its own ~200ms
+  // close animation — presenting the camera/library picker immediately on
+  // tap (while that modal is still dismissing) silently drops the
+  // presentation on iOS instead of opening it, not just a glitch. So a tap
+  // only records *which* picker to open; the actual launch is deferred to
+  // BottomSheet's onDismissed, once it's truly gone (same pattern as
+  // PostFab's photo picker, src/navigation/PostFab.tsx).
+  const pendingPickerRef = useRef<'camera' | 'library' | null>(null);
+
+  // Only stages the photo — sending (upload + sendChatMessage) happens from
+  // onSend once the athlete taps Send, so they get a chance to add a note
+  // first. maxWidth/maxHeight cap the picker's own on-device resize to
+  // Anthropic's documented vision sweet spot (images with a longer edge
+  // past 1568px are just downscaled server-side anyway, so anything bigger
+  // is wasted upload/encode/transfer time for zero accuracy gain).
+  const onPickPhoto = async (source: 'camera' | 'library') => {
+    if (sending) return;
+    if (atFreeLimit) {
+      navigation.navigate('Paywall', { trigger: 'ai_chat' });
+      return;
+    }
+
+    const launch = source === 'camera' ? launchCamera : launchImageLibrary;
+    const result = await launch({ mediaType: 'photo', quality: 0.8, maxWidth: 1568, maxHeight: 1568 });
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert(source === 'camera' ? 'Could not open camera' : 'Could not open photo library', result.errorMessage ?? 'Please try again.');
+      return;
+    }
+    const asset: Asset | undefined = result.assets?.[0];
+    if (!asset?.uri) return;
+
+    setAttachedPhoto({ uri: asset.uri, contentType: asset.type ?? 'image/jpeg' });
+  };
+
+  const onTakePhoto = () => {
+    pendingPickerRef.current = 'camera';
+    setAttachSheetOpen(false);
+  };
+
+  const onChooseFromLibrary = () => {
+    pendingPickerRef.current = 'library';
+    setAttachSheetOpen(false);
+  };
+
+  const onAttachSheetDismissed = () => {
+    const source = pendingPickerRef.current;
+    pendingPickerRef.current = null;
+    if (source) onPickPhoto(source);
   };
 
   return (
@@ -166,7 +252,7 @@ export function ChatScreen() {
           paddingBottom: theme.spacing.lg,
         }}
       >
-        <Text variant="title">Coach</Text>
+        <Text variant="title">Arnold</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
           <IconButton
             name="moreVertical"
@@ -204,21 +290,34 @@ export function ChatScreen() {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
           >
-            {messages?.length === 0 && !pendingUserText ? (
+            {messages?.length === 0 && !pendingUserText && !pendingUserPhotoUri ? (
               <EmptyState
                 icon="messageCircle"
-                title="Ask your coach"
-                description="Training, recovery, or nutrition — ask anything."
+                title="Ask Arnold"
+                description={
+                  featureFlags.nutritionTracking
+                    ? 'Training, recovery, or nutrition — ask anything. Snap a photo of a meal to log it.'
+                    : 'Training, recovery, or nutrition — ask anything.'
+                }
               />
             ) : null}
 
             {messages?.map(m => (
-              <ChatBubble key={m.id} role={m.role} content={m.content} />
+              <ChatBubble
+                key={m.id}
+                role={m.role}
+                content={m.content}
+                photoUrl={m.photo_path ? signedPhotoUrls?.[m.photo_path] : null}
+                foodLogEntryId={m.food_log_entry_id}
+              />
             ))}
 
-            {pendingUserText ? <ChatBubble role="user" content={pendingUserText} /> : null}
+            {pendingUserText || pendingUserPhotoUri ? (
+              <ChatBubble role="user" content={pendingUserText} photoUrl={pendingUserPhotoUri} />
+            ) : null}
+            {uploadingPhoto ? <ActivityIndicator color={theme.colors.accent.primary} /> : null}
             {streamingBuffer ? <ChatBubble role="assistant" content={streamingBuffer} /> : null}
-            {sending && !streamingBuffer ? (
+            {sending && !streamingBuffer && !uploadingPhoto ? (
               <ActivityIndicator color={theme.colors.accent.primary} />
             ) : null}
             {error ? (
@@ -236,9 +335,32 @@ export function ChatScreen() {
             style={{ textAlign: 'center', paddingHorizontal: theme.spacing.lg }}
           >
             {atFreeLimit
-              ? "You've used all your free messages this month — upgrade for unlimited AI Coach"
+              ? "You've used all your free messages this month — upgrade for unlimited access to Arnold"
               : `${messagesUsedThisMonth} of ${FREE_MESSAGES_PER_MONTH} free messages used this month`}
           </Text>
+        ) : null}
+
+        {attachedPhoto ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              paddingHorizontal: theme.spacing.lg,
+              paddingBottom: theme.spacing.sm,
+            }}
+          >
+            <Image source={{ uri: attachedPhoto.uri }} style={{ width: 48, height: 48, borderRadius: theme.radii.md }} />
+            <Text variant="caption" color="secondary" style={{ flex: 1 }}>
+              Add a note below (e.g. "log this for breakfast") or just hit Send.
+            </Text>
+            <IconButton
+              name="x"
+              variant="ghost"
+              accessibilityLabel="Remove photo"
+              onPress={() => setAttachedPhoto(null)}
+            />
+          </View>
         ) : null}
 
         <View
@@ -249,11 +371,20 @@ export function ChatScreen() {
             alignItems: 'flex-end',
           }}
         >
+          {featureFlags.nutritionTracking ? (
+            <IconButton
+              name="camera"
+              variant="ghost"
+              accessibilityLabel="Attach a food photo"
+              onPress={() => setAttachSheetOpen(true)}
+              disabled={sending || atFreeLimit}
+            />
+          ) : null}
           <View style={{ flex: 1 }}>
             <TextField
               value={input}
               onChangeText={setInput}
-              placeholder={atFreeLimit ? 'Upgrade to keep chatting…' : 'Ask your coach...'}
+              placeholder={atFreeLimit ? 'Upgrade to keep chatting…' : attachedPhoto ? 'Add a note (optional)…' : 'Ask Arnold...'}
               multiline
               editable={!sending}
             />
@@ -261,7 +392,7 @@ export function ChatScreen() {
           <Button
             label={atFreeLimit ? 'Upgrade' : 'Send'}
             onPress={onSend}
-            disabled={!input.trim() || sending}
+            disabled={(!input.trim() && !attachedPhoto) || sending}
             loading={sending}
             gradientColors={atFreeLimit ? theme.gradients.premium : undefined}
           />
@@ -271,32 +402,101 @@ export function ChatScreen() {
       <BottomSheet visible={optionsSheetOpen} onClose={() => setOptionsSheetOpen(false)}>
         <ListRow title="Clear Chat" icon="trash" onPress={onClearChat} />
       </BottomSheet>
+
+      <BottomSheet
+        visible={attachSheetOpen}
+        onClose={() => setAttachSheetOpen(false)}
+        onDismissed={onAttachSheetDismissed}
+      >
+        <ListRow title="Take Photo" icon="camera" onPress={onTakePhoto} />
+        <ListRow title="Choose from Library" icon="image" onPress={onChooseFromLibrary} />
+      </BottomSheet>
     </SafeAreaView>
   );
 }
 
-function ChatBubble({ role, content }: { role: ChatRole; content: string }) {
+function TextBubble({ theme, isUser, content }: { theme: Theme; isUser: boolean; content: string }) {
+  return (
+    <Card
+      variant={isUser ? 'flat' : 'subtle'}
+      style={{
+        maxWidth: '85%',
+        backgroundColor: isUser ? theme.colors.accent.primary : theme.colors.bg.surface,
+        borderWidth: 0,
+        borderRadius: theme.radii.lg,
+        [isUser ? 'borderBottomRightRadius' : 'borderBottomLeftRadius']: theme.radii.xs,
+      }}
+    >
+      <Text variant="body" style={{ color: isUser ? theme.colors.text.onAccent : theme.colors.text.primary }}>
+        {content}
+      </Text>
+    </Card>
+  );
+}
+
+type ChatBubbleProps = {
+  role: ChatRole;
+  content?: string | null;
+  /** A resolved (signed, or local file://) URL for a photo attached to this
+   * message — null/undefined renders as a plain text bubble instead. */
+  photoUrl?: string | null;
+  /** Set on the assistant reply that produced a food estimate (see
+   * chat-coach's log_food_estimate tool) — renders FoodEstimateCard instead
+   * of any of the above when present. */
+  foodLogEntryId?: string | null;
+};
+
+/**
+ * Branches on what a message actually carries rather than just `role`:
+ * food_log_entry_id -> FoodEstimateCard, photo_path -> a thumbnail (plus an
+ * optional caption bubble underneath), otherwise the plain text bubble this
+ * screen always rendered before Phase 2.
+ */
+/** "Arnold" for the assistant, "You" for the athlete — shown above every
+ * message regardless of what it carries (text, photo, food estimate), so
+ * who-said-what is never ambiguous. */
+function SenderLabel({ theme, isUser }: { theme: Theme; isUser: boolean }) {
+  return (
+    <Text variant="caption" color="secondary" style={{ marginBottom: theme.spacing.xxs, marginHorizontal: theme.spacing.xxs }}>
+      {isUser ? 'You' : 'Arnold'}
+    </Text>
+  );
+}
+
+function ChatBubble({ role, content, photoUrl, foodLogEntryId }: ChatBubbleProps) {
   const theme = useTheme();
   const isUser = role === 'user';
+
+  if (foodLogEntryId) {
+    return (
+      <View style={{ alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+        <SenderLabel theme={theme} isUser={isUser} />
+        <FoodEstimateCard foodLogEntryId={foodLogEntryId} />
+      </View>
+    );
+  }
+
+  if (photoUrl) {
+    return (
+      <View style={{ alignItems: isUser ? 'flex-end' : 'flex-start', gap: theme.spacing.xs }}>
+        <SenderLabel theme={theme} isUser={isUser} />
+        <Image
+          testID="chat-photo-thumbnail"
+          source={{ uri: photoUrl }}
+          style={{ width: 200, height: 150, borderRadius: theme.radii.lg }}
+          resizeMode="cover"
+        />
+        {content ? <TextBubble theme={theme} isUser={isUser} content={content} /> : null}
+      </View>
+    );
+  }
+
+  if (!content) return null;
+
   return (
     <View style={{ alignItems: isUser ? 'flex-end' : 'flex-start' }}>
-      <Card
-        variant={isUser ? 'flat' : 'subtle'}
-        style={{
-          maxWidth: '85%',
-          backgroundColor: isUser ? theme.colors.accent.primary : theme.colors.bg.surface,
-          borderWidth: 0,
-          borderRadius: theme.radii.lg,
-          [isUser ? 'borderBottomRightRadius' : 'borderBottomLeftRadius']: theme.radii.xs,
-        }}
-      >
-        <Text
-          variant="body"
-          style={{ color: isUser ? theme.colors.text.onAccent : theme.colors.text.primary }}
-        >
-          {content}
-        </Text>
-      </Card>
+      <SenderLabel theme={theme} isUser={isUser} />
+      <TextBubble theme={theme} isUser={isUser} content={content} />
     </View>
   );
 }

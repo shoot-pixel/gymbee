@@ -1,5 +1,5 @@
-import React from 'react';
-import { ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { RefreshControl, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,7 +23,17 @@ export function FriendsListScreen() {
   const theme = useTheme();
   const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { params } = useRoute<Route>();
-  const { data: friends, isLoading } = useFriendsList(params.userId);
+  const { data: friends, isLoading, refetch } = useFriendsList(params.userId);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const goToFriendProfile = (friendId: string) => {
     rootNavigation.navigate('MainTabs', {
@@ -38,11 +48,14 @@ export function FriendsListScreen() {
       {isLoading ? (
         <LoadingState />
       ) : friends != null && friends.length > 0 ? (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0 }}>
+        <ScrollView
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent.primary} />}
+        >
           {friends.map(friend => (
             <ListRow
               key={friend.id}
-              leading={<Avatar uri={friend.avatar_url} size={40} />}
+              leading={<Avatar uri={friend.avatar_url} focalX={friend.avatar_focal_x} focalY={friend.avatar_focal_y} size={40} />}
               title={friend.display_name ?? 'Athlete'}
               subtitle={friend.handle ? `@${friend.handle}` : undefined}
               showChevron

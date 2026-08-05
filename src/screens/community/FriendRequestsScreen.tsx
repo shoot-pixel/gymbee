@@ -14,7 +14,7 @@ import {
   EmptyState,
   FriendRequestButton,
   Text,
-  PremiumBadge,
+  ProBadge,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { getErrorMessage } from '../../utils/errors';
@@ -100,11 +100,11 @@ export function FriendRequestsScreen() {
                   title={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
                       <Text variant="body">{request.display_name ?? 'Athlete'}</Text>
-                      {request.is_premium ? <PremiumBadge /> : null}
+                      {request.is_premium ? <ProBadge /> : null}
                     </View>
                   }
                   subtitle={`${request.handle ? `@${request.handle} · ` : ''}${formatDistanceToNow(new Date(request.createdAt), { addSuffix: true })}`}
-                  leading={<Avatar uri={request.avatar_url} size={44} />}
+                  leading={<Avatar uri={request.avatar_url} focalX={request.avatar_focal_x} focalY={request.avatar_focal_y} size={44} />}
                   onPress={() => goToProfile(request.id)}
                   trailing={
                     <FriendRequestButton
@@ -130,11 +130,11 @@ export function FriendRequestsScreen() {
                 title={
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
                     <Text variant="body">{request.display_name ?? 'Athlete'}</Text>
-                    {request.is_premium ? <PremiumBadge /> : null}
+                    {request.is_premium ? <ProBadge /> : null}
                   </View>
                 }
                 subtitle={`${request.handle ? `@${request.handle} · ` : ''}Requested ${formatDistanceToNow(new Date(request.createdAt), { addSuffix: true })}`}
-                leading={<Avatar uri={request.avatar_url} size={44} />}
+                leading={<Avatar uri={request.avatar_url} focalX={request.avatar_focal_x} focalY={request.avatar_focal_y} size={44} />}
                 onPress={() => goToProfile(request.id)}
                 trailing={
                   <FriendRequestButton

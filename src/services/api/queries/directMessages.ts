@@ -4,7 +4,7 @@ import RNFS from 'react-native-fs';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../supabaseClient';
 import { fetchPublicProfiles, type PublicProfile } from './community';
-import type { Database, DmConversationStatus } from '../../../types/database';
+import type { Database, DmConversationStatus, WorkoutShareStatus, WorkoutShareType } from '../../../types/database';
 
 export type DmConversation = Database['public']['Tables']['dm_conversations']['Row'];
 export type DmMessage = Database['public']['Tables']['dm_messages']['Row'];
@@ -22,12 +22,19 @@ async function fetchConversationsWithProfiles(
 ): Promise<ConversationSummary[]> {
   let query = supabase.from('dm_conversations').select('*').eq('status', status).order('last_message_at', { ascending: false });
 
+  // Excludes whichever side the caller has deleted the conversation from —
+  // "delete conversation" is per-participant (hidden_for_requester/
+  // hidden_for_recipient), not a real row delete, so this filter is the
+  // only place that removal is actually enforced on read.
   if (direction === 'incoming') {
-    query = query.eq('recipient_id', userId);
+    query = query.eq('recipient_id', userId).eq('hidden_for_recipient', false);
   } else if (direction === 'outgoing') {
-    query = query.eq('requester_id', userId);
+    query = query.eq('requester_id', userId).eq('hidden_for_requester', false);
   } else {
-    query = query.or(`requester_id.eq.${userId},recipient_id.eq.${userId}`);
+    query = query.or(
+      `and(requester_id.eq.${userId},hidden_for_requester.eq.false),` +
+        `and(recipient_id.eq.${userId},hidden_for_recipient.eq.false)`,
+    );
   }
 
   const { data, error } = await query;
@@ -134,21 +141,33 @@ export function useRespondToConversation() {
   });
 }
 
-export type DmMessageWithLikes = DmMessage & { likeCount: number; likedByMe: boolean };
+/** Trimmed to just what a message bubble needs to render — the review
+ * screen re-fetches the full row (including `payload`) by id itself once
+ * tapped, so this join doesn't need to carry the whole snapshot. */
+export type DmMessageWorkoutShare = { id: string; share_type: WorkoutShareType; title: string; status: WorkoutShareStatus };
+
+export type DmMessageWithLikes = DmMessage & {
+  likeCount: number;
+  likedByMe: boolean;
+  workout_shares: DmMessageWorkoutShare | null;
+};
 
 async function fetchMessages(conversationId: string, userId: string): Promise<DmMessageWithLikes[]> {
   const { data, error } = await supabase
     .from('dm_messages')
-    .select('*, dm_message_likes ( user_id )')
+    .select('*, dm_message_likes ( user_id ), workout_shares ( id, share_type, title, status )')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true });
   if (error) throw error;
 
-  const rows = data as unknown as Array<DmMessage & { dm_message_likes: Array<{ user_id: string }> }>;
+  const rows = data as unknown as Array<
+    DmMessage & { dm_message_likes: Array<{ user_id: string }>; workout_shares: DmMessageWorkoutShare | null }
+  >;
   return rows.map(row => ({
     ...row,
     likeCount: row.dm_message_likes.length,
     likedByMe: row.dm_message_likes.some(l => l.user_id === userId),
+    workout_shares: row.workout_shares,
   }));
 }
 
@@ -206,6 +225,55 @@ export function useSendMessage() {
       queryClient.invalidateQueries({ queryKey: ['dmMessages', params.conversationId] });
       invalidateDmConversationQueries(queryClient, params.senderId);
     },
+  });
+}
+
+/** Unsend — sender-only (enforced by the dm_messages_delete_own RLS
+ * policy), a real delete rather than a tombstone, mirroring this app's only
+ * other message-like delete (post_comments). Removing the current last
+ * message is recomputed server-side by the dm_untouch_conversation trigger,
+ * so the inbox list still needs invalidating here same as useSendMessage. */
+export function useDeleteMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { messageId: string; conversationId: string; userId: string; photoPath?: string | null }) => {
+      if (params.photoPath) {
+        await supabase.storage.from('dm-photos').remove([params.photoPath]).catch(() => undefined);
+      }
+      const { error } = await supabase.from('dm_messages').delete().eq('id', params.messageId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, params) => {
+      queryClient.invalidateQueries({ queryKey: ['dmMessages', params.conversationId] });
+      invalidateDmConversationQueries(queryClient, params.userId);
+    },
+  });
+}
+
+/** "Delete conversation" — removes it from just the caller's own inbox
+ * (hidden_for_requester/hidden_for_recipient) rather than deleting real
+ * data, via the set_dm_conversation_hidden() RPC (not a plain `.update()` —
+ * dm_conversations has no RLS policy broad enough to let a client flip
+ * these columns directly; see 0056_dm_delete.sql). Resurfaces automatically
+ * the next time either side sends a message, so there's no "restore"
+ * mutation to pair with this one. */
+export function useDeleteConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { conversationId: string; userId: string }) => {
+      const client = supabase as unknown as {
+        rpc: (
+          fn: 'set_dm_conversation_hidden',
+          args: { p_conversation_id: string; p_hidden: boolean },
+        ) => Promise<{ error: { message: string } | null }>;
+      };
+      const { error } = await client.rpc('set_dm_conversation_hidden', {
+        p_conversation_id: params.conversationId,
+        p_hidden: true,
+      });
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: (_data, params) => invalidateDmConversationQueries(queryClient, params.userId),
   });
 }
 
@@ -270,11 +338,35 @@ export function useConversationRealtime(conversationId: string | undefined) {
         { event: 'INSERT', schema: 'public', table: 'dm_messages', filter: `conversation_id=eq.${conversationId}` },
         payload => {
           const message = payload.new as DmMessage;
+          // A shared-workout message needs its workout_shares join (title,
+          // share_type, status) to render — postgres_changes payloads carry
+          // the raw row only, no joins, so it can't be appended optimistically
+          // like a plain text/photo message. Falls back to a refetch instead.
+          if (message.workout_share_id != null) {
+            queryClient.invalidateQueries({ queryKey: ['dmMessages', conversationId] });
+            return;
+          }
           queryClient.setQueryData<DmMessageWithLikes[]>(['dmMessages', conversationId], old => {
             if (!old) return old;
             if (old.some(m => m.id === message.id)) return old;
-            return [...old, { ...message, likeCount: 0, likedByMe: false }];
+            return [...old, { ...message, likeCount: 0, likedByMe: false, workout_shares: null }];
           });
+        },
+      )
+      .on(
+        // Lets the other participant see an unsent message disappear live.
+        // Needs dm_messages' replica identity set to FULL (0056_dm_delete.sql)
+        // — with the default (primary-key-only) identity, the old-row image
+        // on a DELETE wouldn't include conversation_id, and this filter would
+        // never match.
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'dm_messages', filter: `conversation_id=eq.${conversationId}` },
+        payload => {
+          const deletedId = (payload.old as Partial<DmMessage>).id;
+          if (!deletedId) return;
+          queryClient.setQueryData<DmMessageWithLikes[]>(['dmMessages', conversationId], old =>
+            old ? old.filter(m => m.id !== deletedId) : old,
+          );
         },
       )
       .subscribe();

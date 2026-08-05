@@ -62,7 +62,33 @@ jest.mock('../../../services/api/queries/workoutLogs', () => ({
   useWorkoutLogsInRange: (...args: unknown[]) => mockUseWorkoutLogsInRange(...args),
 }));
 
-const thisWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+const mockUseDayOverrides = jest.fn();
+const mockSetDayOverrideMutate = jest.fn();
+
+jest.mock('../../../services/api/queries/dayOverrides', () => {
+  const actual = jest.requireActual('../../../services/api/queries/dayOverrides');
+  return {
+    ...actual,
+    useDayOverrides: (...args: unknown[]) => mockUseDayOverrides(...args),
+    useSetDayOverride: () => ({ mutate: mockSetDayOverrideMutate, isPending: false }),
+  };
+});
+
+const mockFetchWeeklyPlanSnapshot = jest.fn();
+
+jest.mock('../../../services/api/queries/workoutShares', () => ({
+  fetchWeeklyPlanSnapshot: (...args: unknown[]) => mockFetchWeeklyPlanSnapshot(...args),
+}));
+
+// Frozen to a Wednesday so "this week" has a fixed, deterministic split
+// between past (Sun/Mon/Tue), today (Wed), and future (Thu-Sat) days,
+// regardless of which real-world day the suite happens to run on — the
+// past-day "mark as rest/missed" behavior below is conditioned on exactly
+// that split.
+const FAKE_TODAY = new Date(2026, 0, 14, 12, 0, 0); // Wednesday, Jan 14 2026
+jest.useFakeTimers().setSystemTime(FAKE_TODAY);
+
+const thisWeekStart = startOfWeek(FAKE_TODAY, { weekStartsOn: 0 });
 const thisWeekDate = (dayOfWeek: number) => addDays(thisWeekStart, dayOfWeek);
 
 beforeEach(() => {
@@ -70,11 +96,16 @@ beforeEach(() => {
   mockUseWeeklySchedule.mockReturnValue({ data: [], isLoading: false, refetch: jest.fn() });
   mockUseWorkoutLogsInRange.mockReturnValue({ data: [], refetch: jest.fn() });
   mockUseScheduledWorkouts.mockReturnValue({ data: [], isLoading: false, refetch: jest.fn() });
+  mockUseDayOverrides.mockReturnValue({ data: [], isLoading: false, refetch: jest.fn() });
   // Fresh, never-generated-a-program user by default — matches most
-  // existing scenarios here (no program set up yet) and keeps the Premium
+  // existing scenarios here (no program set up yet) and keeps the Pro
   // gate a no-op unless a test explicitly opts into it.
   mockUseHasEverGeneratedProgram.mockReturnValue({ data: false });
   mockUseProfile.mockReturnValue({ data: { is_premium: false } });
+});
+
+afterAll(() => {
+  jest.useRealTimers();
 });
 
 describe('CalendarScreen', () => {
@@ -97,7 +128,7 @@ describe('CalendarScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Library', undefined);
   });
 
-  it('sends a free user who has already generated a program to the paywall instead of the Ask Coach sheet', async () => {
+  it('sends a free user who has already generated a program to the paywall instead of the Ask Arnold sheet', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
     mockUseHasEverGeneratedProgram.mockReturnValue({ data: true });
 
@@ -108,7 +139,7 @@ describe('CalendarScreen', () => {
     expect(queryByText('How many days a week do you want to train?')).toBeNull();
   });
 
-  it('still lets a Premium user regenerate freely', async () => {
+  it('still lets a Pro user regenerate freely', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
     mockUseHasEverGeneratedProgram.mockReturnValue({ data: true });
     mockUseProfile.mockReturnValue({ data: { is_premium: true } });
@@ -116,11 +147,11 @@ describe('CalendarScreen', () => {
     const { getByLabelText, getByText } = await render(<CalendarScreen />);
     await fireEvent.press(getByLabelText('Program'));
 
-    expect(getByText('Ask Coach to build you a custom program')).toBeTruthy();
+    expect(getByText('Ask Arnold to build you a custom program')).toBeTruthy();
     expect(mockNavigate).not.toHaveBeenCalledWith('Paywall', expect.anything());
   });
 
-  it('opens the Ask Coach sheet from the Program segment when there is no active program', async () => {
+  it('opens the Ask Arnold sheet from the Program segment when there is no active program', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
 
     const { getByLabelText, getByText } = await render(<CalendarScreen />);
@@ -232,6 +263,101 @@ describe('CalendarScreen', () => {
     expect(queryByText('Assign a Workout')).toBeNull();
   });
 
+  it('still starts a session on tap for a cardio day later this week (not past yet)', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+    mockUseWeeklySchedule.mockReturnValue({
+      data: [{ id: 'ws-1', day_of_week: 5, workout_template_id: null, day_type: 'cardio' }],
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    const { getByText, queryByText } = await render(<CalendarScreen />);
+    await waitFor(() => expect(getByText('Friday')).toBeTruthy());
+
+    await fireEvent.press(getByText('Friday'));
+    expect(mockNavigate).toHaveBeenCalledWith('MainTabs', {
+      screen: 'LogTab',
+      params: { screen: 'LogCardio', params: { date: format(thisWeekDate(5), 'yyyy-MM-dd') } },
+    });
+    expect(queryByText('This day has passed')).toBeNull();
+  });
+
+  it('offers Mark as Rest / Mark as Missed instead of starting the workout for a cardio day that has already passed', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+    mockUseWeeklySchedule.mockReturnValue({
+      data: [{ id: 'ws-1', day_of_week: 0, workout_template_id: null, day_type: 'cardio' }],
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    const { getByText, queryByText } = await render(<CalendarScreen />);
+    await waitFor(() => expect(getByText('Sunday')).toBeTruthy());
+    expect(getByText('Cardio Day')).toBeTruthy();
+
+    await fireEvent.press(getByText('Sunday'));
+    expect(getByText('Mark as Rest')).toBeTruthy();
+    expect(getByText('Mark as Missed')).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalledWith('MainTabs', expect.anything());
+
+    await fireEvent.press(getByText('Mark as Missed'));
+    expect(mockSetDayOverrideMutate).toHaveBeenCalledWith({
+      userId: 'user-1',
+      date: format(thisWeekDate(0), 'yyyy-MM-dd'),
+      status: 'missed',
+    });
+    expect(queryByText('Mark as Rest')).toBeNull();
+  });
+
+  it('lets a past training day be marked as rest instead of retroactively assigning a different workout', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+    mockUseWeeklySchedule.mockReturnValue({
+      data: [
+        {
+          id: 'ws-1',
+          day_of_week: 1,
+          workout_template_id: 'template-1',
+          workout_templates: { id: 'template-1', name: 'Leg Day', workout_template_exercises: [{ order_index: 0 }] },
+        },
+      ],
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    const { getByText } = await render(<CalendarScreen />);
+    await waitFor(() => expect(getByText('Monday')).toBeTruthy());
+
+    await fireEvent.press(getByText('Monday'));
+    expect(getByText('Mark as Rest')).toBeTruthy();
+    await fireEvent.press(getByText('Mark as Rest'));
+
+    expect(mockSetDayOverrideMutate).toHaveBeenCalledWith({
+      userId: 'user-1',
+      date: format(thisWeekDate(1), 'yyyy-MM-dd'),
+      status: 'rest',
+    });
+    expect(mockNavigate).not.toHaveBeenCalledWith('TrainingDayDetail', expect.anything());
+  });
+
+  it('shows a day already marked missed as "Missed" with no workout to start', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+    mockUseWeeklySchedule.mockReturnValue({
+      data: [{ id: 'ws-1', day_of_week: 0, workout_template_id: null, day_type: 'cardio' }],
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    mockUseDayOverrides.mockReturnValue({
+      data: [{ id: 'do-1', user_id: 'user-1', date: format(thisWeekDate(0), 'yyyy-MM-dd'), status: 'missed', created_at: '' }],
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    const { getByText } = await render(<CalendarScreen />);
+    await waitFor(() => expect(getByText('Missed')).toBeTruthy());
+
+    await fireEvent.press(getByText('Sunday'));
+    expect(getByText('Mark as Rest')).toBeTruthy();
+  });
+
   it('shows a day as Done and opens its log detail on tap, once this week\'s workout for that day is logged', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
     mockUseWeeklySchedule.mockReturnValue({
@@ -338,13 +464,13 @@ describe('CalendarScreen', () => {
     expect(queryByText(format(withinThisWeek, 'EEEE, MMM d'))).toBeNull();
   });
 
-  it('shows a secondary Ask Coach link when there is no active program', async () => {
+  it('shows a secondary Ask Arnold link when there is no active program', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
 
     const { getByText } = await render(<CalendarScreen />);
-    await waitFor(() => expect(getByText('Ask Coach to build you a custom program')).toBeTruthy());
+    await waitFor(() => expect(getByText('Ask Arnold to build you a custom program')).toBeTruthy());
 
-    await fireEvent.press(getByText('Ask Coach to build you a custom program'));
+    await fireEvent.press(getByText('Ask Arnold to build you a custom program'));
     expect(getByText('Build a Custom Program')).toBeTruthy();
   });
 
@@ -352,7 +478,7 @@ describe('CalendarScreen', () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
 
     const { getByText, queryByText, getByPlaceholderText } = await render(<CalendarScreen />);
-    await fireEvent.press(getByText('Ask Coach to build you a custom program'));
+    await fireEvent.press(getByText('Ask Arnold to build you a custom program'));
 
     expect(getByText('How many days a week do you want to train?')).toBeTruthy();
     // The rest of the sheet doesn't appear until both questions are answered.
@@ -380,11 +506,11 @@ describe('CalendarScreen', () => {
     });
   });
 
-  it('lets the athlete submit the Ask Coach sheet with the goal/emphasis fields left blank — only days/weeks are required', async () => {
+  it('lets the athlete submit the Ask Arnold sheet with the goal/emphasis fields left blank — only days/weeks are required', async () => {
     mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
 
     const { getByText } = await render(<CalendarScreen />);
-    await fireEvent.press(getByText('Ask Coach to build you a custom program'));
+    await fireEvent.press(getByText('Ask Arnold to build you a custom program'));
     await fireEvent.press(getByText('3 days'));
     await fireEvent.press(getByText('4 weeks'));
     await fireEvent.press(getByText('Build My Program'));
@@ -397,7 +523,7 @@ describe('CalendarScreen', () => {
     });
   });
 
-  it('shows the program summary card (linking into the full Program view) instead of the Ask Coach link once a program exists', async () => {
+  it('shows the program summary card (linking into the full Program view) instead of the Ask Arnold link once a program exists', async () => {
     mockUseActiveProgramTree.mockReturnValue({
       data: {
         id: 'program-1',
@@ -411,9 +537,48 @@ describe('CalendarScreen', () => {
 
     const { getByText, queryByText } = await render(<CalendarScreen />);
     await waitFor(() => expect(getByText('Strength Block')).toBeTruthy());
-    expect(queryByText('Ask Coach to build you a custom program')).toBeNull();
+    expect(queryByText('Ask Arnold to build you a custom program')).toBeNull();
 
     await fireEvent.press(getByText('Strength Block'));
     expect(mockNavigate).toHaveBeenCalledWith('ProgramDetail', { programId: 'program-1' });
+  });
+
+  it('hides Share my week when there is nothing set up yet', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+
+    const { getByText, queryByLabelText } = await render(<CalendarScreen />);
+    await waitFor(() => expect(getByText('Training')).toBeTruthy());
+    expect(queryByLabelText('Share my week')).toBeNull();
+  });
+
+  it('builds and shares a weekly-plan snapshot from Share my week', async () => {
+    mockUseActiveProgramTree.mockReturnValue({ data: null, isLoading: false });
+    mockUseWeeklySchedule.mockReturnValue({
+      data: [
+        {
+          id: 'ws-1',
+          day_of_week: 3,
+          workout_template_id: 'template-1',
+          workout_templates: { id: 'template-1', name: 'Ultimate Core Day', workout_template_exercises: [{ order_index: 0 }] },
+        },
+      ],
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+    const snapshot = { days: [] };
+    mockFetchWeeklyPlanSnapshot.mockResolvedValue(snapshot);
+
+    const { getByLabelText } = await render(<CalendarScreen />);
+    await waitFor(() => expect(getByLabelText('Share my week')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Share my week'));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('ShareWorkout', {
+        shareType: 'weekly_plan',
+        title: 'My Training Week',
+        payload: snapshot,
+      }),
+    );
   });
 });

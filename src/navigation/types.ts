@@ -1,5 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { WorkoutVariantType } from '../types/database';
+import type { SingleWorkoutPayload, WeeklyPlanPayload } from '../services/api/queries/workoutShares';
 
 // ---- Auth ----
 export type AuthStackParamList = {
@@ -32,6 +33,7 @@ export type TodayStackParamList = {
   DayDetail: { programDayId: string; date?: string };
   ExerciseDetail: { exerciseId: string };
   TrainingDayDetail: { weeklyScheduleId: string; workoutTemplateId: string; dayOfWeek: number };
+  LogFood: undefined;
 };
 
 // ---- Programs tab ----
@@ -54,6 +56,14 @@ export type ProgramsStackParamList = {
   AssignCardioDay: { initialDayOfWeek?: number } | undefined;
   TrainingDayDetail: { weeklyScheduleId: string; workoutTemplateId: string; dayOfWeek: number };
   WorkoutLogDetail: { workoutLogIds: string[]; title?: string | null; dateLabel?: string };
+  /** Recipient picker for sending a workout/weekly-plan share — reached from
+   * a workout screen's "Share this workout" action or Calendar's "Share my
+   * week." Carries the already-built snapshot directly (not an id): nothing
+   * exists in the DB yet at this point, the data is already in memory on
+   * the sender's device. */
+  ShareWorkout:
+    | { shareType: 'single_workout'; title: string; payload: SingleWorkoutPayload }
+    | { shareType: 'weekly_plan'; title: string; payload: WeeklyPlanPayload };
 };
 
 // ---- Log tab ----
@@ -108,12 +118,20 @@ export type CommunityStackParamList = {
   FriendsList: { userId: string; title: 'Friends' };
   Messages: undefined;
   Conversation: { conversationId: string };
+  /** Reached by tapping a shared-workout card inside Conversation — fetches
+   * by id (the share already exists in the DB by this point), unlike
+   * ShareWorkout above which carries data that doesn't exist yet. */
+  SharedWorkoutReview: { shareId: string };
   AtMyGym: undefined;
+  /** Reposition (and optionally upload) the signed-in athlete's own profile
+   * photo. `pickedUri`/`contentType` are only present when reached right
+   * after picking a brand new photo (not yet uploaded) — omitted when
+   * reframing the photo already saved on the profile. */
+  AvatarPosition: { pickedUri?: string; contentType?: string } | undefined;
 };
 
-// ---- Profile (pushed from Today header, not a tab) ----
+// ---- Profile (pushed from the header menu, not a tab) ----
 export type ProfileStackParamList = {
-  Profile: undefined;
   Settings: undefined;
   NotificationSettings: undefined;
   Account: undefined;
@@ -125,6 +143,7 @@ export type ProfileStackParamList = {
    * state from the database on focus; these params only drive the one-time
    * confirmation toast. */
   Integrations: { status?: 'success' | 'error'; message?: string } | undefined;
+  Equipment: undefined;
   PostDetail: { postId: string };
   FriendsList: { userId: string; title: 'Friends' };
 };

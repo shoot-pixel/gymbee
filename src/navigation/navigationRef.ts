@@ -52,6 +52,13 @@ export function navigateToPushDestination(payload: PushNotificationPayload): voi
         params: { screen: 'ProgramDetail', params: { programId: params.programId as string } },
       });
       return;
+    case 'PRDetail':
+      if (!params.exerciseId) return;
+      navigationRef.navigate('MainTabs', {
+        screen: 'ProgressTab',
+        params: { screen: 'PRDetail', params: { exerciseId: params.exerciseId as string } },
+      });
+      return;
     default:
       // Unknown/future screen name — nothing to navigate to yet; the app
       // still opens normally, just without the deep link.

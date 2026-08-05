@@ -4,8 +4,9 @@ import { AppShell } from '../AppShell';
 
 // MainTabs itself (every tab stack, auth store, profile/notification
 // queries) isn't the point of this test — only that AppShell picks the
-// right FAB for whichever tab MainTabs reports as active. Mocked down to
-// just exposing the onActiveTabChange callback it would normally call.
+// right FAB/handle for whichever tab MainTabs reports as active. Mocked
+// down to just exposing the onActiveTabChange callback it would normally
+// call.
 let capturedOnActiveTabChange: ((tab: string, focusedScreenName?: string) => void) | undefined;
 
 jest.mock('../MainTabs', () => ({
@@ -15,10 +16,10 @@ jest.mock('../MainTabs', () => ({
   },
 }));
 
-jest.mock('../ChatFab', () => ({
-  ChatFab: () => {
+jest.mock('../ChatDragHandle', () => ({
+  ChatDragHandle: () => {
     const { Text } = jest.requireActual('react-native');
-    return <Text>ChatFab</Text>;
+    return <Text>ChatDragHandle</Text>;
   },
 }));
 jest.mock('../PostFab', () => ({
@@ -29,13 +30,13 @@ jest.mock('../PostFab', () => ({
 }));
 
 describe('AppShell', () => {
-  it('shows the chat FAB by default and on every tab except Social', async () => {
+  it('shows the chat drag handle by default and on every tab except Social', async () => {
     const { queryByText } = await render(<AppShell />);
-    expect(queryByText('ChatFab')).toBeTruthy();
+    expect(queryByText('ChatDragHandle')).toBeTruthy();
     expect(queryByText('PostFab')).toBeNull();
 
     await act(async () => capturedOnActiveTabChange?.('ProgramsTab'));
-    expect(queryByText('ChatFab')).toBeTruthy();
+    expect(queryByText('ChatDragHandle')).toBeTruthy();
     expect(queryByText('PostFab')).toBeNull();
   });
 
@@ -44,10 +45,10 @@ describe('AppShell', () => {
 
     await act(async () => capturedOnActiveTabChange?.('CommunityTab', 'Posts'));
     expect(queryByText('PostFab')).toBeTruthy();
-    expect(queryByText('ChatFab')).toBeNull();
+    expect(queryByText('ChatDragHandle')).toBeNull();
 
     await act(async () => capturedOnActiveTabChange?.('TodayTab'));
-    expect(queryByText('ChatFab')).toBeTruthy();
+    expect(queryByText('ChatDragHandle')).toBeTruthy();
     expect(queryByText('PostFab')).toBeNull();
   });
 
@@ -56,18 +57,18 @@ describe('AppShell', () => {
 
     await act(async () => capturedOnActiveTabChange?.('CommunityTab', 'Conversation'));
     expect(queryByText('PostFab')).toBeNull();
-    expect(queryByText('ChatFab')).toBeNull();
+    expect(queryByText('ChatDragHandle')).toBeNull();
 
     await act(async () => capturedOnActiveTabChange?.('CommunityTab', 'Posts'));
     expect(queryByText('PostFab')).toBeTruthy();
-    expect(queryByText('ChatFab')).toBeNull();
+    expect(queryByText('ChatDragHandle')).toBeNull();
   });
 
-  it('falls back to the chat FAB on other Social-tab screens (e.g. a friend profile)', async () => {
+  it('never shows the chat drag handle on the Social tab — other Social-tab screens (e.g. a friend profile) get no FAB at all', async () => {
     const { queryByText } = await render(<AppShell />);
 
     await act(async () => capturedOnActiveTabChange?.('CommunityTab', 'FriendProfile'));
-    expect(queryByText('ChatFab')).toBeTruthy();
+    expect(queryByText('ChatDragHandle')).toBeNull();
     expect(queryByText('PostFab')).toBeNull();
   });
 });

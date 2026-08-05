@@ -104,7 +104,7 @@ export function ProgressTimelineScreen() {
   const listItems = useMemo(() => buildListItems(entries), [entries]);
 
   // Safety net behind the dashboard's own gate on the entry point — this
-  // screen must never show the full timeline to a non-Premium account
+  // screen must never show the full timeline to a non-Pro account
   // regardless of how it was reached.
   if (!profile?.is_premium) {
     return (
@@ -113,7 +113,7 @@ export function ProgressTimelineScreen() {
         <View style={{ padding: theme.spacing.lg }}>
           <LockedFeatureCard
             title="Progress Timeline"
-            description="Your full training and PR history in one place — part of SetSocial Premium."
+            description="Your full training and PR history in one place — part of SetSocial Pro."
             onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'analytics' })}
           />
         </View>

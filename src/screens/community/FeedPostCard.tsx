@@ -48,7 +48,7 @@ export function FeedPostCard({
             accessibilityLabel={`View ${post.displayName ?? 'athlete'}'s profile`}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}
           >
-            <Avatar uri={post.avatarUrl} size={30} />
+            <Avatar uri={post.avatarUrl} focalX={post.avatarFocalX} focalY={post.avatarFocalY} size={30} />
             <Text variant="body" style={{ flex: 1, fontWeight: '700' }} numberOfLines={1}>
               {post.displayName ?? 'Athlete'}
             </Text>

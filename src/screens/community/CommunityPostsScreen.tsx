@@ -17,7 +17,7 @@ import {
   Avatar,
   Badge,
   ReportBlockSheet,
-  PremiumBadge,
+  ProBadge,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -208,15 +208,24 @@ export function CommunityPostsScreen() {
               accessibilityLabel="Post a photo"
               onPress={() => navigation.navigate('UploadPhotoPost', { mode: 'progress' })}
             />
-            <Pressable
-              onPress={() => rootNavigation.navigate('Profile', { screen: 'Profile' })}
+            <IconButton
+              name="menu"
+              variant="ghost"
               accessibilityLabel="Settings"
-            >
-              <Avatar uri={profile?.avatar_url} size={40} />
-            </Pressable>
+              onPress={() => rootNavigation.navigate('Profile', { screen: 'Settings' })}
+            />
           </View>
         }
       />
+
+      <View style={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
+        <TextField
+          placeholder="Find athletes by name or @handle"
+          value={search}
+          onChangeText={setSearch}
+          autoCapitalize="none"
+        />
+      </View>
 
       <View
         style={{
@@ -234,17 +243,6 @@ export function CommunityPostsScreen() {
         <HubTile icon="trophy" label="Leaderboard" tint={theme.colors.accent.purple} onPress={() => navigation.navigate('Leaderboard')} />
         <HubTile icon="mapPin" label="At My Gym" tint={theme.colors.accent.teal} onPress={() => navigation.navigate('AtMyGym')} />
         <HubTile icon="user" label="My Profile" tint={theme.colors.accent.primary} dotVisible={hasUnseenActivity} onPress={onOpenOwnProfile} />
-      </View>
-
-      {!search.trim() ? <LiveNowRail workouts={liveWorkouts ?? []} /> : null}
-
-      <View style={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
-        <TextField
-          placeholder="Find athletes by name or @handle"
-          value={search}
-          onChangeText={setSearch}
-          autoCapitalize="none"
-        />
       </View>
 
       {search.trim() ? (
@@ -272,11 +270,11 @@ export function CommunityPostsScreen() {
                   title={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
                       <Text variant="body">{profile.display_name ?? 'Athlete'}</Text>
-                      {profile.is_premium ? <PremiumBadge /> : null}
+                      {profile.is_premium ? <ProBadge /> : null}
                     </View>
                   }
                   subtitle={profile.handle ? `@${profile.handle}` : undefined}
-                  leading={<Avatar uri={profile.avatar_url} size={40} />}
+                  leading={<Avatar uri={profile.avatar_url} focalX={profile.avatar_focal_x} focalY={profile.avatar_focal_y} size={40} />}
                   onPress={() => navigation.navigate('FriendProfile', { userId: profile.id })}
                   trailing={
                     <FriendRequestButton
@@ -339,6 +337,11 @@ export function CommunityPostsScreen() {
             </View>
             <Icon name="chevronRight" size="sm" color={theme.colors.text.tertiary} />
           </Pressable>
+
+          <LiveNowRail
+            workouts={liveWorkouts ?? []}
+            onViewProfile={targetUserId => navigation.navigate('FriendProfile', { userId: targetUserId })}
+          />
 
           <EditorialFeed
             posts={posts ?? []}

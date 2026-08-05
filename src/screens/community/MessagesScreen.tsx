@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,6 +16,7 @@ import {
   SegmentedControl,
   Button,
   IconButton,
+  BottomSheet,
   ReportBlockSheet,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
@@ -24,8 +25,10 @@ import {
   useIncomingDmRequests,
   useOutgoingDmRequests,
   useRespondToConversation,
+  useDeleteConversation,
   type ConversationSummary,
 } from '../../services/api/queries/directMessages';
+import { getErrorMessage } from '../../utils/errors';
 import type { CommunityStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<CommunityStackParamList>;
@@ -37,11 +40,35 @@ export function MessagesScreen() {
   const userId = useAuthStore(state => state.userId);
   const [tab, setTab] = useState<Tab>('messages');
   const [moderatingConversation, setModeratingConversation] = useState<ConversationSummary | null>(null);
+  const [conversationOptionsFor, setConversationOptionsFor] = useState<ConversationSummary | null>(null);
 
   const { data: conversations, isLoading: conversationsLoading, refetch: refetchConversations } = useConversations(userId);
   const { data: incoming, isLoading: incomingLoading, refetch: refetchIncoming } = useIncomingDmRequests(userId);
   const { data: outgoing, refetch: refetchOutgoing } = useOutgoingDmRequests(userId);
   const respond = useRespondToConversation();
+  const deleteConversation = useDeleteConversation();
+
+  const onDeleteConversation = (conversation: ConversationSummary) => {
+    setConversationOptionsFor(null);
+    if (!userId) return;
+    const name = conversation.otherParticipant?.display_name ?? 'they';
+    Alert.alert(
+      'Delete this conversation?',
+      `It'll be removed from your messages, but ${name} will keep their copy — it'll come back if they message you again.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () =>
+            deleteConversation.mutate(
+              { conversationId: conversation.id, userId },
+              { onError: err => Alert.alert('Could not delete conversation', getErrorMessage(err, 'Please try again.')) },
+            ),
+        },
+      ],
+    );
+  };
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -89,13 +116,13 @@ export function MessagesScreen() {
                   key={c.id}
                   title={c.otherParticipant?.display_name ?? 'Athlete'}
                   subtitle={format(new Date(c.last_message_at), 'MMM d, h:mm a')}
-                  leading={<Avatar uri={c.otherParticipant?.avatar_url} size={40} />}
+                  leading={<Avatar uri={c.otherParticipant?.avatar_url} focalX={c.otherParticipant?.avatar_focal_x} focalY={c.otherParticipant?.avatar_focal_y} size={40} />}
                   trailing={
                     <IconButton
                       name="moreVertical"
                       variant="ghost"
                       accessibilityLabel="Conversation options"
-                      onPress={() => setModeratingConversation(c)}
+                      onPress={() => setConversationOptionsFor(c)}
                     />
                   }
                   onPress={() => navigation.navigate('Conversation', { conversationId: c.id })}
@@ -124,7 +151,7 @@ export function MessagesScreen() {
                     <ListRow
                       key={c.id}
                       title={c.otherParticipant?.display_name ?? 'Athlete'}
-                      leading={<Avatar uri={c.otherParticipant?.avatar_url} size={40} />}
+                      leading={<Avatar uri={c.otherParticipant?.avatar_url} focalX={c.otherParticipant?.avatar_focal_x} focalY={c.otherParticipant?.avatar_focal_y} size={40} />}
                       onPress={() => navigation.navigate('Conversation', { conversationId: c.id })}
                       trailing={
                         <View style={{ flexDirection: 'row', gap: theme.spacing.xs }}>
@@ -161,7 +188,7 @@ export function MessagesScreen() {
                       key={c.id}
                       title={c.otherParticipant?.display_name ?? 'Athlete'}
                       subtitle="Pending"
-                      leading={<Avatar uri={c.otherParticipant?.avatar_url} size={40} />}
+                      leading={<Avatar uri={c.otherParticipant?.avatar_url} focalX={c.otherParticipant?.avatar_focal_x} focalY={c.otherParticipant?.avatar_focal_y} size={40} />}
                       style={index > 0 ? { borderTopWidth: 1, borderTopColor: theme.colors.border.subtle } : undefined}
                     />
                   ))}
@@ -171,6 +198,30 @@ export function MessagesScreen() {
           </>
         )}
       </ScrollView>
+
+      <BottomSheet
+        visible={conversationOptionsFor != null}
+        onClose={() => setConversationOptionsFor(null)}
+        title="Conversation Options"
+      >
+        <View>
+          <ListRow
+            title="Delete Conversation"
+            icon="trash"
+            onPress={() => conversationOptionsFor && onDeleteConversation(conversationOptionsFor)}
+          />
+          <ListRow
+            title="Report or Block"
+            icon="flag"
+            onPress={() => {
+              const conversation = conversationOptionsFor;
+              setConversationOptionsFor(null);
+              setModeratingConversation(conversation);
+            }}
+            style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
+          />
+        </View>
+      </BottomSheet>
 
       <ReportBlockSheet
         visible={moderatingConversation != null}

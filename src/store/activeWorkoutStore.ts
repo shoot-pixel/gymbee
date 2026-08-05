@@ -1,6 +1,8 @@
+import { AppState } from 'react-native';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRestTimerPreferenceStore } from './restTimerPreferenceStore';
 
 export type LoggedSet = {
   /** Stable local key, independent of persistence state. */
@@ -110,6 +112,14 @@ type ActiveWorkoutState = {
   source: WorkoutSource | null;
   exercises: ActiveExercise[];
   startedAt: number | null;
+  /** Wall-clock timestamp the current rest period ends at, or null when
+   * none is running — restSecondsRemaining is always recomputed from this
+   * (Date.now() vs. restEndsAt) rather than decremented, the same
+   * timestamp-based approach LoggedSet.timerStartedAt already uses, so a
+   * suspended interval (app backgrounded, or just a slow JS thread) can't
+   * cause it to lose wall-clock time — the very next tick recomputes the
+   * true remaining time instead of continuing from a stale count. */
+  restEndsAt: number | null;
   restSecondsRemaining: number;
   restRunning: boolean;
   /** False until the persisted session (if any) has been read back from
@@ -160,6 +170,7 @@ const initialState = {
   source: null,
   exercises: [],
   startedAt: null,
+  restEndsAt: null,
   restSecondsRemaining: 0,
   restRunning: false,
 } satisfies Partial<ActiveWorkoutState>;
@@ -203,6 +214,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
             sets: buildDraftSets(e),
           })),
           startedAt: Date.now(),
+          restEndsAt: null,
           restSecondsRemaining: 0,
           restRunning: false,
         });
@@ -324,17 +336,32 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
 
       startRestTimer: seconds => {
         clearRestInterval();
-        set({ restSecondsRemaining: seconds, restRunning: seconds > 0 });
-        if (seconds > 0) {
-          restIntervalId = setInterval(() => get().tickRestTimer(), 1000);
+        // Rest timer can be turned off entirely from Settings — guarded
+        // once here rather than at each of the three call sites (auto-start
+        // after a set, an accepted "increase rest" AI recommendation, and
+        // RestTimerBanner's manual presets), so all of them are covered by
+        // one check.
+        if (!useRestTimerPreferenceStore.getState().restTimerEnabled || seconds <= 0) {
+          set({ restEndsAt: null, restSecondsRemaining: 0, restRunning: false });
+          return;
         }
+        set({ restEndsAt: Date.now() + seconds * 1000, restSecondsRemaining: seconds, restRunning: true });
+        restIntervalId = setInterval(() => get().tickRestTimer(), 1000);
       },
 
       tickRestTimer: () => {
-        const remaining = get().restSecondsRemaining - 1;
+        const endsAt = get().restEndsAt;
+        if (endsAt == null) {
+          // Also reached by the AppState foreground listener firing with no
+          // timer actually running — a safe no-op, just tidies up any stray
+          // interval rather than assuming one exists.
+          clearRestInterval();
+          return;
+        }
+        const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
         if (remaining <= 0) {
           clearRestInterval();
-          set({ restSecondsRemaining: 0, restRunning: false });
+          set({ restEndsAt: null, restSecondsRemaining: 0, restRunning: false });
         } else {
           set({ restSecondsRemaining: remaining });
         }
@@ -342,7 +369,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
 
       skipRestTimer: () => {
         clearRestInterval();
-        set({ restSecondsRemaining: 0, restRunning: false });
+        set({ restEndsAt: null, restSecondsRemaining: 0, restRunning: false });
       },
 
       startSetTimer: (exerciseId, setId) =>
@@ -382,12 +409,15 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
     {
       name: 'active-workout-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // Rest-timer state is a live countdown with no persisted end timestamp
-      // to correctly resume against (unlike startedAt, which the elapsed-time
-      // display always recomputes from a fixed timestamp rather than a raw
-      // counter) — restoring a stale mid-countdown value with no interval
-      // left running to tick it down would just freeze the "Resting — 1:23"
-      // banner forever. Left out of persistence entirely so a fresh app
+      // Rest-timer state (including restEndsAt, timestamp-based though it
+      // now is — see its own comment above) stays out of persistence
+      // deliberately: unlike startedAt, which every consumer recomputes
+      // against on its own, a restored restEndsAt would sit un-ticked until
+      // the next startRestTimer call or foreground event, with nothing
+      // actively re-rendering the banner in the meantime after a full app
+      // kill (as opposed to just backgrounding, which the module-level
+      // interval + AppState listener below already handle correctly without
+      // needing persistence at all). Left out entirely so a fresh app
       // process always starts with no rest timer running, matching what
       // startRestTimer/reset already produce by default.
       partialize: state => ({
@@ -402,3 +432,19 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
     },
   ),
 );
+
+// Resyncs the rest-timer display the instant the app returns to the
+// foreground, rather than waiting up to 1s for the next natural tick — RN
+// suspends JS timer callbacks while backgrounded, so without this the
+// countdown would sit visibly frozen for a beat after resuming even though
+// tickRestTimer's own timestamp math is already correct as of the very next
+// call. Module-level (not owned by any component), matching restIntervalId
+// above, so it's active regardless of which screen happens to be mounted —
+// same "belt and suspenders" foreground-resync idea as IntegrationsScreen's
+// own AppState listener, applied globally instead of screen-locally since
+// the active workout can be resting while any tab is focused.
+AppState.addEventListener('change', nextState => {
+  if (nextState === 'active') {
+    useActiveWorkoutStore.getState().tickRestTimer();
+  }
+});

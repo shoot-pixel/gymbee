@@ -81,6 +81,7 @@ export function useWeeklyReviewData(
           stress: row.stress,
           hasPain: row.has_pain,
           painNotes: row.pain_notes,
+          notes: row.notes,
         },
         wearable: null,
         trainingLoad: { acuteVolumeKg: 0, chronicAvgVolumeKg: 0, loadRatio: null, classification: 'unknown' },

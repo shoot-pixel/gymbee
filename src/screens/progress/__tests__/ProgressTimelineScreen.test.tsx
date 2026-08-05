@@ -63,10 +63,10 @@ describe('ProgressTimelineScreen', () => {
 
     const { getByText, queryByText } = await render(<ProgressTimelineScreen />);
 
-    await waitFor(() => expect(getByText('Unlock with Premium')).toBeTruthy());
+    await waitFor(() => expect(getByText('Unlock with Pro')).toBeTruthy());
     expect(queryByText('FEBRUARY 2024')).toBeNull();
 
-    await fireEvent.press(getByText('Unlock with Premium'));
+    await fireEvent.press(getByText('Unlock with Pro'));
     expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'analytics' });
   });
 

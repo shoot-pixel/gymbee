@@ -2,6 +2,7 @@ import { resolveDayPlan, getOneOffBaseline } from '../dayPlan';
 import type { ProgramTree } from '../../services/api/queries/programs';
 import type { WeeklyScheduleEntry } from '../../services/api/queries/weeklySchedule';
 import type { WorkoutLogSummary } from '../../services/api/queries/workoutLogs';
+import type { DayOverride } from '../../services/api/queries/dayOverrides';
 import type { ScheduledWorkoutLike } from '../dayPlan';
 
 // Local-time constructor — avoids the UTC-midnight-parse shift that
@@ -57,6 +58,10 @@ function buildWeeklyEntry(
 
 function buildScheduled(dateStr: string, name = 'Recovery Mobility Flow'): ScheduledWorkoutLike {
   return { id: 'sw-1', name, scheduled_date: dateStr };
+}
+
+function buildOverride(dateStr: string, status: 'rest' | 'missed'): DayOverride {
+  return { id: 'override-1', user_id: 'user-1', date: dateStr, status, created_at: '' };
 }
 
 function buildLog(dateStr: string): WorkoutLogSummary {
@@ -259,6 +264,54 @@ describe('resolveDayPlan', () => {
       workoutLogs: [buildLog(thursdayKey)],
     });
     expect(resolved).toEqual({ kind: 'none' });
+  });
+
+  describe('dayOverrides', () => {
+    it('an override beats a weeklyCardio/programTraining/scheduled plan for the same date', () => {
+      const asRest = resolveDayPlan({
+        date: wednesday,
+        program: buildProgram(wednesday.getDay(), false),
+        weeklySchedule: [buildWeeklyEntry(wednesday.getDay(), 'Pull Day', 'cardio')],
+        scheduledWorkouts: [buildScheduled(wednesdayKey)],
+        workoutLogs: [],
+        dayOverrides: [buildOverride(wednesdayKey, 'rest')],
+      });
+      expect(asRest).toEqual({ kind: 'overrideRest' });
+
+      const asMissed = resolveDayPlan({
+        date: wednesday,
+        program: buildProgram(wednesday.getDay(), false),
+        weeklySchedule: [buildWeeklyEntry(wednesday.getDay())],
+        scheduledWorkouts: [],
+        workoutLogs: [],
+        dayOverrides: [buildOverride(wednesdayKey, 'missed')],
+      });
+      expect(asMissed).toEqual({ kind: 'missed' });
+    });
+
+    it('a completed workout still beats an override for the same date', () => {
+      const resolved = resolveDayPlan({
+        date: wednesday,
+        program: null,
+        weeklySchedule: [buildWeeklyEntry(wednesday.getDay(), 'Pull Day', 'cardio')],
+        scheduledWorkouts: [],
+        workoutLogs: [buildLog(wednesdayKey)],
+        dayOverrides: [buildOverride(wednesdayKey, 'missed')],
+      });
+      expect(resolved.kind).toBe('completed');
+    });
+
+    it('an override on a different date has no effect', () => {
+      const resolved = resolveDayPlan({
+        date: wednesday,
+        program: null,
+        weeklySchedule: [buildWeeklyEntry(wednesday.getDay(), 'Pull Day', 'cardio')],
+        scheduledWorkouts: [],
+        workoutLogs: [],
+        dayOverrides: [buildOverride(thursdayKey, 'rest')],
+      });
+      expect(resolved).toMatchObject({ kind: 'weeklyCardio' });
+    });
   });
 });
 

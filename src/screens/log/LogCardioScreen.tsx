@@ -278,7 +278,7 @@ export function LogCardioScreen() {
             style={{ alignItems: 'center', gap: theme.spacing.xs, paddingVertical: theme.spacing.xl }}
           >
             <Text variant="label" color="secondary">
-              AI COACH ESTIMATE
+              ARNOLD'S ESTIMATE
             </Text>
             <Text variant="display">{estimatedCalories}</Text>
             <Text variant="body" color="secondary">

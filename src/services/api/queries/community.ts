@@ -5,6 +5,8 @@ export type PublicProfile = {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
+  avatar_focal_x: number;
+  avatar_focal_y: number;
   handle: string | null;
   bio: string | null;
   hide_stats_from_friends: boolean;
@@ -508,6 +510,31 @@ export function useLeaderboard(userId: string | null) {
     queryKey: ['leaderboard', userId],
     queryFn: () => fetchLeaderboard(userId as string),
     enabled: userId != null,
+  });
+}
+
+/** friend_consistency_percentile() isn't in the generated
+ * Database['public']['Functions'] type (see nearby_checkins' own comment in
+ * location.ts for why), so this RPC call is typed locally the same way.
+ * Casts `supabase` itself, not an extracted `.rpc` reference, for the same
+ * `this`-binding reason documented there. Returns null when the caller has
+ * no eligible friends to compare against yet — the function itself never
+ * returns a per-friend row, only the caller's own percentile. */
+async function fetchFriendConsistencyPercentile(): Promise<number | null> {
+  const client = supabase as unknown as {
+    rpc: (fn: 'friend_consistency_percentile') => Promise<{ data: number | null; error: { message: string } | null }>;
+  };
+  const { data, error } = await client.rpc('friend_consistency_percentile');
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export function useFriendConsistencyPercentile(userId: string | null) {
+  return useQuery({
+    queryKey: ['friendConsistencyPercentile', userId],
+    queryFn: fetchFriendConsistencyPercentile,
+    enabled: userId != null,
+    staleTime: 60_000,
   });
 }
 

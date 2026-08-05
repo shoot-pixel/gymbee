@@ -274,7 +274,7 @@ describe('ActiveExerciseScreen — live set recommendations', () => {
     expect(queryByText(RECOMMENDATION.reason)).toBeNull();
   });
 
-  it('never shows a recommendation for a non-Premium account — Adaptive Coaching Intelligence is gated', async () => {
+  it('never shows a recommendation for a non-Pro account — Adaptive Coaching Intelligence is gated', async () => {
     const { useProfile } = jest.requireMock('../../../services/api/queries/profiles');
     (useProfile as jest.Mock).mockReturnValueOnce({
       data: { id: 'user-1', equipment_access: ['barbell', 'dumbbell'], is_premium: false },

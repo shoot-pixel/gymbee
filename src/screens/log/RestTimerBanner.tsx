@@ -3,6 +3,7 @@ import { View, Pressable } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Numeral, Icon } from '../../components/core';
 import { useActiveWorkoutStore } from '../../store/activeWorkoutStore';
+import { useRestTimerPreferenceStore } from '../../store/restTimerPreferenceStore';
 
 const REST_PRESETS_SECONDS = [60, 90, 120];
 
@@ -14,10 +15,17 @@ const REST_PRESETS_SECONDS = [60, 90, 120];
  */
 export function RestTimerBanner() {
   const theme = useTheme();
+  const restTimerEnabled = useRestTimerPreferenceStore(state => state.restTimerEnabled);
   const restRunning = useActiveWorkoutStore(state => state.restRunning);
   const restSecondsRemaining = useActiveWorkoutStore(state => state.restSecondsRemaining);
   const startRestTimer = useActiveWorkoutStore(state => state.startRestTimer);
   const skipRestTimer = useActiveWorkoutStore(state => state.skipRestTimer);
+
+  // activeWorkoutStore's own startRestTimer already no-ops the countdown
+  // itself when this preference is off (see its own comment) — this guard
+  // is what stops the manual preset buttons below from rendering and
+  // silently doing nothing when tapped.
+  if (!restTimerEnabled) return null;
 
   if (!restRunning) {
     return (

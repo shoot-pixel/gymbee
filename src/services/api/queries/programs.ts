@@ -60,7 +60,7 @@ export function useActiveProgramTree(userId: string | null) {
 
 /** Existence check across every program the athlete has ever generated —
  * any status, not just 'active' — used to gate AI program (re)generation
- * behind Premium: the first one (regardless of whether it happened during
+ * behind Pro: the first one (regardless of whether it happened during
  * onboarding or later from the Programs tab) is free, every one after that
  * isn't. Onboarding's own BuildFirstWeekScreen never inserts into
  * `programs` at all (it's a deterministic, non-AI first-week seed via

@@ -65,13 +65,23 @@ export function deleteAccount(): Promise<void> {
  * 'yyyy-MM-dd')) — the edge function runs in UTC with no idea what timezone
  * the athlete is in, and needs a trusted "today" to resolve relative dates
  * ("tomorrow", "this Friday") onto the same scheduled_date convention the
- * rest of the app already uses. */
+ * rest of the app already uses.
+ *
+ * `photoPath` is an already-uploaded `chat-photos` storage path (see
+ * useUploadFoodPhoto) — `message` may be an empty string when a photo
+ * carries no caption, but at least one of the two is required. */
 export function sendChatMessage(
   conversationId: string,
   message: string,
   today: string,
+  photoPath?: string,
 ): Promise<{ message_id: string }> {
-  return invokeFunction('chat-coach', { conversation_id: conversationId, message, today });
+  return invokeFunction('chat-coach', {
+    conversation_id: conversationId,
+    message,
+    today,
+    photo_path: photoPath,
+  });
 }
 
 /** Mints a one-time OAuth state token server-side and returns WHOOP's
@@ -132,6 +142,24 @@ export type SpotifyPlayerResult = {
  * never sees the Spotify access token itself. */
 export function spotifyPlayerAction(action: SpotifyPlayerAction): Promise<SpotifyPlayerResult> {
   return invokeFunction('spotify-player', { action });
+}
+
+export type ParsedCheckin = {
+  sleepHours: number | null;
+  sleepQuality: number | null;
+  soreness: number | null;
+  stress: number | null;
+  hasPain: boolean;
+  painNotes: string | null;
+};
+
+/** Parses a free-text readiness description into the same fields the manual
+ * PreWorkoutReviewScreen check-in form collects — see
+ * supabase/functions/parse-checkin. Never writes to readiness_checkins
+ * itself; the caller always shows the result back as an editable form before
+ * submitting via useSubmitReadinessCheckin. */
+export function parseCheckinText(text: string): Promise<ParsedCheckin> {
+  return invokeFunction('parse-checkin', { text });
 }
 
 export type SpotifyPlaylistSummary = {

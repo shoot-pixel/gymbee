@@ -32,6 +32,12 @@ jest.mock('../../../navigation/startWorkoutFlow', () => ({
   navigateToStartCardio: (...args: unknown[]) => mockNavigateToStartCardio(...args),
 }));
 
+const mockBuildWorkoutSnapshot = jest.fn();
+
+jest.mock('../../../services/api/queries/workoutShares', () => ({
+  buildWorkoutSnapshot: (...args: unknown[]) => mockBuildWorkoutSnapshot(...args),
+}));
+
 const mockRemoveProgramExerciseMutate = jest.fn();
 const mockSetDayTypeMutate = jest.fn();
 const mockUseProgramDay = jest.fn();
@@ -171,5 +177,36 @@ describe('DayDetailScreen', () => {
 
     await fireEvent.press(getByText('Start Cardio'));
     expect(mockNavigateToStartCardio).toHaveBeenCalledWith(expect.anything(), { programDayId: 'day-1' });
+  });
+
+  it('shares this training day and navigates to ShareWorkout', async () => {
+    const snapshot = { name: 'Push Day', notes: null, estimatedDurationMinutes: null, exercises: [] };
+    mockBuildWorkoutSnapshot.mockResolvedValue(snapshot);
+
+    const { getByLabelText, getByText } = await render(<DayDetailScreen />);
+    await waitFor(() => expect(getByText('Bench Press')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Share this workout'));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('MainTabs', {
+        screen: 'ProgramsTab',
+        params: {
+          screen: 'ShareWorkout',
+          params: { shareType: 'single_workout', title: 'Push Day', payload: { workout: snapshot } },
+        },
+      }),
+    );
+    expect(mockBuildWorkoutSnapshot).toHaveBeenCalledWith(
+      { name: 'Push Day', notes: null, estimatedDurationMinutes: null },
+      TRAINING_DAY.program_exercises,
+    );
+  });
+
+  it('has no Share button on a rest or cardio day (nothing to share)', async () => {
+    mockUseProgramDay.mockReturnValue({ data: REST_DAY, isLoading: false });
+    const { queryByLabelText, getByText } = await render(<DayDetailScreen />);
+    await waitFor(() => expect(getByText('Add Workout')).toBeTruthy());
+    expect(queryByLabelText('Share this workout')).toBeNull();
   });
 });

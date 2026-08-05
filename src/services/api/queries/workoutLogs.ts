@@ -341,6 +341,16 @@ export function useCompleteWorkoutLog() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workoutLogs'] });
       queryClient.invalidateQueries({ queryKey: ['loggedSets'] });
+      // Own device's "Live Now" read (a friend viewing themselves in the
+      // rail isn't a real scenario, but this keeps the cache honest either
+      // way) — friends on other devices pick up the completion via
+      // liveFriendWorkouts' own 30s poll instead, since invalidating a
+      // local cache key can't reach another device.
+      queryClient.invalidateQueries({ queryKey: ['liveFriendWorkouts'] });
+      // leaderboard_stats aggregates off workout_logs.completed_at — without
+      // this, your own volume/workout count on the Leaderboard stays frozen
+      // at whatever it was on last screen mount until the 30s staleTime lapses.
+      queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
     },
   });
 }
@@ -359,6 +369,8 @@ export function useDeleteWorkoutLog() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workoutLogs'] });
       queryClient.invalidateQueries({ queryKey: ['loggedSets'] });
+      queryClient.invalidateQueries({ queryKey: ['liveFriendWorkouts'] });
+      queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
     },
   });
 }

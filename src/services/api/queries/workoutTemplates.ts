@@ -250,31 +250,43 @@ export function useAddTemplateExercise() {
   });
 }
 
+/** Plain function form of the mutation below — exported so
+ * templateProgression.ts's post-workout sync can call it directly from
+ * inside its own mutationFn (hooks can't be invoked outside a React
+ * render), same "extract plain function, hook becomes thin wrapper"
+ * pattern used for weeklySchedule.ts's assignWeeklySchedule/etc. Only a
+ * partial `Update` patch is ever sent — Supabase's JSON serialization drops
+ * `undefined`-valued keys, so a caller only touching e.g. target_sets
+ * leaves every other column alone. */
+export async function updateTemplateExercise(
+  params: { id: string } & Database['public']['Tables']['workout_template_exercises']['Update'],
+): Promise<TemplateExerciseRow> {
+  const patch: Database['public']['Tables']['workout_template_exercises']['Update'] = {
+    order_index: params.order_index,
+    target_sets: params.target_sets,
+    target_reps_min: params.target_reps_min,
+    target_reps_max: params.target_reps_max,
+    target_load_kg: params.target_load_kg,
+    target_rpe: params.target_rpe,
+    rest_seconds: params.rest_seconds,
+    notes: params.notes,
+  };
+  const { data, error } = await supabase
+    .from('workout_template_exercises')
+    .update(patch)
+    .eq('id', params.id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export function useUpdateTemplateExercise() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (
+    mutationFn: (
       params: { id: string; templateId: string } & Database['public']['Tables']['workout_template_exercises']['Update'],
-    ) => {
-      const patch: Database['public']['Tables']['workout_template_exercises']['Update'] = {
-        order_index: params.order_index,
-        target_sets: params.target_sets,
-        target_reps_min: params.target_reps_min,
-        target_reps_max: params.target_reps_max,
-        target_load_kg: params.target_load_kg,
-        target_rpe: params.target_rpe,
-        rest_seconds: params.rest_seconds,
-        notes: params.notes,
-      };
-      const { data, error } = await supabase
-        .from('workout_template_exercises')
-        .update(patch)
-        .eq('id', params.id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    },
+    ) => updateTemplateExercise(params),
     onSuccess: (_data, params) => {
       queryClient.invalidateQueries({ queryKey: ['workoutTemplate', params.templateId] });
     },

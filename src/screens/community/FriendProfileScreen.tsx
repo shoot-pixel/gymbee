@@ -20,7 +20,7 @@ import {
   TextField,
   Button,
   EmptyState,
-  PremiumBadge,
+  ProBadge,
 } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -36,7 +36,7 @@ import {
   useFriendCount,
 } from '../../services/api/queries/community';
 import { useStartConversation } from '../../services/api/queries/directMessages';
-import { useUploadAvatar, useUpdateProfile } from '../../services/api/queries/profiles';
+import { useUpdateProfile } from '../../services/api/queries/profiles';
 import { useUserPosts, useSignedPhotoUrls, postPhotoPaths } from '../../services/api/queries/posts';
 import { useUnitPreference } from '../../hooks/useUnitPreference';
 import { formatVolume, unitLabel } from '../../utils/units';
@@ -69,7 +69,7 @@ export function FriendProfileScreen() {
   const [bioSheetOpen, setBioSheetOpen] = useState(false);
   const [bioDraft, setBioDraft] = useState('');
   const [addPostSheetOpen, setAddPostSheetOpen] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
 
   const { data: profile, isLoading, refetch: refetchProfile } = useFriendProfile(params.userId);
   const { data: friendCount } = useFriendCount(params.userId);
@@ -80,7 +80,6 @@ export function FriendProfileScreen() {
   const declineRequest = useDeclineFriendRequest(userId);
   const removeRequest = useRemoveFriendRequest(userId);
   const blockUser = useBlockUser(userId);
-  const uploadAvatar = useUploadAvatar(userId);
   const updateProfile = useUpdateProfile(userId);
   const startConversation = useStartConversation();
 
@@ -103,7 +102,10 @@ export function FriendProfileScreen() {
   const actionLoading =
     sendRequest.isPending || acceptRequest.isPending || declineRequest.isPending || removeRequest.isPending;
 
-  const onChangePhoto = async () => {
+  // Uploading (and saving where the photo is centered) happens on
+  // AvatarPosition, not here — picking is the only native-picker step left
+  // in this screen.
+  const pickAndPositionPhoto = async () => {
     const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
     if (result.didCancel) return;
     if (result.errorCode) {
@@ -112,15 +114,18 @@ export function FriendProfileScreen() {
     }
     const asset = result.assets?.[0];
     if (!asset?.uri) return;
+    navigation.navigate('AvatarPosition', { pickedUri: asset.uri, contentType: asset.type ?? 'image/jpeg' });
+  };
 
-    setUploadingAvatar(true);
-    try {
-      await uploadAvatar.mutateAsync({ uri: asset.uri, contentType: asset.type ?? 'image/jpeg' });
-    } catch (err) {
-      Alert.alert('Could not upload photo', err instanceof Error ? err.message : 'Please try again.');
-    } finally {
-      setUploadingAvatar(false);
+  // A first-ever photo has nothing to reposition yet — skip straight to
+  // picking. Once a photo exists, tapping the avatar offers a choice
+  // instead of jumping straight into the picker every time.
+  const onAvatarPress = () => {
+    if (!profile?.avatar_url) {
+      pickAndPositionPhoto();
+      return;
     }
+    setAvatarMenuOpen(true);
   };
 
   const onSaveBio = async () => {
@@ -225,7 +230,14 @@ export function FriendProfileScreen() {
           <View>
             <View style={{ paddingTop: theme.spacing.md, alignItems: 'flex-start' }}>
               <View>
-                <Avatar uri={profile?.avatar_url} size={72} onPress={isSelf ? onChangePhoto : undefined} />
+                <Avatar
+                  uri={profile?.avatar_url}
+                  focalX={profile?.avatar_focal_x}
+                  focalY={profile?.avatar_focal_y}
+                  size={72}
+                  onPress={isSelf ? onAvatarPress : undefined}
+                  accessibilityLabel="Profile photo"
+                />
                 {isSelf ? (
                   <View
                     style={{
@@ -250,7 +262,7 @@ export function FriendProfileScreen() {
             <View style={{ marginTop: theme.spacing.sm }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xxs }}>
                 <Text variant="title">{profile?.display_name ?? 'Athlete'}</Text>
-                {profile?.is_premium ? <PremiumBadge /> : null}
+                {profile?.is_premium ? <ProBadge /> : null}
                 {profile?.is_private ? (
                   <View accessible accessibilityLabel="Private account">
                     <Icon name="lock" size="sm" color={theme.colors.text.tertiary} />
@@ -260,11 +272,6 @@ export function FriendProfileScreen() {
               {profile?.handle ? (
                 <Text variant="body" color="secondary">
                   @{profile.handle}
-                </Text>
-              ) : null}
-              {isSelf && uploadingAvatar ? (
-                <Text variant="caption" color="secondary">
-                  Uploading…
                 </Text>
               ) : null}
             </View>
@@ -397,6 +404,27 @@ export function FriendProfileScreen() {
 
       <BottomSheet visible={menuOpen} onClose={() => setMenuOpen(false)}>
         <ListRow title={`Block ${profile?.display_name ?? 'athlete'}`} icon="circleAlert" onPress={confirmBlock} />
+      </BottomSheet>
+
+      <BottomSheet visible={avatarMenuOpen} onClose={() => setAvatarMenuOpen(false)} title="Profile Photo">
+        <View style={{ gap: theme.spacing.xs }}>
+          <ListRow
+            title="Choose New Photo"
+            icon="camera"
+            onPress={() => {
+              setAvatarMenuOpen(false);
+              pickAndPositionPhoto();
+            }}
+          />
+          <ListRow
+            title="Reposition Photo"
+            icon="target"
+            onPress={() => {
+              setAvatarMenuOpen(false);
+              navigation.navigate('AvatarPosition');
+            }}
+          />
+        </View>
       </BottomSheet>
 
       <BottomSheet visible={bioSheetOpen} onClose={() => setBioSheetOpen(false)} title="Edit Bio">

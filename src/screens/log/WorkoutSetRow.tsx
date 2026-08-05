@@ -3,6 +3,7 @@ import { View, Pressable, Alert } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Icon, TextField } from '../../components/core';
 import { formatWeight, parseWeightInput } from '../../utils/units';
+import { useNumericInputText } from '../../hooks/useNumericInputText';
 import type { LoggedSet, SetMetric } from '../../store/activeWorkoutStore';
 
 export function metricLabel(metric: SetMetric): string {
@@ -51,6 +52,16 @@ export function parseMetricValue(text: string, metric: SetMetric): number | null
   if (text.trim() === '') return null;
   const parsed = parseFloat(text);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function parseReps(text: string): number | null {
+  if (text === '') return null;
+  return parseInt(text, 10) || null;
+}
+
+function parseRpe(text: string): number | null {
+  if (text === '') return null;
+  return parseFloat(text) || null;
 }
 
 /** A set counts as "populated" once it holds any data worth confirming before losing. */
@@ -164,6 +175,14 @@ export function WorkoutSetRow({
   const elapsedSeconds = useElapsedSeconds(setRow.timerStartedAt);
   const countdown = useStartCountdown(onStartTimer);
 
+  const repsField = useNumericInputText(setRow.reps, reps => onChange({ reps }), { parse: parseReps });
+  const loadField = useNumericInputText(setRow.loadKg, loadKg => onChange({ loadKg }), {
+    format: v => formatMetricValue(v, metric),
+    parse: t => parseMetricValue(t, metric),
+    formatKey: metric,
+  });
+  const rpeField = useNumericInputText(setRow.rpe, rpe => onChange({ rpe }), { parse: parseRpe });
+
   // Completing the set (or someone else stopping its timer) while the
   // pre-start countdown is still running should cancel it rather than let it
   // finish and start a timer for a set that's already done.
@@ -236,8 +255,8 @@ export function WorkoutSetRow({
       <View style={{ flex: 1 }}>
         <TextField
           keyboardType="number-pad"
-          value={setRow.reps != null ? String(setRow.reps) : ''}
-          onChangeText={text => onChange({ reps: text === '' ? null : parseInt(text, 10) || null })}
+          value={repsField.text}
+          onChangeText={repsField.onChangeText}
           placeholder="Reps"
           selectTextOnFocus
         />
@@ -286,8 +305,8 @@ export function WorkoutSetRow({
         ) : (
           <TextField
             keyboardType={metric === 'weight_lb' || metric === 'weight_kg' ? 'decimal-pad' : 'numeric'}
-            value={formatMetricValue(setRow.loadKg, metric)}
-            onChangeText={text => onChange({ loadKg: parseMetricValue(text, metric) })}
+            value={loadField.text}
+            onChangeText={loadField.onChangeText}
             placeholder={metricPlaceholder(metric)}
             selectTextOnFocus
           />
@@ -296,8 +315,8 @@ export function WorkoutSetRow({
       <View style={{ flex: 1 }}>
         <TextField
           keyboardType="decimal-pad"
-          value={setRow.rpe != null ? String(setRow.rpe) : ''}
-          onChangeText={text => onChange({ rpe: text === '' ? null : parseFloat(text) || null })}
+          value={rpeField.text}
+          onChangeText={rpeField.onChangeText}
           placeholder="RPE"
           selectTextOnFocus
         />

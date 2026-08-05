@@ -62,7 +62,7 @@ export function estimateMET(
  * a known, if imprecise, limitation of MET-based estimates. This is a
  * modest directional correction, not a precise physiological model: small
  * enough not to fight the MET table's own uncertainty. */
-const SEX_ADJUSTMENT: Record<'male' | 'female', number> = {
+export const SEX_ADJUSTMENT: Record<'male' | 'female', number> = {
   male: 1,
   female: 0.92,
 };

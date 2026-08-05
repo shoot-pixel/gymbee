@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAppBootstrap } from '../hooks/useAppBootstrap';
 import { LoadingScreen, MIN_DISPLAY_DURATION_MS } from '../screens/LoadingScreen';
-import { PremiumLoadingScreen } from '../screens/PremiumLoadingScreen';
+import { ProLoadingScreen } from '../screens/ProLoadingScreen';
 import { useProfile } from '../services/api/queries/profiles';
 import { AuthStack } from './AuthStack';
 import { OnboardingStack } from './OnboardingStack';
@@ -16,6 +16,7 @@ import { ChatScreen } from '../screens/chat/ChatScreen';
 import { PaywallScreen } from '../screens/profile/PaywallScreen';
 import { navigationRef } from './navigationRef';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { useSyncTimezone } from '../hooks/useSyncTimezone';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -60,6 +61,9 @@ export function RootNavigator() {
   // cleanup) otherwise. Lives above the loading-screen early return so it
   // stays mounted for the app's whole authenticated lifetime.
   usePushNotifications(needsBootstrap ? userId : null);
+  // Lets the proactive-coach cron sweep (server-side) know what "evening"
+  // means for this athlete — see useSyncTimezone's own doc comment.
+  useSyncTimezone(needsBootstrap ? userId : null);
 
   // Splash always stays up for MIN_DISPLAY_DURATION_MS, regardless of how
   // fast hydration/bootstrap resolve, so its animation is always seen
@@ -71,7 +75,7 @@ export function RootNavigator() {
   }, []);
 
   if (!hydrated || (needsBootstrap && !bootstrapped) || !minDurationElapsed) {
-    return profile?.is_premium ? <PremiumLoadingScreen /> : <LoadingScreen />;
+    return profile?.is_premium ? <ProLoadingScreen /> : <LoadingScreen />;
   }
 
   const navTheme: NavTheme = {
@@ -103,15 +107,11 @@ export function RootNavigator() {
               // 'fullScreenModal' rather than the default 'modal' (an iOS page
               // sheet) — page sheets are presented in a way that can throw off
               // KeyboardAvoidingView's height math, leaving the message input
-              // covered by the keyboard. See ChatFab/ChatScreen for the rest
+              // covered by the keyboard. See ChatDragHandle/ChatScreen for the rest
               // of the keyboard-handling fix.
               options={{ presentation: 'fullScreenModal', headerShown: false }}
             />
-            <Stack.Screen
-              name="Paywall"
-              component={PaywallScreen}
-              options={{ presentation: 'modal', headerShown: false }}
-            />
+            <Stack.Screen name="Paywall" component={PaywallScreen} options={{ presentation: 'modal', headerShown: false }} />
           </>
         )}
       </Stack.Navigator>

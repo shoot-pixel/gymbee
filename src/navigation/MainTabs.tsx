@@ -27,9 +27,9 @@ const TAB_ICONS: Record<keyof MainTabParamList, IconName> = {
 
 /** Content height of the tab bar excluding the bottom safe-area inset —
  * the actual on-screen height is this plus `insets.bottom`. Exported so
- * ChatFab can sit a consistent distance above the bar on every device
- * instead of using a magic-number offset that only happened to clear it
- * on some screen sizes. */
+ * ChatDragHandle/PostFab can sit a consistent distance above (or flush
+ * against) the bar on every device instead of using a magic-number offset
+ * that only happened to clear it on some screen sizes. */
 export const TAB_BAR_CONTENT_HEIGHT = 56;
 
 type MainTabsProps = {

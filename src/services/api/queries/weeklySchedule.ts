@@ -43,64 +43,99 @@ export function useWeeklySchedule(userId: string | null) {
  * whatever was there. Explicitly sets day_type='training' even though this
  * mutation predates cardio days — an upsert only touches the columns it's
  * given, so re-assigning a day that was previously cardio would otherwise
- * leave day_type='cardio' stuck alongside a newly-set template. */
+ * leave day_type='cardio' stuck alongside a newly-set template.
+ *
+ * Exported as a plain function (not just the hook below) so
+ * workoutShares.ts's accept-a-shared-workout mutation can call it directly
+ * from inside its own mutationFn — hooks can't be invoked outside a React
+ * render, so the mutation logic itself has to live here as reusable, and the
+ * hook becomes a thin wrapper. */
+export async function assignWeeklySchedule(params: {
+  userId: string;
+  dayOfWeek: number;
+  workoutTemplateId: string;
+}): Promise<WeeklyScheduleRow> {
+  const { data, error } = await supabase
+    .from('weekly_schedule')
+    .upsert(
+      {
+        user_id: params.userId,
+        day_of_week: params.dayOfWeek,
+        workout_template_id: params.workoutTemplateId,
+        day_type: 'training',
+      },
+      { onConflict: 'user_id,day_of_week' },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export function useAssignWeeklySchedule() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { userId: string; dayOfWeek: number; workoutTemplateId: string }) => {
-      const { data, error } = await supabase
-        .from('weekly_schedule')
-        .upsert(
-          {
-            user_id: params.userId,
-            day_of_week: params.dayOfWeek,
-            workout_template_id: params.workoutTemplateId,
-            day_type: 'training',
-          },
-          { onConflict: 'user_id,day_of_week' },
-        )
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    },
+    mutationFn: assignWeeklySchedule,
     onSuccess: (_data, params) => {
       queryClient.invalidateQueries({ queryKey: ['weeklySchedule', params.userId] });
     },
   });
 }
 
-/** Cardio's equivalent of useAssignWeeklySchedule — same upsert-on-conflict
+/** Cardio's equivalent of assignWeeklySchedule — same upsert-on-conflict
  * target, but no template to point at (activity/params are chosen at log
- * time, not assignment time, per LogCardioScreen). */
+ * time, not assignment time, per LogCardioScreen). Also exported plain, same
+ * reasoning as assignWeeklySchedule above. */
+export async function assignCardioDay(params: { userId: string; dayOfWeek: number }): Promise<WeeklyScheduleRow> {
+  const { data, error } = await supabase
+    .from('weekly_schedule')
+    .upsert(
+      { user_id: params.userId, day_of_week: params.dayOfWeek, day_type: 'cardio', workout_template_id: null },
+      { onConflict: 'user_id,day_of_week' },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export function useAssignCardioDay() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { userId: string; dayOfWeek: number }) => {
-      const { data, error } = await supabase
-        .from('weekly_schedule')
-        .upsert(
-          { user_id: params.userId, day_of_week: params.dayOfWeek, day_type: 'cardio', workout_template_id: null },
-          { onConflict: 'user_id,day_of_week' },
-        )
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    },
+    mutationFn: assignCardioDay,
     onSuccess: (_data, params) => {
       queryClient.invalidateQueries({ queryKey: ['weeklySchedule', params.userId] });
     },
   });
+}
+
+/** Plain-function counterpart to useRemoveWeeklySchedule, same reasoning as
+ * assignWeeklySchedule above — "make this day rest" for the weekly-plan
+ * accept flow needs to call this directly, not through a hook. */
+export async function removeWeeklySchedule(params: { id: string; userId: string }): Promise<void> {
+  const { error } = await supabase.from('weekly_schedule').delete().eq('id', params.id);
+  if (error) throw error;
+}
+
+/** Same delete as removeWeeklySchedule, but targeted by (userId, dayOfWeek)
+ * instead of a known row id — for the weekly-plan accept flow, which is
+ * making an arbitrary day rest and may not have (or need) that day's
+ * existing row id to do it. No-ops if the day was already rest (no row to
+ * delete), which is exactly the outcome an "accept" should produce either
+ * way. */
+export async function removeWeeklyScheduleForDay(params: { userId: string; dayOfWeek: number }): Promise<void> {
+  const { error } = await supabase
+    .from('weekly_schedule')
+    .delete()
+    .eq('user_id', params.userId)
+    .eq('day_of_week', params.dayOfWeek);
+  if (error) throw error;
 }
 
 export function useRemoveWeeklySchedule() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { id: string; userId: string }) => {
-      const { error } = await supabase.from('weekly_schedule').delete().eq('id', params.id);
-      if (error) throw error;
-    },
+    mutationFn: removeWeeklySchedule,
     onSuccess: (_data, params) => {
       queryClient.invalidateQueries({ queryKey: ['weeklySchedule', params.userId] });
     },

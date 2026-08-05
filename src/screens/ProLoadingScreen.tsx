@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   Easing,
   interpolate,
@@ -27,27 +27,42 @@ const HAIRLINE_SEGMENT_FRACTION = 0.42;
 const BREATH_LEG_MS = 2400;
 const HAIRLINE_LEG_MS = 1400;
 
-type PremiumLoadingScreenProps = {
+type ProLoadingScreenProps = {
   label?: string;
 };
 
 /**
- * Premium counterpart to LoadingScreen (screens/LoadingScreen.tsx) — shown
+ * Pro counterpart to LoadingScreen (screens/LoadingScreen.tsx) — shown
  * instead of it, for the same gating window in RootNavigator, whenever the
- * warmed profile cache says the signed-in athlete is on SetSocial Premium.
+ * warmed profile cache says the signed-in athlete is on SetSocial Pro.
  * Identical animation/layout to LoadingScreen so switching between the two
  * reads as "the same screen, recolored," not a different loading path;
- * only the glow hue, hairline gradient, and the added PREMIUM wordmark
+ * only the glow hue, hairline gradient, and the added PRO wordmark
  * differ — see theme.gradients.premium's own comment for why gold and not
  * an invented color.
  */
-export function PremiumLoadingScreen({ label = 'Loading SetSocial Premium' }: PremiumLoadingScreenProps) {
+export function ProLoadingScreen({ label = 'Loading SetSocial Pro' }: ProLoadingScreenProps) {
   const theme = useTheme();
   const { width, height } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
 
   const breath = useSharedValue(0);
   const hairlineSlide = useSharedValue(0);
+  // Measured (not computed) position of the mark, relative to the same
+  // parent the PRO wordmark below is positioned against — real layout
+  // rather than reconstructing Yoga's own math by hand, which is what
+  // shifted the *glow* out of place the first time this bug was fixed (an
+  // extra wrapper View around glow+mark changed which parent's
+  // alignItems/justifyContent the absolutely-positioned glow inherited).
+  // Keeping glow and mark direct children of the same centered container
+  // LoadingScreen uses — completely unchanged from LoadingScreen's own
+  // structure — avoids that trap; only the PRO label's own position needs
+  // computing, from this measurement.
+  const [markLayout, setMarkLayout] = useState<{ y: number; height: number } | null>(null);
+  const onMarkLayout = (event: LayoutChangeEvent) => {
+    const { y, height: measuredHeight } = event.nativeEvent.layout;
+    setMarkLayout({ y, height: measuredHeight });
+  };
 
   useEffect(() => {
     if (reducedMotion) {
@@ -103,7 +118,22 @@ export function PremiumLoadingScreen({ label = 'Loading SetSocial Premium' }: Pr
         accessible
         accessibilityLabel={label}
       >
-        <Animated.View style={[{ position: 'absolute', width: glowSize, height: glowSize }, glowStyle]}>
+        {/* glow, mark, and track are direct children of this container, in
+            exactly the same order/props as LoadingScreen's own — nothing
+            about their nesting differs, so both the mark's centered
+            position (see below) and the glow's own position (an absolute
+            view with no explicit offsets inherits its parent's
+            alignItems/justifyContent in RN — the same quirk that centers it
+            behind the mark at all) come out pixel-identical between the two
+            screens. Only [mark, track] are real flex children (glow is
+            absolute, contributing no measured height); the PRO wordmark
+            below is positioned from a real layout measurement instead of
+            being a third flex sibling here, since adding it as one would
+            make this screen's centered stack taller than LoadingScreen's
+            and shift the mark upward the instant RootNavigator swaps one
+            screen for the other — the exact bug this structure exists to
+            avoid. */}
+        <Animated.View testID="pro-loading-glow" style={[{ position: 'absolute', width: glowSize, height: glowSize }, glowStyle]}>
           <Svg width={glowSize} height={glowSize} viewBox="0 0 100 100">
             <Defs>
               <RadialGradient id="markGlowGold" cx="50%" cy="50%" r="50%">
@@ -116,27 +146,38 @@ export function PremiumLoadingScreen({ label = 'Loading SetSocial Premium' }: Pr
           </Svg>
         </Animated.View>
 
-        <Animated.View style={markStyle}>
+        <Animated.View testID="pro-loading-mark" style={markStyle} onLayout={onMarkLayout}>
           <View style={{ transform: [{ translateX: markCorrectionX }, { translateY: markCorrectionY }] }}>
             <SetSocialIcon size={markWidth} accessibilityLabel="" />
           </View>
         </Animated.View>
 
-        <Text
-          variant="label"
-          style={{
-            marginTop: theme.spacing.md,
-            color: theme.colors.semantic.warning,
-            letterSpacing: 3,
-            fontWeight: '700',
-          }}
-        >
-          PREMIUM
-        </Text>
+        {markLayout ? (
+          <View
+            style={{
+              position: 'absolute',
+              top: markLayout.y + markLayout.height + theme.spacing.sm,
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              variant="label"
+              style={{
+                color: theme.colors.semantic.warning,
+                letterSpacing: 3,
+                fontWeight: '700',
+              }}
+            >
+              PRO
+            </Text>
+          </View>
+        ) : null}
 
         <View
           style={{
-            marginTop: theme.spacing.lg,
+            marginTop: theme.spacing.xl,
             width: trackWidth,
             height: 3,
             borderRadius: theme.radii.pill,

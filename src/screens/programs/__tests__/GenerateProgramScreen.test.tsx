@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 describe('GenerateProgramScreen', () => {
-  it('generates using the days/weeks answered in the Ask Coach sheet (not the profile) and navigates to the new program', async () => {
+  it('generates using the days/weeks answered in the Ask Arnold sheet (not the profile) and navigates to the new program', async () => {
     mockGenerateProgram.mockResolvedValue({ program_id: 'program-1' });
 
     await render(<GenerateProgramScreen />);
@@ -65,7 +65,7 @@ describe('GenerateProgramScreen', () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('ProgramDetail', { programId: 'program-1' }));
   });
 
-  it('forwards the focus notes and muscle groups captured by the Ask Coach sheet, and shows a recap while building', async () => {
+  it('forwards the focus notes and muscle groups captured by the Ask Arnold sheet, and shows a recap while building', async () => {
     mockRouteParams = {
       daysPerWeek: 5,
       weeksCount: 8,

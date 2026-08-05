@@ -95,7 +95,7 @@ function LiveNowCard({
             justifyContent: 'center',
           }}
         >
-          <Avatar uri={workout.friend.avatar_url} size={38} />
+          <Avatar uri={workout.friend.avatar_url} focalX={workout.friend.avatar_focal_x} focalY={workout.friend.avatar_focal_y} size={38} />
         </View>
         <View style={{ flex: 1 }}>
           <Text variant="body" numberOfLines={1} style={{ fontWeight: '700', fontSize: 13.5 }}>
@@ -152,10 +152,12 @@ function LiveNowDetailSheet({
   workout,
   unitPref,
   onClose,
+  onViewProfile,
 }: {
   workout: LiveFriendWorkout | null;
   unitPref: UnitPreference;
   onClose: () => void;
+  onViewProfile: (userId: string) => void;
 }) {
   const theme = useTheme();
   const beat = workout ? bestMatchesOrBeatsPr(workout) : false;
@@ -164,23 +166,33 @@ function LiveNowDetailSheet({
     <BottomSheet visible={workout != null} onClose={onClose} title={workout ? `${workout.friend.display_name ?? 'Athlete'}'s session` : undefined}>
       {workout ? (
         <View style={{ alignItems: 'center', gap: theme.spacing.xs }}>
-          <View
-            style={{
-              width: 88,
-              height: 88,
-              borderRadius: 44,
-              borderWidth: 3,
-              borderColor: theme.colors.accent.primary,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: theme.spacing.xs,
+          <Pressable
+            onPress={() => {
+              onClose();
+              onViewProfile(workout.friend.id);
             }}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${workout.friend.display_name ?? 'athlete'}'s profile`}
+            style={{ alignItems: 'center' }}
           >
-            <Avatar uri={workout.friend.avatar_url} size={78} />
-          </View>
-          <Text variant="subtitle" style={{ fontWeight: '700' }}>
-            {workout.friend.display_name ?? 'Athlete'}
-          </Text>
+            <View
+              style={{
+                width: 88,
+                height: 88,
+                borderRadius: 44,
+                borderWidth: 3,
+                borderColor: theme.colors.accent.primary,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: theme.spacing.xs,
+              }}
+            >
+              <Avatar uri={workout.friend.avatar_url} focalX={workout.friend.avatar_focal_x} focalY={workout.friend.avatar_focal_y} size={78} />
+            </View>
+            <Text variant="subtitle" style={{ fontWeight: '700' }}>
+              {workout.friend.display_name ?? 'Athlete'}
+            </Text>
+          </Pressable>
           <Text variant="caption" style={{ color: theme.colors.accent.primary, fontWeight: '600' }}>
             {elapsedLabel(workout.startedAt)}
           </Text>
@@ -255,11 +267,12 @@ function LiveNowDetailSheet({
 
 type LiveNowRailProps = {
   workouts: LiveFriendWorkout[];
+  onViewProfile: (userId: string) => void;
 };
 
 /** Only visible when at least one friend is mid-workout — the Social tab
  * otherwise looks exactly as it did before this feature shipped. */
-export function LiveNowRail({ workouts }: LiveNowRailProps) {
+export function LiveNowRail({ workouts, onViewProfile }: LiveNowRailProps) {
   const theme = useTheme();
   const unitPref = useUnitPreference();
   const [selected, setSelected] = useState<LiveFriendWorkout | null>(null);
@@ -316,7 +329,12 @@ export function LiveNowRail({ workouts }: LiveNowRailProps) {
         ))}
       </ScrollView>
 
-      <LiveNowDetailSheet workout={selected} unitPref={unitPref} onClose={() => setSelected(null)} />
+      <LiveNowDetailSheet
+        workout={selected}
+        unitPref={unitPref}
+        onClose={() => setSelected(null)}
+        onViewProfile={onViewProfile}
+      />
     </View>
   );
 }

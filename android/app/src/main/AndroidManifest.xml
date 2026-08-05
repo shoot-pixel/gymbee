@@ -45,4 +45,24 @@
         </intent-filter>
       </activity>
     </application>
+
+    <!-- Android 11+ (API 30+) hides other apps' packages from
+         PackageManager queries by default ("package visibility") — without
+         this, Linking.canOpenURL() falsely returns false for https/mailto
+         links even when a browser/mail client is installed, since the app
+         can no longer see it. Needed for the Whoop/Spotify OAuth connect
+         flow (IntegrationsScreen) and the mailto: support link
+         (SettingsScreen) to work at all on API 30+. -->
+    <queries>
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" />
+      </intent>
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="mailto" />
+      </intent>
+    </queries>
 </manifest>

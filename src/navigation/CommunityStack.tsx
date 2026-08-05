@@ -10,7 +10,9 @@ import { UploadPhotoPostScreen } from '../screens/community/UploadPhotoPostScree
 import { FriendsListScreen } from '../screens/community/FriendsListScreen';
 import { MessagesScreen } from '../screens/community/MessagesScreen';
 import { ConversationScreen } from '../screens/community/ConversationScreen';
+import { SharedWorkoutReviewScreen } from '../screens/community/SharedWorkoutReviewScreen';
 import { AtMyGymScreen } from '../screens/community/AtMyGymScreen';
+import { AvatarPositionScreen } from '../screens/community/AvatarPositionScreen';
 
 const Stack = createNativeStackNavigator<CommunityStackParamList>();
 
@@ -26,7 +28,9 @@ export function CommunityStack() {
       <Stack.Screen name="FriendsList" component={FriendsListScreen} />
       <Stack.Screen name="Messages" component={MessagesScreen} />
       <Stack.Screen name="Conversation" component={ConversationScreen} />
+      <Stack.Screen name="SharedWorkoutReview" component={SharedWorkoutReviewScreen} />
       <Stack.Screen name="AtMyGym" component={AtMyGymScreen} />
+      <Stack.Screen name="AvatarPosition" component={AvatarPositionScreen} options={{ presentation: 'fullScreenModal' }} />
     </Stack.Navigator>
   );
 }

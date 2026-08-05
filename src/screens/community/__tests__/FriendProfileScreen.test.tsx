@@ -31,6 +31,12 @@ jest.mock('../../../hooks/useUnitPreference', () => ({
   useUnitPreference: () => 'kg',
 }));
 
+const mockLaunchImageLibrary = jest.fn();
+
+jest.mock('react-native-image-picker', () => ({
+  launchImageLibrary: (...args: unknown[]) => mockLaunchImageLibrary(...args),
+}));
+
 const mockStartConversationMutateAsync = jest.fn();
 
 jest.mock('../../../services/api/queries/directMessages', () => ({
@@ -233,6 +239,67 @@ describe('FriendProfileScreen', () => {
       await fireEvent.press(getByText('Post Progress Photo'));
 
       expect(mockNavigate).toHaveBeenCalledWith('UploadPhotoPost', { mode: 'progress' });
+    });
+
+    it('skips straight to the picker (no menu) when tapping the avatar with no photo yet', async () => {
+      mockUseFriendProfile.mockReturnValue({ data: { ...PROFILE, avatar_url: null }, isLoading: false });
+      mockLaunchImageLibrary.mockResolvedValue({
+        didCancel: false,
+        assets: [{ uri: 'file:///tmp/picked.jpg', type: 'image/jpeg' }],
+      });
+
+      const { getByLabelText, queryByText } = await render(<FriendProfileScreen />);
+      await waitFor(() => expect(getByLabelText('Profile photo')).toBeTruthy());
+
+      await fireEvent.press(getByLabelText('Profile photo'));
+
+      expect(queryByText('Choose New Photo')).toBeNull();
+      await waitFor(() =>
+        expect(mockNavigate).toHaveBeenCalledWith('AvatarPosition', {
+          pickedUri: 'file:///tmp/picked.jpg',
+          contentType: 'image/jpeg',
+        }),
+      );
+    });
+
+    it('offers a Choose New Photo / Reposition Photo menu when tapping an avatar that already has a photo', async () => {
+      mockUseFriendProfile.mockReturnValue({
+        data: { ...PROFILE, avatar_url: 'https://example.com/avatar.jpg' },
+        isLoading: false,
+      });
+
+      const { getByLabelText, getByText } = await render(<FriendProfileScreen />);
+      await waitFor(() => expect(getByLabelText('Profile photo')).toBeTruthy());
+      await fireEvent.press(getByLabelText('Profile photo'));
+
+      expect(getByText('Choose New Photo')).toBeTruthy();
+      await fireEvent.press(getByText('Reposition Photo'));
+
+      expect(mockNavigate).toHaveBeenCalledWith('AvatarPosition');
+      expect(mockLaunchImageLibrary).not.toHaveBeenCalled();
+    });
+
+    it('navigates to AvatarPosition with the picked photo after choosing "Choose New Photo"', async () => {
+      mockUseFriendProfile.mockReturnValue({
+        data: { ...PROFILE, avatar_url: 'https://example.com/avatar.jpg' },
+        isLoading: false,
+      });
+      mockLaunchImageLibrary.mockResolvedValue({
+        didCancel: false,
+        assets: [{ uri: 'file:///tmp/new.jpg', type: 'image/jpeg' }],
+      });
+
+      const { getByLabelText, getByText } = await render(<FriendProfileScreen />);
+      await waitFor(() => expect(getByLabelText('Profile photo')).toBeTruthy());
+      await fireEvent.press(getByLabelText('Profile photo'));
+      await fireEvent.press(getByText('Choose New Photo'));
+
+      await waitFor(() =>
+        expect(mockNavigate).toHaveBeenCalledWith('AvatarPosition', {
+          pickedUri: 'file:///tmp/new.jpg',
+          contentType: 'image/jpeg',
+        }),
+      );
     });
   });
 

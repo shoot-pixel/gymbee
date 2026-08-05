@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { MessagesScreen } from '../MessagesScreen';
 
@@ -17,12 +18,14 @@ const mockUseConversations = jest.fn();
 const mockUseIncomingDmRequests = jest.fn();
 const mockUseOutgoingDmRequests = jest.fn();
 const mockRespondMutate = jest.fn();
+const mockDeleteConversationMutate = jest.fn();
 
 jest.mock('../../../services/api/queries/directMessages', () => ({
   useConversations: (...args: unknown[]) => mockUseConversations(...args),
   useIncomingDmRequests: (...args: unknown[]) => mockUseIncomingDmRequests(...args),
   useOutgoingDmRequests: (...args: unknown[]) => mockUseOutgoingDmRequests(...args),
   useRespondToConversation: jest.fn(() => ({ mutate: mockRespondMutate, isPending: false })),
+  useDeleteConversation: jest.fn(() => ({ mutate: mockDeleteConversationMutate, isPending: false })),
 }));
 
 jest.mock('../../../services/api/queries/community', () => ({
@@ -91,5 +94,39 @@ describe('MessagesScreen', () => {
     const { getByText } = await render(<MessagesScreen />);
     await fireEvent.press(getByText(/^Requests/));
     await waitFor(() => expect(getByText('Pending')).toBeTruthy());
+  });
+
+  it('deletes a conversation from the options menu after confirming', async () => {
+    mockUseConversations.mockReturnValue({ data: [CONVERSATION], isLoading: false, refetch: jest.fn() });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      const deleteButton = buttons?.find(b => b.text === 'Delete');
+      deleteButton?.onPress?.();
+    });
+
+    const { getByLabelText, getByText } = await render(<MessagesScreen />);
+    await waitFor(() => expect(getByText('Alex B.')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Conversation options'));
+    await waitFor(() => expect(getByText('Delete Conversation')).toBeTruthy());
+    await fireEvent.press(getByText('Delete Conversation'));
+
+    expect(mockDeleteConversationMutate).toHaveBeenCalledWith(
+      { conversationId: 'conv-1', userId: 'user-1' },
+      expect.anything(),
+    );
+    alertSpy.mockRestore();
+  });
+
+  it('opens Report/Block from the options menu instead of deleting', async () => {
+    mockUseConversations.mockReturnValue({ data: [CONVERSATION], isLoading: false, refetch: jest.fn() });
+
+    const { getByLabelText, getByText } = await render(<MessagesScreen />);
+    await waitFor(() => expect(getByText('Alex B.')).toBeTruthy());
+
+    await fireEvent.press(getByLabelText('Conversation options'));
+    await fireEvent.press(getByText('Report or Block'));
+
+    await waitFor(() => expect(getByText('Report')).toBeTruthy());
+    expect(mockDeleteConversationMutate).not.toHaveBeenCalled();
   });
 });

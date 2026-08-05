@@ -30,20 +30,25 @@ import {
 } from '../../services/api/queries/coaching';
 import { coachingEngine, type AdaptationChange, type AdaptationExerciseTarget } from '../../services/coaching';
 import { trackEvent } from '../../services/analytics/analytics';
+import { getErrorMessage } from '../../utils/errors';
 import type { LogStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Route = RouteProp<LogStackParamList, 'PreWorkoutReview'>;
 type LogNav = NativeStackNavigationProp<LogStackParamList>;
 type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
-const RATING_OPTIONS = [
+// Exported so QuickCheckinCard's confirm step (the NL check-in's
+// human-review step before saving) renders the exact same rating scale and
+// pain options as this manual form, rather than a second definition that
+// could drift out of sync.
+export const RATING_OPTIONS = [
   { value: '1', label: '1' },
   { value: '2', label: '2' },
   { value: '3', label: '3' },
   { value: '4', label: '4' },
   { value: '5', label: '5' },
 ];
-const PAIN_OPTIONS: Array<{ value: 'yes' | 'no'; label: string }> = [
+export const PAIN_OPTIONS: Array<{ value: 'yes' | 'no'; label: string }> = [
   { value: 'no', label: 'No pain' },
   { value: 'yes', label: 'Pain today' },
 ];
@@ -129,7 +134,7 @@ export function PreWorkoutReviewScreen() {
   }, [readinessContext.inputs.checkin]);
 
   // Adaptive Coaching Intelligence (auto readiness-based adjustments) is a
-  // SetSocial Premium feature — gated at the source, not just in the UI
+  // SetSocial Pro feature — gated at the source, not just in the UI
   // below, so a free account's onStartWorkout (which reads this same memo)
   // can never end up silently applying/saving an adaptation either.
   const proposedAdaptations = useMemo<AdaptationChange[]>(() => {
@@ -175,7 +180,7 @@ export function PreWorkoutReviewScreen() {
         painNotes: painToggle === 'yes' ? painNotes.trim() || null : null,
       });
     } catch (err) {
-      Alert.alert('Could not save check-in', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert('Could not save check-in', getErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -234,7 +239,7 @@ export function PreWorkoutReviewScreen() {
           keyboardDismissMode="on-drag"
         >
           <Text variant="body" color="secondary">
-            A quick check-in helps your coach recommend today's intensity. This is informational, not medical
+            A quick check-in helps Arnold recommend today's intensity. This is informational, not medical
             advice.
           </Text>
           <TextField
@@ -367,7 +372,7 @@ export function PreWorkoutReviewScreen() {
         ) : !isPremium ? (
           <LockedFeatureCard
             title="Adaptive Coaching Intelligence"
-            description="Premium automatically adjusts sets, weight, and rest based on your readiness — today's plan is unchanged."
+            description="Pro automatically adjusts sets, weight, and rest based on your readiness — today's plan is unchanged."
             onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'adaptive_coaching' })}
           />
         ) : visibleAdaptations.length > 0 ? (

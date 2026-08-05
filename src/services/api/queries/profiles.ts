@@ -69,9 +69,12 @@ export function useUploadAvatar(userId: string | null) {
       // Cache-bust so re-uploading the same path shows the new photo immediately.
       const avatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
 
+      // A brand new photo resets to a plain center crop — the focal point
+      // from whatever the old photo was framed to almost never lands on the
+      // right spot in an unrelated image.
       const { data, error } = await supabase
         .from('profiles')
-        .update({ avatar_url: avatarUrl })
+        .update({ avatar_url: avatarUrl, avatar_focal_x: 0.5, avatar_focal_y: 0.5 })
         .eq('id', userId)
         .select()
         .single();

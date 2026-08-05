@@ -12,7 +12,7 @@ type LockedFeatureCardProps = {
 };
 
 /** Drop-in replacement for a Card's content wherever a feature is gated
- * behind SetSocial Premium — the strength trend chart, PR history/timeline,
+ * behind SetSocial Pro — the strength trend chart, PR history/timeline,
  * Weekly Review — so every gate reads as the same "this exists, here's why
  * it's hidden, here's the one action" pattern rather than each screen
  * inventing its own. */
@@ -50,7 +50,7 @@ export function LockedFeatureCard({ title, description, onUpgrade }: LockedFeatu
         {description}
       </Text>
       <Button
-        label="Unlock with Premium"
+        label="Unlock with Pro"
         size="sm"
         onPress={onUpgrade}
         gradientColors={theme.gradients.premium}

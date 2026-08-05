@@ -13,8 +13,9 @@ import { useScheduledWorkouts, useStartTemplateToday } from '../../services/api/
 import { useWorkoutLogsInRange } from '../../services/api/queries/workoutLogs';
 import { useWorkoutTemplate } from '../../services/api/queries/workoutTemplates';
 import { resolveDayPlan } from '../../utils/dayPlan';
-import { useActiveWorkoutStore, type WorkoutSource } from '../../store/activeWorkoutStore';
+import { useActiveWorkoutStore } from '../../store/activeWorkoutStore';
 import { featureFlags } from '../../config/featureFlags';
+import { sourceToActiveWorkoutParams } from '../../navigation/startWorkoutFlow';
 import type { LogStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<LogStackParamList>;
@@ -22,25 +23,6 @@ type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
 function dateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd');
-}
-
-/** Maps the store's session source back to ActiveWorkoutOverview's route
- * params — the inverse of the derivation ActiveWorkoutOverviewScreen itself
- * does from params to a WorkoutSource. Passing these back is what makes its
- * own needsFreshStart check see a match and just render the resumed session
- * instead of starting a new one. */
-function sourceToParams(source: WorkoutSource | null): LogStackParamList['ActiveWorkoutOverview'] {
-  if (!source) return undefined;
-  switch (source.type) {
-    case 'programDay':
-      return { programDayId: source.id };
-    case 'scheduledWorkout':
-      return { scheduledWorkoutId: source.id };
-    case 'template':
-      return { templateId: source.id };
-    case 'freestyle':
-      return undefined;
-  }
 }
 
 /**
@@ -112,7 +94,7 @@ export function LogLandingScreen() {
 
   useEffect(() => {
     if (!hasHydrated || !hasActiveWorkout) return;
-    navigation.replace('ActiveWorkoutOverview', sourceToParams(activeSource));
+    navigation.replace('ActiveWorkoutOverview', sourceToActiveWorkoutParams(activeSource));
   }, [hasHydrated, hasActiveWorkout, activeSource, navigation]);
 
   if (!hasHydrated || hasActiveWorkout || isLoading) {

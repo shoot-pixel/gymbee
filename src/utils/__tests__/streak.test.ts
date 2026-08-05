@@ -49,12 +49,35 @@ describe('computeStreak', () => {
     expect(computeStreak(null, completed, today, weeklySchedule)).toBe(1);
   });
 
-  it('continues past a completed recurring training day', () => {
+  it('continues past a completed recurring training day, and past the rest days beyond it too', () => {
     const today = new Date('2026-03-05T12:00:00.000Z'); // Thursday
     const recurringDay = daysAgo(1, today); // Wednesday
     const completed = new Set([key(today), key(recurringDay), key(daysAgo(2, today))]);
     const weeklySchedule = [weeklyScheduleEntry(recurringDay.getDay())];
 
-    expect(computeStreak(null, completed, today, weeklySchedule)).toBe(3);
+    // Only Wednesday is a configured (recurring) day here, so every other
+    // weekday is a legitimate rest day by design and now also counts —
+    // the walk runs Thu/Wed/Tue (completed) then Mon/Sun/Sat/Fri/Thu (rest)
+    // until it reaches the *previous* Wednesday, which wasn't completed and
+    // genuinely breaks the streak: 8 days total, not just the 3 completions.
+    expect(computeStreak(null, completed, today, weeklySchedule)).toBe(8);
+  });
+
+  it('counts a rest day toward the streak instead of just passing through it unchanged', () => {
+    const today = new Date('2026-03-03T12:00:00.000Z'); // Tuesday — has a plan, not completed yet today
+    const monday = daysAgo(1, today); // completed (e.g. cardio)
+    const sunday = daysAgo(2, today); // no weekly_schedule entry — a genuine rest day
+    const priorTrainingDay = daysAgo(3, today); // Saturday — configured, NOT completed, bounds the streak
+
+    const completed = new Set([key(monday)]);
+    const weeklySchedule = [
+      weeklyScheduleEntry(today.getDay()),
+      weeklyScheduleEntry(monday.getDay()),
+      weeklyScheduleEntry(priorTrainingDay.getDay()),
+    ];
+
+    // Sunday's rest and Monday's completed cardio both count — 2 — even
+    // though today (a pending, not-yet-completed training day) doesn't yet.
+    expect(computeStreak(null, completed, today, weeklySchedule)).toBe(2);
   });
 });

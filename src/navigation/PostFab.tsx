@@ -13,10 +13,12 @@ import type { RootStackParamList } from './types';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 /**
- * The Social tab's counterpart to ChatFab (same position/size/style, see
- * AppShell — the two are never shown at once) — opens straight into "post a
- * photo", either captured live or picked from the library, rather than the
- * AI coach chat that makes sense everywhere else.
+ * The Social tab's counterpart to ChatDragHandle (see AppShell — the two are
+ * never shown at once), kept as the original circular FAB rather than
+ * following ChatDragHandle's redesign — "new post" is a deliberate action
+ * with its own picker sheet, not a background affordance worth teaching via
+ * a drag gesture. Opens straight into "post a photo", either captured live
+ * or picked from the library.
  */
 export function PostFab() {
   const theme = useTheme();

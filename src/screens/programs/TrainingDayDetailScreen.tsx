@@ -11,6 +11,7 @@ import { useWorkoutTemplate } from '../../services/api/queries/workoutTemplates'
 import { useRemoveWeeklySchedule } from '../../services/api/queries/weeklySchedule';
 import { useStartTemplateToday } from '../../services/api/queries/scheduledWorkouts';
 import { useWorkoutLogsInRange } from '../../services/api/queries/workoutLogs';
+import { buildWorkoutSnapshot } from '../../services/api/queries/workoutShares';
 import { navigateToStartWorkout } from '../../navigation/startWorkoutFlow';
 import type { ProgramsStackParamList, TodayStackParamList, RootStackParamList } from '../../navigation/types';
 
@@ -31,6 +32,7 @@ export function TrainingDayDetailScreen() {
   const removeWeeklySchedule = useRemoveWeeklySchedule();
   const startTemplateToday = useStartTemplateToday();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   // Safety net for CalendarScreen's own lock — this screen is also reachable
   // from TodayStack, so re-check here rather than trusting the caller.
@@ -49,6 +51,28 @@ export function TrainingDayDetailScreen() {
       navigateToStartWorkout(rootNavigation, { scheduledWorkoutId: scheduled.id });
     } catch (err) {
       Alert.alert('Could not start workout', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const onShare = async () => {
+    if (!template || sharing) return;
+    setMenuOpen(false);
+    setSharing(true);
+    try {
+      const payload = {
+        workout: await buildWorkoutSnapshot(
+          { name: template.name, notes: template.notes, estimatedDurationMinutes: template.estimated_duration_minutes },
+          template.workout_template_exercises,
+        ),
+      };
+      rootNavigation.navigate('MainTabs', {
+        screen: 'ProgramsTab',
+        params: { screen: 'ShareWorkout', params: { shareType: 'single_workout', title: template.name, payload } },
+      });
+    } catch (err) {
+      Alert.alert('Could not prepare this workout to share', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -139,7 +163,13 @@ export function TrainingDayDetailScreen() {
       </ScrollView>
 
       <BottomSheet visible={menuOpen} onClose={() => setMenuOpen(false)}>
-        <ListRow title={`Remove from ${WEEKDAY_NAMES[params.dayOfWeek]}`} icon="trash" onPress={onRemove} />
+        <ListRow title="Share this workout" icon="share" onPress={onShare} />
+        <ListRow
+          title={`Remove from ${WEEKDAY_NAMES[params.dayOfWeek]}`}
+          icon="trash"
+          onPress={onRemove}
+          style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}
+        />
       </BottomSheet>
     </SafeAreaView>
   );

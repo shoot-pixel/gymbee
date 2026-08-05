@@ -3,9 +3,13 @@ import { supabase } from '../supabaseClient';
 import { fetchPublicProfiles, type PublicProfile } from './community';
 import type { Coordinates } from '../../location/currentLocation';
 
-/** A check-in is good for this long before it silently stops counting as
- * "here" — there's no background job to delete the row on expiry, every
- * read (useMyCheckin, nearby_checkins()) just filters expires_at > now(). */
+/** A check-in is good for at most this long — a hard ceiling filtered at
+ * read time (useMyCheckin, nearby_checkins()), same as before. In practice
+ * most check-ins end sooner than this via
+ * auto_checkout_idle_gym_checkins() (0053_gym_checkin_idle_timeout.sql), a
+ * cron sweep that deletes the row once an hour passes with no new set
+ * logged — this constant just bounds how long a check-in can live if
+ * that idle check somehow never fires. */
 const CHECKIN_DURATION_HOURS = 4;
 const DEFAULT_RADIUS_METERS = 150;
 

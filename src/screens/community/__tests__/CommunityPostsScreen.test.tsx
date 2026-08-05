@@ -150,12 +150,12 @@ describe('CommunityPostsScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('AtMyGym');
   });
 
-  it('navigates to Settings from the header avatar, same as every other tab', async () => {
+  it('navigates to Settings from the header menu, same as every other tab', async () => {
     const { getByLabelText } = await render(<CommunityPostsScreen />);
     await waitFor(() => expect(getByLabelText('Settings')).toBeTruthy());
 
     await fireEvent.press(getByLabelText('Settings'));
-    expect(mockNavigate).toHaveBeenCalledWith('Profile', { screen: 'Profile' });
+    expect(mockNavigate).toHaveBeenCalledWith('Profile', { screen: 'Settings' });
   });
 
   it('shows a friend-requests summary banner reflecting both directions and navigates to the dedicated screen', async () => {

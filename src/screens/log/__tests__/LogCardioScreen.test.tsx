@@ -81,14 +81,14 @@ describe('LogCardioScreen', () => {
 
   it('computes a live calorie estimate once activity, duration, and weight are all known', async () => {
     const { getByText, getByPlaceholderText, queryByText } = await render(<LogCardioScreen />);
-    expect(queryByText('AI COACH ESTIMATE')).toBeNull();
+    expect(queryByText("ARNOLD'S ESTIMATE")).toBeNull();
 
     await fireEvent.press(getByText('Treadmill'));
     await fireEvent.changeText(getByPlaceholderText('30'), '32');
     await fireEvent.changeText(getByPlaceholderText('0'), '12');
     await fireEvent.changeText(getByPlaceholderText('5.6'), '5.63');
 
-    await waitFor(() => expect(getByText('AI COACH ESTIMATE')).toBeTruthy());
+    await waitFor(() => expect(getByText("ARNOLD'S ESTIMATE")).toBeTruthy());
   });
 
   it('prompts to log weight when none is on file, and unblocks the estimate after saving one', async () => {
@@ -113,7 +113,7 @@ describe('LogCardioScreen', () => {
     await fireEvent.changeText(getByPlaceholderText('0'), '12');
     await fireEvent.changeText(getByPlaceholderText('5.6'), '5.63');
 
-    await waitFor(() => expect(getByText('AI COACH ESTIMATE')).toBeTruthy());
+    await waitFor(() => expect(getByText("ARNOLD'S ESTIMATE")).toBeTruthy());
     await fireEvent.press(getByText('Save Session'));
 
     await waitFor(() =>

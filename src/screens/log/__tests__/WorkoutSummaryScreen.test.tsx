@@ -28,6 +28,12 @@ jest.mock('../../../services/api/queries/workoutLogs', () => ({
   useCompleteWorkoutLog: jest.fn(() => ({ mutateAsync: mockCompleteWorkoutLogMutateAsync, isPending: false })),
 }));
 
+const mockSyncToTemplateMutateAsync = jest.fn().mockResolvedValue({ templateId: null });
+
+jest.mock('../../../services/api/queries/templateProgression', () => ({
+  useSyncCompletedWorkoutToTemplate: jest.fn(() => ({ mutateAsync: mockSyncToTemplateMutateAsync, isPending: false })),
+}));
+
 jest.mock('../../../services/api/queries/progress', () => {
   const actual = jest.requireActual('../../../services/api/queries/progress');
   return { ...actual, useLoggedSets: jest.fn(() => ({ data: [], isLoading: false })) };
@@ -119,6 +125,7 @@ function seedCompletedWorkout() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockCompleteWorkoutLogMutateAsync.mockResolvedValue({ id: 'wl-1' });
+  mockSyncToTemplateMutateAsync.mockResolvedValue({ templateId: null });
   mockedGeneratePostWorkoutSummary.mockReturnValue(SUMMARY_RESULT);
   seedCompletedWorkout();
 });
@@ -146,5 +153,17 @@ describe('WorkoutSummaryScreen', () => {
     expect(useActiveWorkoutStore.getState().workoutLogId).toBeNull();
     expect(mockPopToTop).toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith('MainTabs', { screen: 'TodayTab', params: { screen: 'Today' } });
+  });
+
+  it('syncs the completed session back to its source template before resetting the store', async () => {
+    const { source, exercises } = useActiveWorkoutStore.getState();
+    const { getByText } = await render(<WorkoutSummaryScreen />);
+    await waitFor(() => expect(getByText(SUMMARY_RESULT.summary)).toBeTruthy());
+
+    await fireEvent.press(getByText('Save Workout'));
+
+    await waitFor(() => expect(mockSyncToTemplateMutateAsync).toHaveBeenCalledWith({ source, exercises }));
+    // Ran with the session's real data, captured before store.reset() wiped it.
+    expect(useActiveWorkoutStore.getState().workoutLogId).toBeNull();
   });
 });

@@ -54,8 +54,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRouteParams = undefined;
   mockUseIntegrationConnections.mockReturnValue({ data: [], isLoading: false, refetch: mockRefetch });
-  // Premium by default — most of these tests exercise the OAuth mechanics,
-  // not the Premium gate, which gets its own tests below.
+  // Pro by default — most of these tests exercise the OAuth mechanics,
+  // not the Pro gate, which gets its own tests below.
   mockUseProfile.mockReturnValue({ data: { is_premium: true }, isLoading: false });
   jest.spyOn(Linking, 'canOpenURL').mockResolvedValue(true);
   jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never);
@@ -127,7 +127,7 @@ describe('IntegrationsScreen', () => {
     alertSpy.mockRestore();
   });
 
-  it('sends a free (non-Premium) user to the paywall instead of starting Whoop OAuth', async () => {
+  it('sends a free (non-Pro) user to the paywall instead of starting Whoop OAuth', async () => {
     mockUseProfile.mockReturnValue({ data: { is_premium: false }, isLoading: false });
 
     const { getByText } = await render(<IntegrationsScreen />);

@@ -12,7 +12,11 @@ type StatTileProps = {
   trend?: { direction: 'up' | 'down' | 'flat'; label: string };
 };
 
-export function StatTile({ label, value, trend }: StatTileProps) {
+/** The label/value/trend content shared by the Card-wrapped `StatTile` below
+ * and any caller that needs the same look composed into a layout of its own
+ * — e.g. several stats sharing one outer card as evenly-spaced columns
+ * instead of each getting its own bordered tile (see StatsRail). */
+export function StatTileBody({ label, value, trend }: StatTileProps) {
   const theme = useTheme();
   const trendColor =
     trend?.direction === 'up'
@@ -23,7 +27,7 @@ export function StatTile({ label, value, trend }: StatTileProps) {
   const trendIcon = trend?.direction === 'up' ? 'trendingUp' : trend?.direction === 'down' ? 'trendingDown' : 'minus';
 
   return (
-    <Card variant="subtle" style={{ gap: theme.spacing.xxs, padding: theme.spacing.sm }}>
+    <View style={{ gap: theme.spacing.xxs }}>
       <Text variant="label" color="secondary">
         {label.toUpperCase()}
       </Text>
@@ -36,6 +40,15 @@ export function StatTile({ label, value, trend }: StatTileProps) {
           </Text>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+export function StatTile({ label, value, trend }: StatTileProps) {
+  const theme = useTheme();
+  return (
+    <Card variant="subtle" style={{ padding: theme.spacing.sm }}>
+      <StatTileBody label={label} value={value} trend={trend} />
     </Card>
   );
 }

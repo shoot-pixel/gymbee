@@ -5,6 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Button, SelectableCard, TextField, StepProgress, KeyboardAvoider } from '../../components/core';
 import { useOnboardingStore } from '../../store/onboardingStore';
+import { useNumericInputText } from '../../hooks/useNumericInputText';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import type { Sex } from '../../types/database';
 
@@ -33,6 +34,10 @@ export function BodyProfileScreen({ navigation }: Props) {
   const theme = useTheme();
   const { sex, setSex, heightFeet, setHeightFeet, heightInches, setHeightInches, weightLb, setWeightLb } =
     useOnboardingStore();
+
+  const heightFeetField = useNumericInputText(heightFeet, setHeightFeet, { parse: toDigits });
+  const heightInchesField = useNumericInputText(heightInches, setHeightInches, { parse: toDigits });
+  const weightLbField = useNumericInputText(weightLb, setWeightLb, { parse: toDigits });
 
   const heightValid = heightFeet != null && heightFeet > 0 && heightInches != null && heightInches >= 0 && heightInches < 12;
   const canContinue = sex != null && heightValid && weightLb != null && weightLb > 0;
@@ -77,8 +82,8 @@ export function BodyProfileScreen({ navigation }: Props) {
                 <TextField
                   label="Feet"
                   keyboardType="number-pad"
-                  value={heightFeet != null ? String(heightFeet) : ''}
-                  onChangeText={value => setHeightFeet(toDigits(value))}
+                  value={heightFeetField.text}
+                  onChangeText={heightFeetField.onChangeText}
                   placeholder="5"
                 />
               </View>
@@ -86,8 +91,8 @@ export function BodyProfileScreen({ navigation }: Props) {
                 <TextField
                   label="Inches"
                   keyboardType="number-pad"
-                  value={heightInches != null ? String(heightInches) : ''}
-                  onChangeText={value => setHeightInches(toDigits(value))}
+                  value={heightInchesField.text}
+                  onChangeText={heightInchesField.onChangeText}
                   placeholder="10"
                 />
               </View>
@@ -97,8 +102,8 @@ export function BodyProfileScreen({ navigation }: Props) {
           <TextField
             label="Weight (lb)"
             keyboardType="number-pad"
-            value={weightLb != null ? String(weightLb) : ''}
-            onChangeText={value => setWeightLb(toDigits(value))}
+            value={weightLbField.text}
+            onChangeText={weightLbField.onChangeText}
             placeholder="165"
           />
 

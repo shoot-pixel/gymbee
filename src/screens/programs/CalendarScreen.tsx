@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View, Pressable } from 'react-native';
+import { Alert, RefreshControl, ScrollView, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -25,7 +25,9 @@ import { useActiveProgramTree, useHasEverGeneratedProgram } from '../../services
 import { useScheduledWorkouts } from '../../services/api/queries/scheduledWorkouts';
 import { useWorkoutLogsInRange } from '../../services/api/queries/workoutLogs';
 import { useWeeklySchedule, getWeeklyScheduleForDate } from '../../services/api/queries/weeklySchedule';
+import { useDayOverrides, useSetDayOverride } from '../../services/api/queries/dayOverrides';
 import { resolveDayPlan, getOneOffBaseline, type ResolvedDayPlan } from '../../utils/dayPlan';
+import { fetchWeeklyPlanSnapshot } from '../../services/api/queries/workoutShares';
 import { navigateToStartCardio } from '../../navigation/startWorkoutFlow';
 import { MUSCLE_GROUPS, type MuscleGroup } from '../../constants/muscleGroups';
 import { formatEnumLabel } from '../../utils/exerciseMetadata';
@@ -53,9 +55,23 @@ function planLineFor(resolved: ResolvedDayPlan): string {
       return 'Cardio Day';
     case 'programRest':
     case 'none':
+    case 'overrideRest':
       return 'Rest';
+    case 'missed':
+      return 'Missed';
   }
 }
+
+// Kinds that mean "this date actually had a workout planned" — the ones a
+// past-day tap should offer to reclassify as rest/missed, as opposed to an
+// already-empty rest day (nothing there to change).
+const PLAN_KINDS = new Set<ResolvedDayPlan['kind']>([
+  'scheduled',
+  'weeklyRecurring',
+  'weeklyCardio',
+  'programTraining',
+  'programCardio',
+]);
 
 type Segment = 'thisWeek' | 'library' | 'program';
 
@@ -87,6 +103,7 @@ export function CalendarScreen() {
 
   const [segment, setSegment] = useState<Segment>('thisWeek');
   useFocusEffect(useCallback(() => setSegment('thisWeek'), []));
+  const [sharingWeek, setSharingWeek] = useState(false);
 
   const today = new Date();
   const { data: scheduledWorkouts, isLoading: scheduledLoading, refetch: refetchScheduled } = useScheduledWorkouts(userId, {
@@ -103,6 +120,15 @@ export function CalendarScreen() {
     from: format(thisWeekStart, 'yyyy-MM-dd'),
     to: format(thisWeekDates[6], 'yyyy-MM-dd'),
   });
+  const { data: dayOverrides, refetch: refetchDayOverrides } = useDayOverrides(userId, {
+    from: format(thisWeekStart, 'yyyy-MM-dd'),
+    to: format(thisWeekDates[6], 'yyyy-MM-dd'),
+  });
+  const setDayOverride = useSetDayOverride();
+  // Set when a past, already-planned day is tapped — offers "Mark as Rest"
+  // or "Mark as Missed" instead of letting the athlete retroactively change
+  // or start the workout itself (see isPastDay below).
+  const [pastDayActionFor, setPastDayActionFor] = useState<number | null>(null);
 
   const upcomingScheduled = useMemo(
     () => (scheduledWorkouts ?? []).filter(sw => sw.scheduled_date > format(thisWeekDates[6], 'yyyy-MM-dd')),
@@ -121,11 +147,17 @@ export function CalendarScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refetchProgram(), refetchScheduled(), refetchWeeklySchedule(), refetchThisWeekLogs()]);
+      await Promise.all([
+        refetchProgram(),
+        refetchScheduled(),
+        refetchWeeklySchedule(),
+        refetchThisWeekLogs(),
+        refetchDayOverrides(),
+      ]);
     } finally {
       setRefreshing(false);
     }
-  }, [refetchProgram, refetchScheduled, refetchWeeklySchedule, refetchThisWeekLogs]);
+  }, [refetchProgram, refetchScheduled, refetchWeeklySchedule, refetchThisWeekLogs, refetchDayOverrides]);
 
   const toggleMuscleGroup = (group: MuscleGroup) => {
     setSelectedMuscleGroups(current =>
@@ -223,7 +255,7 @@ export function CalendarScreen() {
   );
 
   // The first AI program (however it's reached) is free; every one after
-  // that is a Premium "rebuild your program" action — see
+  // that is a Pro "rebuild your program" action — see
   // useHasEverGeneratedProgram's own comment for why a plain existence
   // check on `programs` is enough, no separate tracking column needed.
   const openGenerateProgramFlow = () => {
@@ -232,6 +264,19 @@ export function CalendarScreen() {
       return;
     }
     setGenerateProgramSheetOpen(true);
+  };
+
+  const onShareWeek = async () => {
+    if (sharingWeek) return;
+    setSharingWeek(true);
+    try {
+      const payload = await fetchWeeklyPlanSnapshot({ program, weeklySchedule, scheduledWorkouts, weekDates: thisWeekDates });
+      navigation.navigate('ShareWorkout', { shareType: 'weekly_plan', title: 'My Training Week', payload });
+    } catch (err) {
+      Alert.alert('Could not prepare this week to share', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setSharingWeek(false);
+    }
   };
 
   const onChangeSegment = (value: Segment) => {
@@ -252,7 +297,20 @@ export function CalendarScreen() {
       <Header
         title="Training"
         showBack={false}
-        right={<IconButton name="plus" onPress={() => setAddSheetOpen(true)} />}
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+            {segment === 'thisWeek' && !hasNothingSetUp ? (
+              <IconButton
+                name="share"
+                variant="ghost"
+                accessibilityLabel="Share my week"
+                onPress={onShareWeek}
+                disabled={sharingWeek}
+              />
+            ) : null}
+            <IconButton name="plus" onPress={() => setAddSheetOpen(true)} />
+          </View>
+        }
       />
       <View style={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
         <SegmentedControl
@@ -315,8 +373,20 @@ export function CalendarScreen() {
                   weeklySchedule,
                   scheduledWorkouts,
                   workoutLogs: thisWeekLogs,
+                  dayOverrides,
                 });
                 const oneOffBaseline = getOneOffBaseline(resolved, getWeeklyScheduleForDate(weeklySchedule, date));
+
+                // A day that's already passed can't have its workout
+                // started or changed anymore — the only thing left to do is
+                // reclassify it as rest or missed. Only offered when there
+                // was actually a plan for the date (PLAN_KINDS) or it's
+                // already been reclassified once (so the athlete can change
+                // their mind) — an ordinary empty rest day has nothing to
+                // reclassify.
+                const isPastDay = format(date, 'yyyy-MM-dd') < format(today, 'yyyy-MM-dd');
+                const showPastDayAction =
+                  isPastDay && (PLAN_KINDS.has(resolved.kind) || resolved.kind === 'overrideRest' || resolved.kind === 'missed');
 
                 const onPress =
                   resolved.kind === 'completed'
@@ -326,7 +396,9 @@ export function CalendarScreen() {
                           title: resolved.title,
                           dateLabel: format(date, 'EEEE, MMM d'),
                         })
-                    : resolved.kind === 'scheduled'
+                    : showPastDayAction
+                      ? () => setPastDayActionFor(dayOfWeek)
+                      : resolved.kind === 'scheduled'
                       ? () =>
                           navigation.navigate('ScheduledWorkoutDetail', {
                             scheduledWorkoutId: resolved.scheduledWorkout.id,
@@ -381,7 +453,16 @@ export function CalendarScreen() {
                     </View>
                   ) : resolved.kind === 'weeklyCardio' || resolved.kind === 'programCardio' ? (
                     <Icon name="flame" size="sm" color={theme.colors.accent.orange} />
-                  ) : resolved.kind === 'programRest' || resolved.kind === 'none' ? (
+                  ) : resolved.kind === 'missed' ? (
+                    <View
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: 7,
+                        backgroundColor: theme.colors.semantic.danger,
+                      }}
+                    />
+                  ) : resolved.kind === 'programRest' || resolved.kind === 'none' || resolved.kind === 'overrideRest' ? (
                     <Icon name="moon" size="sm" color={theme.colors.text.tertiary} />
                   ) : undefined;
 
@@ -420,6 +501,7 @@ export function CalendarScreen() {
                     }
                     trailing={trailing}
                     showChevron={
+                      showPastDayAction ||
                       resolved.kind === 'scheduled' ||
                       resolved.kind === 'weeklyRecurring' ||
                       resolved.kind === 'programTraining' ||
@@ -479,7 +561,7 @@ export function CalendarScreen() {
           <LoadingState fill={false} />
         ) : !program ? (
           <ListRow
-            title="Ask Coach to build you a custom program"
+            title="Ask Arnold to build you a custom program"
             icon="messageCircle"
             showChevron
             onPress={openGenerateProgramFlow}
@@ -518,6 +600,35 @@ export function CalendarScreen() {
               const dayOfWeek = restDayChoiceFor;
               setRestDayChoiceFor(null);
               if (dayOfWeek != null) navigation.navigate('AssignCardioDay', { initialDayOfWeek: dayOfWeek });
+            }}
+          />
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={pastDayActionFor != null}
+        onClose={() => setPastDayActionFor(null)}
+        title="This day has passed"
+      >
+        <View style={{ gap: theme.spacing.xs }}>
+          <ListRow
+            title="Mark as Rest"
+            icon="moon"
+            onPress={() => {
+              const dayOfWeek = pastDayActionFor;
+              setPastDayActionFor(null);
+              if (dayOfWeek == null || !userId) return;
+              setDayOverride.mutate({ userId, date: format(thisWeekDates[dayOfWeek], 'yyyy-MM-dd'), status: 'rest' });
+            }}
+          />
+          <ListRow
+            title="Mark as Missed"
+            icon="circleAlert"
+            onPress={() => {
+              const dayOfWeek = pastDayActionFor;
+              setPastDayActionFor(null);
+              if (dayOfWeek == null || !userId) return;
+              setDayOverride.mutate({ userId, date: format(thisWeekDates[dayOfWeek], 'yyyy-MM-dd'), status: 'missed' });
             }}
           />
         </View>

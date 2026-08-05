@@ -408,7 +408,7 @@ export function ActiveExerciseScreen() {
           .sort((a, b) => a.setNumber - b.setNumber)[0];
         const nextSetNumber = nextDraft ? nextDraft.setNumber : null;
 
-        // Next-set weight/rep recommendations are a SetSocial Premium
+        // Next-set weight/rep recommendations are a SetSocial Pro
         // feature (Adaptive Coaching Intelligence) — a free account just
         // logs sets manually with no auto-suggested banner, rather than
         // computing a recommendation it's not allowed to show.
@@ -543,7 +543,7 @@ export function ActiveExerciseScreen() {
                   color={theme.colors.accent.primary}
                 />
                 <Text variant="body" style={{ flex: 1, fontWeight: '700' }}>
-                  {recommendationDetail(pending.recommendation, unitPref) ?? 'Coaching suggestion'}
+                  {recommendationDetail(pending.recommendation, unitPref) ?? "Arnold's suggestion"}
                 </Text>
               </View>
               <Text variant="caption" color="secondary">

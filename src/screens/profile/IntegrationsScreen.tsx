@@ -22,7 +22,7 @@ type Route = RouteProp<ProfileStackParamList, 'Integrations'>;
 type Nav = NativeStackNavigationProp<ProfileStackParamList>;
 type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
-/** Only Whoop is gated — Spotify stays free (see the approved Premium plan:
+/** Only Whoop is gated — Spotify stays free (see the approved Pro plan:
  * Whoop sync is a power-user wearable feature, Spotify is a low-cost
  * convenience nobody's paying $6.99/mo for on its own). */
 function requiresPremium(provider: IntegrationProvider): boolean {
@@ -43,7 +43,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Whoop',
     source: 'Recovery, sleep & readiness',
     description:
-      'Connect your Whoop account to bring recovery, sleep, and readiness data into SetSocial — your coach uses it to adjust each day’s session.',
+      'Connect your Whoop account to bring recovery, sleep, and readiness data into SetSocial — Arnold uses it to adjust each day’s session.',
     icon: 'activity',
   },
   {
@@ -190,7 +190,7 @@ function IntegrationCard({
             </Text>
             {requiresPremium(def.provider) && !isPremium ? (
               <Text variant="caption" style={{ color: theme.colors.semantic.warning, fontWeight: '600' }}>
-                Part of SetSocial Premium
+                Part of SetSocial Pro
               </Text>
             ) : null}
             {isConnected ? (

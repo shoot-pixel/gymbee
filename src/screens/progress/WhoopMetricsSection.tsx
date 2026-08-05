@@ -44,7 +44,7 @@ export function WhoopMetricsSection({ userId }: { userId: string | null }) {
         <EmptyState
           icon="activity"
           title="Connect Whoop"
-          description="See your recovery, sleep & strain here, and let your coach factor them into today's plan."
+          description="See your recovery, sleep & strain here, and let Arnold factor them into today's plan."
           actionLabel="Connect Whoop"
           onAction={() => rootNavigation.navigate('Profile', { screen: 'Integrations' })}
         />

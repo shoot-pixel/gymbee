@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Header, Text, Card, ListRow, EmptyState, LoadingState, PremiumBadge } from '../../components/core';
+import { Header, Text, Card, ListRow, EmptyState, LoadingState, ProBadge } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useLeaderboard } from '../../services/api/queries/community';
 import { useLiveFriendWorkouts } from '../../services/api/queries/liveWorkouts';
@@ -74,7 +74,7 @@ export function LeaderboardScreen() {
                         }}
                       />
                     ) : null}
-                    {entry.is_premium ? <PremiumBadge /> : null}
+                    {entry.is_premium ? <ProBadge /> : null}
                   </View>
                 }
                 subtitle={`${entry.workoutsThisMonth} workout${entry.workoutsThisMonth === 1 ? '' : 's'} this month`}

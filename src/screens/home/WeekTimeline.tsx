@@ -22,6 +22,7 @@ import { getProgramDayForDate } from '../../services/api/queries/programs';
 const WEEKS_PAST = 13; // ~90 days back, matches the streak/log query window
 const WEEKS_FUTURE = 3;
 const DOW_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const EMPTY_OVERRIDES: Map<string, 'rest' | 'missed'> = new Map();
 
 type DayStatus = 'done' | 'cardio' | 'rest' | 'missed' | 'scheduled';
 
@@ -36,9 +37,16 @@ function statusFor(
   cardioDates: Set<string>,
   scheduledDates: Set<string>,
   weeklyScheduleDaysOfWeek: Set<number>,
+  overrides: Map<string, 'rest' | 'missed'>,
 ): DayStatus {
   const key = dateKey(date);
   if (completedDates.has(key)) return cardioDates.has(key) ? 'cardio' : 'done';
+
+  // An explicit rest/missed override (set from the Training tab, for a past
+  // date that had a plan) always wins over the derived plan below — that's
+  // the whole point of it overriding.
+  const override = overrides.get(key);
+  if (override) return override;
 
   const resolved = getProgramDayForDate(program, date);
   // A recurring weekly_schedule assignment for this weekday always counts as
@@ -67,6 +75,7 @@ type WeekTimelineProps = {
   cardioDates: Set<string>;
   scheduledDates: Set<string>;
   weeklyScheduleDaysOfWeek: Set<number>;
+  overrides?: Map<string, 'rest' | 'missed'>;
   prDates: Set<string>;
   streak: number;
   selectedDate: Date;
@@ -79,6 +88,7 @@ export function WeekTimeline({
   cardioDates,
   scheduledDates,
   weeklyScheduleDaysOfWeek,
+  overrides,
   prDates,
   streak,
   selectedDate,
@@ -179,7 +189,15 @@ export function WeekTimeline({
         {weekStarts.map((weekStart, weekIndex) => (
           <View key={weekIndex} style={{ width: containerWidth || undefined, flexDirection: 'row', gap: theme.spacing.xs }}>
             {Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map(date => {
-              const status = statusFor(date, program, completedDates, cardioDates, scheduledDates, weeklyScheduleDaysOfWeek);
+              const status = statusFor(
+                date,
+                program,
+                completedDates,
+                cardioDates,
+                scheduledDates,
+                weeklyScheduleDaysOfWeek,
+                overrides ?? EMPTY_OVERRIDES,
+              );
               const isToday = isDateToday(date);
               const isSelected = isSameDay(date, selectedDate);
               const hasPr = prDates.has(dateKey(date));
@@ -300,11 +318,7 @@ function StatusMark({ status }: { status: DayStatus }) {
     return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent.orange }} />;
   }
   if (status === 'missed') {
-    return (
-      <View
-        style={{ width: 6, height: 6, borderRadius: 3, borderWidth: 1.4, borderColor: theme.colors.text.tertiary }}
-      />
-    );
+    return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.semantic.danger }} />;
   }
   // scheduled
   return (

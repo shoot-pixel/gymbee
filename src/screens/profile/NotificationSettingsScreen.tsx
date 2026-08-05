@@ -6,6 +6,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Text, Card, Header, LoadingState, Icon, type IconName } from '../../components/core';
 import { useAuthStore } from '../../store/authStore';
 import { useProfile, useUpdateProfile } from '../../services/api/queries/profiles';
+import { featureFlags } from '../../config/featureFlags';
 import type { ProfileStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'NotificationSettings'>;
@@ -112,12 +113,25 @@ export function NotificationSettingsScreen(_props: Props) {
                 <CategoryRow
                   icon="zap"
                   tint={theme.colors.accent.purple}
-                  title="AI Coach"
+                  title="Arnold"
                   subtitle="New programs & insights"
                   value={profile?.push_ai_coach_enabled ?? true}
                   onChange={value => updateProfile.mutate({ push_ai_coach_enabled: value })}
                 />
               </View>
+              {featureFlags.nutritionTracking ? (
+                <View style={{ borderTopWidth: 1, borderTopColor: theme.colors.border.subtle }}>
+                  <CategoryRow
+                    icon="flame"
+                    tint={theme.colors.accent.orange}
+                    title="Meal reminders"
+                    subtitle="Nudges to log a meal you haven't logged yet"
+                    value={(profile?.push_ai_coach_enabled ?? true) && (profile?.push_meal_reminders_enabled ?? true)}
+                    onChange={value => updateProfile.mutate({ push_meal_reminders_enabled: value })}
+                    locked={!(profile?.push_ai_coach_enabled ?? true)}
+                  />
+                </View>
+              ) : null}
             </Card>
           </View>
         </ScrollView>

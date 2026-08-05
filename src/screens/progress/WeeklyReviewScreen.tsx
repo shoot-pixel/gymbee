@@ -26,7 +26,7 @@ export function WeeklyReviewScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
 
   // Safety net behind the dashboard's own gate on the entry point — this
-  // screen must never show real Weekly Review data to a non-Premium
+  // screen must never show real Weekly Review data to a non-Pro
   // account regardless of how it was reached.
   if (!profile?.is_premium) {
     return (
@@ -35,7 +35,7 @@ export function WeeklyReviewScreen() {
         <View style={{ padding: theme.spacing.lg }}>
           <LockedFeatureCard
             title="Weekly Review"
-            description="A weekly summary of your training, readiness, and consistency — part of SetSocial Premium."
+            description="A weekly summary of your training, readiness, and consistency — part of SetSocial Pro."
             onUpgrade={() => rootNavigation.navigate('Paywall', { trigger: 'analytics' })}
           />
         </View>

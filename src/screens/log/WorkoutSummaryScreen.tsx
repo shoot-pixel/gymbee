@@ -9,6 +9,7 @@ import { Text, Card, Button, TextField, SegmentedControl, StatTile, Icon, ListRo
 import { useActiveWorkoutStore, computeWorkoutStats, type ActiveExercise } from '../../store/activeWorkoutStore';
 import { useAuthStore } from '../../store/authStore';
 import { useCompleteWorkoutLog } from '../../services/api/queries/workoutLogs';
+import { useSyncCompletedWorkoutToTemplate } from '../../services/api/queries/templateProgression';
 import { useLoggedSets, computePrEvents } from '../../services/api/queries/progress';
 import { usePreviousPerformanceForExercises, useReadinessContext } from '../../services/api/queries/coaching';
 import { coachingEngine, type PostWorkoutSummaryResult } from '../../services/coaching';
@@ -57,6 +58,7 @@ export function WorkoutSummaryScreen() {
   const rootNavigation = useNavigation<RootNav>();
   const store = useActiveWorkoutStore();
   const completeWorkoutLog = useCompleteWorkoutLog();
+  const syncToTemplate = useSyncCompletedWorkoutToTemplate();
   const unitPref = useUnitPreference();
   const userId = useAuthStore(state => state.userId);
 
@@ -130,6 +132,11 @@ export function WorkoutSummaryScreen() {
       );
       return;
     }
+    // Carries this session's actual sets/reps/weight back into the
+    // recurring template it came from (e.g. an extra set added to Tuesday's
+    // arm day shows up again next Tuesday) — never rejects, so no try/catch
+    // needed here; must run before store.reset() clears the data it reads.
+    await syncToTemplate.mutateAsync({ source: store.source, exercises: store.exercises });
     store.reset();
     // rootNavigation is this screen's nearest navigator — LogStack, since
     // WorkoutSummary lives on it — so popToTop() here clears

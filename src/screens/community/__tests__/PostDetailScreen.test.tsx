@@ -163,6 +163,52 @@ describe('PostDetailScreen', () => {
     expect(getByText('Great progress!')).toBeTruthy();
   });
 
+  it("navigates to a commenter's profile when their avatar/name is tapped", async () => {
+    mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
+    mockUseComments.mockReturnValue({
+      data: [
+        {
+          id: 'comment-1',
+          post_id: 'post-1',
+          user_id: 'user-3',
+          body: 'Great progress!',
+          created_at: '2026-01-01T00:00:00.000Z',
+          displayName: 'Sam K.',
+          avatarUrl: null,
+        },
+      ],
+    });
+
+    const { getByLabelText } = await renderScreen();
+    await waitFor(() => expect(getByLabelText("View Sam K.'s profile")).toBeTruthy());
+    await fireEvent.press(getByLabelText("View Sam K.'s profile"));
+
+    expect(mockNavigate).toHaveBeenCalledWith('FriendProfile', { userId: 'user-3' });
+  });
+
+  it('does not navigate anywhere for tapping your own comment', async () => {
+    mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
+    mockUseComments.mockReturnValue({
+      data: [
+        {
+          id: 'comment-1',
+          post_id: 'post-1',
+          user_id: 'user-1',
+          body: 'My own comment',
+          created_at: '2026-01-01T00:00:00.000Z',
+          displayName: 'Me',
+          avatarUrl: null,
+        },
+      ],
+    });
+
+    const { getByLabelText } = await renderScreen();
+    await waitFor(() => expect(getByLabelText("View Me's profile")).toBeTruthy());
+    await fireEvent.press(getByLabelText("View Me's profile"));
+
+    expect(mockNavigate).not.toHaveBeenCalledWith('FriendProfile', expect.anything());
+  });
+
   it('posts a new comment and clears the composer', async () => {
     mockUsePost.mockReturnValue({ data: PROGRESS_POST, isLoading: false });
     mockCreateCommentMutateAsync.mockResolvedValue(undefined);

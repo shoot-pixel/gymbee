@@ -6,6 +6,8 @@ import type { Database } from '../../../types/database';
 export type Comment = Database['public']['Tables']['post_comments']['Row'] & {
   displayName: string | null;
   avatarUrl: string | null;
+  avatarFocalX: number;
+  avatarFocalY: number;
 };
 
 async function fetchComments(postId: string): Promise<Comment[]> {
@@ -24,6 +26,8 @@ async function fetchComments(postId: string): Promise<Comment[]> {
     ...row,
     displayName: profileById.get(row.user_id)?.display_name ?? null,
     avatarUrl: profileById.get(row.user_id)?.avatar_url ?? null,
+    avatarFocalX: profileById.get(row.user_id)?.avatar_focal_x ?? 0.5,
+    avatarFocalY: profileById.get(row.user_id)?.avatar_focal_y ?? 0.5,
   }));
 }
 

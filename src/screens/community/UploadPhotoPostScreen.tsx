@@ -97,7 +97,7 @@ function TagPeopleRow({
             return (
               <ListRow
                 key={friend.id}
-                leading={<Avatar uri={friend.avatar_url} size={40} />}
+                leading={<Avatar uri={friend.avatar_url} focalX={friend.avatar_focal_x} focalY={friend.avatar_focal_y} size={40} />}
                 title={friend.display_name ?? 'Athlete'}
                 subtitle={friend.handle ? `@${friend.handle}` : undefined}
                 trailing={

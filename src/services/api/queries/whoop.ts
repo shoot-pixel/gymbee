@@ -31,6 +31,34 @@ export function useWhoopMetrics(userId: string | null) {
   });
 }
 
+async function fetchWhoopMetricsRange(userId: string, from: string, to: string): Promise<WhoopMetricsRow[]> {
+  const { data, error } = await supabase
+    .from('whoop_metrics')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('cycle_date', from)
+    .lte('cycle_date', to)
+    .order('cycle_date', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * A trailing window of raw rows — the only reader of hrv_ms/resting_heart_rate
+ * anywhere in the app (see RecoveryStoryLine, Home). useWhoopMetrics above
+ * only ever reads the single latest row, which is all the Stats rings need;
+ * a trend line needs the history behind it. Same range-query shape as
+ * fetchReadinessCheckinsInRange (coaching.ts).
+ */
+export function useWhoopMetricsRange(userId: string | null, from: string, to: string) {
+  return useQuery({
+    queryKey: ['whoopMetrics', 'range', userId, from, to],
+    queryFn: () => fetchWhoopMetricsRange(userId as string, from, to),
+    enabled: userId != null,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
 /**
  * Triggers a live Whoop sync (token refresh + API fetch + upsert) and
  * invalidates useWhoopMetrics's cache on success so the cheap read picks up

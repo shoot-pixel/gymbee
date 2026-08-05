@@ -6,6 +6,7 @@ import {
   type ProgramDayWithExercises,
 } from '../services/api/queries/programs';
 import { getWeeklyScheduleForDate, type WeeklyScheduleEntry } from '../services/api/queries/weeklySchedule';
+import { getDayOverrideForDate, type DayOverride } from '../services/api/queries/dayOverrides';
 import type { WorkoutLogSummary } from '../services/api/queries/workoutLogs';
 import type { Database } from '../types/database';
 
@@ -22,6 +23,8 @@ export type ResolvedDayPlan =
   | { kind: 'programRest'; week: ProgramWeekWithDays; day: ProgramDayWithExercises }
   | { kind: 'programTraining'; week: ProgramWeekWithDays; day: ProgramDayWithExercises }
   | { kind: 'programCardio'; week: ProgramWeekWithDays; day: ProgramDayWithExercises }
+  | { kind: 'overrideRest' }
+  | { kind: 'missed' }
   | { kind: 'none' };
 
 function dateKey(date: Date): string {
@@ -42,8 +45,9 @@ export function resolveDayPlan(params: {
   weeklySchedule: WeeklyScheduleEntry[] | null | undefined;
   scheduledWorkouts: ScheduledWorkoutLike[] | null | undefined;
   workoutLogs: WorkoutLogSummary[] | null | undefined;
+  dayOverrides?: DayOverride[] | null;
 }): ResolvedDayPlan {
-  const { date, program, weeklySchedule, scheduledWorkouts, workoutLogs } = params;
+  const { date, program, weeklySchedule, scheduledWorkouts, workoutLogs, dayOverrides } = params;
   const key = dateKey(date);
 
   const scheduled = (scheduledWorkouts ?? []).find(sw => sw.scheduled_date === key) ?? null;
@@ -58,6 +62,14 @@ export function resolveDayPlan(params: {
     const title = scheduled?.name ?? weeklyEntry?.workout_templates?.name ?? programResolved?.day.title ?? null;
     return { kind: 'completed', title, workoutLogIds };
   }
+
+  // A completed log always wins over an override (logging the workout after
+  // marking the day rest/missed should just show as done) — everything else
+  // (the recurring weekly template, the active program's day, an ad-hoc
+  // schedule) is a *plan* for the date, and an override is the athlete
+  // overruling that plan for this one date specifically.
+  const override = getDayOverrideForDate(dayOverrides, date);
+  if (override) return override.status === 'missed' ? { kind: 'missed' } : { kind: 'overrideRest' };
 
   if (scheduled) return { kind: 'scheduled', scheduledWorkout: scheduled };
   if (weeklyEntry) {

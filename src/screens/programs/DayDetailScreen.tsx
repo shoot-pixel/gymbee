@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -10,6 +10,7 @@ import { Text, Card, Button, Header, IconButton, LoadingState } from '../../comp
 import { useAuthStore } from '../../store/authStore';
 import { useProgramDay, useRemoveProgramExercise, useSetDayType } from '../../services/api/queries/programs';
 import { useCreateTemplateFromProgramDay } from '../../services/api/queries/workoutTemplates';
+import { buildWorkoutSnapshot } from '../../services/api/queries/workoutShares';
 import { navigateToStartWorkout, navigateToChooseVariant, navigateToStartCardio } from '../../navigation/startWorkoutFlow';
 import { featureFlags } from '../../config/featureFlags';
 import type { ProgramsStackParamList, TodayStackParamList, RootStackParamList } from '../../navigation/types';
@@ -28,6 +29,7 @@ export function DayDetailScreen() {
   const createTemplateFromDay = useCreateTemplateFromProgramDay();
   const removeProgramExercise = useRemoveProgramExercise();
   const setDayType = useSetDayType();
+  const [sharing, setSharing] = useState(false);
   const isFutureDay = params.date != null && params.date > format(new Date(), 'yyyy-MM-dd');
 
   const onSaveToLibrary = async () => {
@@ -40,6 +42,30 @@ export function DayDetailScreen() {
       });
     } catch (err) {
       Alert.alert('Could not save workout', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const onShare = async () => {
+    if (!day || sharing) return;
+    setSharing(true);
+    try {
+      const payload = {
+        workout: await buildWorkoutSnapshot(
+          { name: day.title ?? 'Training Day', notes: null, estimatedDurationMinutes: null },
+          day.program_exercises,
+        ),
+      };
+      rootNavigation.navigate('MainTabs', {
+        screen: 'ProgramsTab',
+        params: {
+          screen: 'ShareWorkout',
+          params: { shareType: 'single_workout', title: day.title ?? 'Training Day', payload },
+        },
+      });
+    } catch (err) {
+      Alert.alert('Could not prepare this workout to share', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -80,7 +106,20 @@ export function DayDetailScreen() {
       <Header
         title={day?.title ?? 'Day'}
         right={
-          day ? <IconButton name="bookmark" variant="ghost" onPress={onSaveToLibrary} /> : undefined
+          day ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+              {day.day_type === 'training' ? (
+                <IconButton
+                  name="share"
+                  variant="ghost"
+                  accessibilityLabel="Share this workout"
+                  onPress={onShare}
+                  disabled={sharing}
+                />
+              ) : null}
+              <IconButton name="bookmark" variant="ghost" onPress={onSaveToLibrary} />
+            </View>
+          ) : undefined
         }
       />
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.md }}>

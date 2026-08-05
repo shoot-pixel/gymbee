@@ -355,6 +355,79 @@ async function resolveAiProgramReady(admin: Admin, payload: Record<string, unkno
   };
 }
 
+/** Called by proactive-coach-sweep (0059_proactive_coach.sql's cron sweep)
+ * once it's confirmed a Pro athlete's streak is at risk this evening.
+ * Reuses push_ai_coach_enabled — this is the same "AI coach" category as
+ * ai_program_ready, not a new preference. */
+async function resolveStreakRiskNudge(admin: Admin, payload: Record<string, unknown>): Promise<ResolvedNotification | null> {
+  const userId = payload.user_id as string;
+  const streak = payload.streak as number;
+  const { data: profile } = await admin.from('profiles').select('push_ai_coach_enabled').eq('id', userId).single();
+  if (!profile?.push_ai_coach_enabled) return null;
+
+  return {
+    recipientId: userId,
+    title: "Don't lose your streak!",
+    body: `Your ${streak}-day streak is still alive — log today's session before it resets.`,
+    screen: 'Today',
+    params: {},
+    priority: '10',
+    interruptionLevel: 'time-sensitive',
+  };
+}
+
+/** Called by proactive-coach-sweep once pr_pace_candidates() surfaces a
+ * confident forecast for a Pro athlete. Reuses push_ai_coach_enabled, same
+ * category as ai_program_ready/resolveStreakRiskNudge above. */
+async function resolvePrPaceForecastReady(admin: Admin, payload: Record<string, unknown>): Promise<ResolvedNotification | null> {
+  const userId = payload.user_id as string;
+  const exerciseId = payload.exercise_id as string;
+  const exerciseName = payload.exercise_name as string;
+  const targetDate = payload.target_date as string;
+  const { data: profile } = await admin.from('profiles').select('push_ai_coach_enabled').eq('id', userId).single();
+  if (!profile?.push_ai_coach_enabled) return null;
+
+  return {
+    recipientId: userId,
+    title: "You're on pace for a PR",
+    body: `${exerciseName} — a new best is projected around ${targetDate}.`,
+    screen: 'PRDetail',
+    params: { exerciseId },
+    priority: '5',
+    interruptionLevel: 'active',
+  };
+}
+
+/** Called by proactive-coach-sweep's meal-gap pass (0063_food_photo_logging.sql
+ * schema, runMealGapPass) once it's confirmed a Pro athlete has logged today
+ * but not dinner, past the local evening cutoff. Gated on both
+ * push_ai_coach_enabled (the parent category, same as every other proactive
+ * coach push above) AND push_meal_reminders_enabled (0064_meal_skip_and_
+ * reminder_settings.sql) — a sub-toggle so an athlete can keep Arnold's
+ * other pushes (new programs, PR pace, streak risk) while turning off just
+ * these. screen: 'Today' matches streak_risk_nudge's own target, since Home
+ * already carries both the Coach entry point and the Energy card this would
+ * resolve. */
+async function resolveMealGapNudge(admin: Admin, payload: Record<string, unknown>): Promise<ResolvedNotification | null> {
+  const userId = payload.user_id as string;
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('push_ai_coach_enabled, push_meal_reminders_enabled')
+    .eq('id', userId)
+    .single();
+  if (!profile?.push_ai_coach_enabled || !profile?.push_meal_reminders_enabled) return null;
+
+  return {
+    recipientId: userId,
+    title: 'Dinner not logged yet',
+    body: "Today's earlier meals are in — snap a photo of dinner before you turn in.",
+    screen: 'Today',
+    params: {},
+    priority: '5',
+    interruptionLevel: 'active',
+  };
+}
+
 const RESOLVERS: Record<string, (admin: Admin, payload: Record<string, unknown>) => Promise<ResolvedNotification | null>> = {
   message: resolveMessage,
   friend_request: resolveFriendRequest,
@@ -362,6 +435,9 @@ const RESOLVERS: Record<string, (admin: Admin, payload: Record<string, unknown>)
   post_like: resolvePostLike,
   post_comment: resolvePostComment,
   ai_program_ready: resolveAiProgramReady,
+  streak_risk_nudge: resolveStreakRiskNudge,
+  meal_gap_nudge: resolveMealGapNudge,
+  pr_pace_forecast_ready: resolvePrPaceForecastReady,
 };
 
 Deno.serve(async req => {

@@ -4,13 +4,44 @@ import { getWeeklyScheduleForDate, type WeeklyScheduleEntry } from '../services/
 
 const MAX_LOOKBACK_DAYS = 90;
 
+/** A rest day counts toward the streak the same as a completed day — the
+ * point of a streak is "are you keeping up with what you actually planned,"
+ * and a planned rest day is being kept up with by definition, not a gap in
+ * it. Only fires when there's real evidence of a plan (an active program or
+ * at least one weekly_schedule entry) — with neither, every day would
+ * trivially resolve "no plan for this day" and the streak would run all 90
+ * lookback days for a user who's never set anything up at all. */
+function isRestDay(
+  program: ProgramTree | null | undefined,
+  weeklySchedule: WeeklyScheduleEntry[] | null | undefined,
+  date: Date,
+): boolean {
+  const hasAnyPlan = program != null || (weeklySchedule != null && weeklySchedule.length > 0);
+  if (!hasAnyPlan) return false;
+  const resolved = getProgramDayForDate(program, date);
+  const hasWeeklyPlan = getWeeklyScheduleForDate(weeklySchedule, date) != null;
+  return (!resolved || resolved.day.is_rest_day) && !hasWeeklyPlan;
+}
+
+function countsForStreak(
+  program: ProgramTree | null | undefined,
+  completedDates: Set<string>,
+  weeklySchedule: WeeklyScheduleEntry[] | null | undefined,
+  date: Date,
+): boolean {
+  return completedDates.has(format(date, 'yyyy-MM-dd')) || isRestDay(program, weeklySchedule, date);
+}
+
 /**
- * Consecutive-day streak ending today, walking backward. Rest days pass
- * through without breaking or extending the streak; a training day that
- * wasn't completed ends it. Today itself only counts once it's completed —
- * an unfinished "today" doesn't retroactively break yesterday's streak, it
- * just isn't added yet. Capped at a 90-day lookback so a very long streak
- * still resolves in bounded time; callers can display "90+" at the cap.
+ * Consecutive-day streak ending today, walking backward. A rest day —
+ * either no active-program obligation for that date, or no recurring
+ * weekly_schedule assignment for that weekday — counts toward the streak
+ * exactly like a completed day; only a day that actually had a plan and
+ * wasn't completed breaks it. Today itself only counts once it's completed
+ * (or if today itself resolves as rest) — an unfinished "today" with a real
+ * plan pending doesn't retroactively break yesterday's streak, it just
+ * isn't added yet. Capped at a 90-day lookback so a very long streak still
+ * resolves in bounded time; callers can display "90+" at the cap.
  *
  * A day counts as non-rest if either the AI program resolves a training day
  * or a recurring weekly_schedule assignment exists for that weekday — most
@@ -23,21 +54,16 @@ export function computeStreak(
   today: Date = new Date(),
   weeklySchedule?: WeeklyScheduleEntry[] | null,
 ): number {
-  const todayKey = format(today, 'yyyy-MM-dd');
-  let streak = completedDates.has(todayKey) ? 1 : 0;
+  let streak = countsForStreak(program, completedDates, weeklySchedule, today) ? 1 : 0;
 
   const cursor = new Date(today);
   cursor.setDate(cursor.getDate() - 1);
 
   for (let i = 0; i < MAX_LOOKBACK_DAYS; i++) {
-    const key = format(cursor, 'yyyy-MM-dd');
-    if (completedDates.has(key)) {
+    if (countsForStreak(program, completedDates, weeklySchedule, cursor)) {
       streak++;
     } else {
-      const resolved = getProgramDayForDate(program, cursor);
-      const hasWeeklyPlan = getWeeklyScheduleForDate(weeklySchedule, cursor) != null;
-      const isRestDay = (!resolved || resolved.day.is_rest_day) && !hasWeeklyPlan;
-      if (!isRestDay) break;
+      break;
     }
     cursor.setDate(cursor.getDate() - 1);
   }

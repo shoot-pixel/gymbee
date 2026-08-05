@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../services/api/supabaseClient';
 import { useAuthStore } from '../store/authStore';
+import { configureRevenueCat, identifyRevenueCatUser, resetRevenueCatUser } from '../services/purchases/revenueCat';
 import type { Session } from '@supabase/supabase-js';
 
 async function resolveOnboardingCompleted(userId: string): Promise<boolean> {
@@ -33,14 +34,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const applySession = async (session: Session | null) => {
       if (!session?.user) {
         if (!cancelled) signOutLocal();
+        resetRevenueCatUser();
         return;
       }
+      identifyRevenueCatUser(session.user.id);
       const onboardingCompleted = await resolveOnboardingCompleted(session.user.id);
       if (!cancelled) {
         setSession({ userId: session.user.id, onboardingCompleted });
       }
     };
 
+    configureRevenueCat();
     supabase.auth.getSession().then(({ data }) => applySession(data.session));
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {

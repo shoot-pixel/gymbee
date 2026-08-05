@@ -5,8 +5,10 @@ import type {
   AdaptationChange,
   CoachingEngine,
   DetectTrainingPatternsParams,
+  EnergySummaryResult,
   ExerciseExplanationResult,
   ExerciseSubstitution,
+  GenerateEnergySummaryParams,
   GenerateExerciseExplanationParams,
   GeneratePostWorkoutSummaryParams,
   GenerateTodayFocusSummaryParams,
@@ -76,6 +78,8 @@ export const coachingEngine: CoachingEngine = {
     featureFlags.exerciseIntelligence
       ? localEngine.generateExerciseExplanation(params)
       : { purpose: '', progressionCriteria: '', regressionCriteria: '' },
+  generateEnergySummary: (params: GenerateEnergySummaryParams): EnergySummaryResult =>
+    featureFlags.nutritionTracking ? localEngine.generateEnergySummary(params) : { headline: '', body: '' },
 };
 
 export * from './types';

@@ -5,6 +5,7 @@ import type {
   ExerciseDifficulty,
   EquipmentType,
   MovementPattern,
+  NutritionGoal,
   SetRecommendationType,
   StressLevel,
   UnitPreference,
@@ -19,6 +20,7 @@ export type ReadinessFactorKey =
   | 'soreness'
   | 'stress'
   | 'pain'
+  | 'notes'
   | 'training_load'
   | 'time_since_last_workout'
   | 'missed_workouts'
@@ -77,6 +79,11 @@ export type ReadinessCheckinInput = {
   stress: number | null;
   hasPain: boolean;
   painNotes: string | null;
+  /** Raw free text from Home's Quick Check-in, kept separate from
+   * `painNotes` (which is specifically "where does it hurt") — this is
+   * whatever the athlete actually typed, quoted back in the today-focus
+   * summary so the AI-parsed check-in still surfaces in their own words. */
+  notes: string | null;
 } | null;
 
 export type WearableReadinessInput = {
@@ -499,6 +506,31 @@ export type GenerateExerciseExplanationParams = {
   exercise: ExerciseMetadata;
 };
 
+export type GenerateEnergySummaryParams = {
+  goal: NutritionGoal;
+  caloriesIn: number;
+  caloriesOut: number;
+  net: number;
+  /** caloriesOut + the goal's target net — see computeDailyEnergyTotals. */
+  targetIntake: number;
+  proteinG: number;
+  proteinTargetG: number;
+  /** How many food_log_entries exist today — 0 means nothing logged yet, a
+   * different opening line than "logged but off pace". */
+  entriesLoggedToday: number;
+  /** True once it's locally evening and no entry looks like a dinner/evening
+   * meal yet — the same "it's getting late" framing StreakRiskNudge uses for
+   * training, applied to the day's last expected meal instead. */
+  hasEveningMealGap: boolean;
+};
+
+export type EnergySummaryResult = {
+  /** Short label for the card, e.g. "On pace for your cut", "Nothing logged yet". */
+  headline: string;
+  /** The synthesized sentence or two. */
+  body: string;
+};
+
 /**
  * The UI depends on this interface, never on a specific engine implementation
  * or AI provider directly. A later phase (generateVoiceCue) extends this
@@ -518,4 +550,5 @@ export interface CoachingEngine {
   detectTrainingPatterns(params: DetectTrainingPatternsParams): TrainingPattern[];
   predictPersonalRecords(params: PredictPersonalRecordsParams): PrPrediction[];
   generateExerciseExplanation(params: GenerateExerciseExplanationParams): ExerciseExplanationResult;
+  generateEnergySummary(params: GenerateEnergySummaryParams): EnergySummaryResult;
 }

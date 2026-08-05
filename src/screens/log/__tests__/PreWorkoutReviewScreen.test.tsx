@@ -139,7 +139,7 @@ describe('PreWorkoutReviewScreen', () => {
     expect(getAllByText(/Readiness appears lower than usual today/).length).toBeGreaterThan(0);
   });
 
-  it('shows a Premium upsell instead of the adaptation, and starts the unmodified plan, for a free account', async () => {
+  it('shows a Pro upsell instead of the adaptation, and starts the unmodified plan, for a free account', async () => {
     mockUseProfile.mockReturnValue({ data: { is_premium: false } });
 
     const { getByText, queryByText } = await render(<PreWorkoutReviewScreen />);
@@ -154,7 +154,7 @@ describe('PreWorkoutReviewScreen', () => {
     expect(mockMutateAsyncSave).not.toHaveBeenCalled();
     expect(mockReplace).toHaveBeenCalledWith('ActiveWorkoutOverview', { programDayId: 'day-1', scheduledWorkoutId: undefined });
 
-    await fireEvent.press(getByText('Unlock with Premium'));
+    await fireEvent.press(getByText('Unlock with Pro'));
     expect(mockNavigate).toHaveBeenCalledWith('Paywall', { trigger: 'adaptive_coaching' });
   });
 

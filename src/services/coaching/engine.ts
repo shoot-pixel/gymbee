@@ -17,6 +17,8 @@ import type {
   ExercisePerformanceDelta,
   ExerciseRpeTrendInput,
   ExerciseSubstitution,
+  EnergySummaryResult,
+  GenerateEnergySummaryParams,
   GenerateExerciseExplanationParams,
   GeneratePostWorkoutSummaryParams,
   GenerateTodayFocusSummaryParams,
@@ -281,6 +283,22 @@ export class LocalCoachingEngine implements CoachingEngine {
       weight: clamp(painDeduction / 100, 0, 1),
       detail: checkin?.hasPain ? painRisk.recommendation : 'No pain reported today.',
       available: checkin != null,
+    });
+
+    // Free-text notes from Home's Quick Check-in. Purely informational —
+    // there's no reliable rule-based way to score arbitrary prose, so this
+    // never contributes to the deduction — it exists so the athlete's own
+    // words show up in the readiness breakdown and today-focus summary
+    // (see buildTodayFocusSummaryText), instead of being discarded once the
+    // AI parse step has pulled the structured fields out of it.
+    const rawNotes = checkin?.notes?.trim() || null;
+    factors.push({
+      key: 'notes',
+      label: 'Your notes',
+      impact: 'neutral',
+      weight: 0,
+      detail: rawNotes ? `"${rawNotes}"` : 'No notes added today.',
+      available: rawNotes != null,
     });
 
     // Wearable recovery (Whoop). Thresholds mirror Whoop's own red/yellow/
@@ -1418,6 +1436,13 @@ export class LocalCoachingEngine implements CoachingEngine {
       regressionCriteria: buildRegressionCriteria(exercise),
     };
   }
+
+  generateEnergySummary(params: GenerateEnergySummaryParams): EnergySummaryResult {
+    return {
+      headline: buildEnergySummaryHeadline(params),
+      body: buildEnergySummaryText(params),
+    };
+  }
 }
 
 const DIFFICULTY_ORDER: Record<string, number> = { beginner: 0, intermediate: 1, advanced: 2 };
@@ -1525,15 +1550,16 @@ function buildSuggestedNextAction(input: {
   return 'Right on track — keep progressing as planned.';
 }
 
-/** Picks one of several equivalent phrasings for an earned coaching remark,
- * deterministic on the fact it's reporting (exercise name, streak length,
- * etc.) rather than the clock — the same PR or streak count always reads
- * the same way (no flaky tests, no line changing on every re-render), but
- * different PRs/streaks land on different phrasing instead of the exact
- * same sentence firing every time it's earned. */
+/** Picks one of several equivalent phrasings for an earned coaching remark.
+ * Seeded on the fact it's reporting (exercise name, streak length, etc.)
+ * *plus* the calendar date, so re-rendering the same screen within a day
+ * never flickers to a different line, but the same PR or streak reads
+ * differently from one day to the next instead of settling into one fixed
+ * sentence forever. */
 function pickPhrasing(variants: string[], seed: string): string {
+  const daily = `${seed}-${new Date().toDateString()}`;
   let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < daily.length; i++) hash = (hash * 31 + daily.charCodeAt(i)) >>> 0;
   return variants[hash % variants.length];
 }
 
@@ -1545,27 +1571,100 @@ function pickPhrasing(variants: string[], seed: string): string {
  * current calendar week is necessarily in the immediately preceding one —
  * "last week" is always accurate here, not just a guess. */
 function recentPrPhrasings(exerciseName: string, daysAgo: number, sameCalendarWeek: boolean): string[] {
+  // Every variant keeps `${exerciseName} ${when}` contiguous (tests assert on
+  // that exact substring to check the "was this really today/this week/last
+  // week" logic without pinning a single wording).
   const when = daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : sameCalendarWeek ? 'this week' : 'last week';
   return [
-    `You set a PR on ${exerciseName} ${when} — nice momentum.`,
-    `That ${exerciseName} PR ${when} wasn't luck.`,
-    `New best on ${exerciseName} ${when} — you're building real momentum.`,
+    `You set a PR on ${exerciseName} ${when} — that strength is real now.`,
+    `${exerciseName} ${when}: a new PR, and it wasn't luck — you earned it.`,
+    `New best on ${exerciseName} ${when}. Keep stacking wins like that.`,
+    `${exerciseName} ${when} — a new high. Proof the work is paying off.`,
+    `You out-lifted your old self on ${exerciseName} ${when}. That's the whole game.`,
+    `PR alert: ${exerciseName} ${when}. Carry that energy into your next session.`,
+    `${exerciseName} ${when}: a new best. Your training's clearly working.`,
   ];
 }
 
 function streakPhrasings(streak: number): string[] {
+  // Every variant contains a literal "${streak}-day" or "${streak} days" so
+  // tests can assert on the number reported without pinning one wording.
   return [
     `You're on a ${streak}-day streak.`,
-    `${streak} days in a row — you've been showing up consistently, and it's paying off.`,
+    `${streak} days in a row — showing up is the hard part, and you've nailed it.`,
     `You've shown great consistency lately — ${streak} days and counting.`,
+    `${streak} days straight. That's not motivation, that's a habit.`,
+    `${streak}-day streak going. Future you is going to thank present you.`,
+    `${streak}-day streak and counting — keep the chain going.`,
+    `${streak} days deep. Consistency like this is what actually moves the needle.`,
   ];
 }
 
+// Every variant mentions "yesterday" — tests assert on that to confirm this
+// clause only fires when yesterday's session is the reason being cited.
 const RECOVERED_WELL_PHRASINGS = [
   "You recovered well after yesterday's workout.",
   "Your effort yesterday is setting you up for a strong session today.",
   "Nice bounce-back from yesterday's session.",
+  "Yesterday's work is banked — your body's ready to build on it today.",
+  "Recovery's on track after yesterday — good day to push a bit.",
+  "You bounced back well from yesterday — a sign your training load is dialed in.",
 ];
+
+const GOAL_LABEL: Record<GenerateEnergySummaryParams['goal'], string> = {
+  cut: 'cut',
+  bulk: 'bulk',
+  maintain: 'maintenance',
+};
+
+function buildEnergySummaryHeadline(input: GenerateEnergySummaryParams): string {
+  if (input.entriesLoggedToday === 0) return 'Nothing logged yet today';
+  const onPace = input.caloriesIn <= input.targetIntake;
+  return onPace ? `On pace for your ${GOAL_LABEL[input.goal]}` : `Off pace for your ${GOAL_LABEL[input.goal]}`;
+}
+
+/**
+ * Deterministic, rule-based — same posture as buildTodayFocusSummaryText
+ * just below and cardioCalories.ts's own energy math: no LLM call, just
+ * arithmetic already computed by computeDailyEnergyTotals composed into a
+ * sentence or two.
+ */
+function buildEnergySummaryText(input: GenerateEnergySummaryParams): string {
+  const parts: string[] = [];
+
+  if (input.entriesLoggedToday === 0) {
+    parts.push("Nothing logged yet today — snap a photo of your next meal and I'll take it from there.");
+    return parts.join(' ');
+  }
+
+  const netAbs = Math.abs(Math.round(input.net));
+  const netDirection = input.net < 0 ? 'deficit' : input.net > 0 ? 'surplus' : 'even';
+  parts.push(
+    netDirection === 'even'
+      ? "You're exactly even today."
+      : `You're at a ${netAbs} cal ${netDirection} today.`,
+  );
+
+  const remaining = input.targetIntake - input.caloriesIn;
+  if (remaining >= 0) {
+    parts.push(`That leaves about ${Math.round(remaining)} cal to stay on pace for your ${GOAL_LABEL[input.goal]}.`);
+  } else {
+    parts.push(`That's ${Math.abs(Math.round(remaining))} cal over pace for your ${GOAL_LABEL[input.goal]} — not a big deal on its own, just something to notice.`);
+  }
+
+  if (input.proteinTargetG > 0) {
+    const proteinRatio = input.proteinG / input.proteinTargetG;
+    if (proteinRatio < 0.5) {
+      parts.push(`Protein's light so far (${Math.round(input.proteinG)}g of ${input.proteinTargetG}g) — worth making up ground at your next meal.`);
+    }
+  }
+
+  if (input.hasEveningMealGap) {
+    parts.push("It's been a few hours since your last meal — worth logging dinner before you lose track of it.");
+  }
+
+  return parts.join(' ');
+}
 
 function buildTodayFocusSummaryText(input: GenerateTodayFocusSummaryParams): string {
   const {
@@ -1615,6 +1714,13 @@ function buildTodayFocusSummaryText(input: GenerateTodayFocusSummaryParams): str
     const wearableFactor = readiness.factors.find(f => f.key === 'wearable_recovery');
     if (wearableFactor?.available) {
       parts.push(wearableFactor.detail);
+    }
+    // Same reasoning as wearableFactor above — the athlete's own check-in
+    // words should always show up when present, not just when they happen
+    // to be one of the top negative factors.
+    const notesFactor = readiness.factors.find(f => f.key === 'notes');
+    if (notesFactor?.available) {
+      parts.push(`You noted: ${notesFactor.detail}.`);
     }
   }
 
@@ -1674,13 +1780,22 @@ function buildPostWorkoutSummaryText(input: {
           `That ${prName} PR wasn't luck.`,
           `You just set a PR on ${prName} — nice work.`,
           `New best on ${prName} today — that's real progress.`,
+          `${prName} just hit a new high. Well earned.`,
+          `You out-did yourself on ${prName} today.`,
         ],
         prName,
       ),
     );
   } else if (input.sessionPrEvents.length > 1) {
     parts.push(
-      `You set ${input.sessionPrEvents.length} new personal records today — you're building real momentum.`,
+      pickPhrasing(
+        [
+          `You set ${input.sessionPrEvents.length} new personal records today — that's a huge session.`,
+          `${input.sessionPrEvents.length} PRs in one day. That's exceptional work.`,
+          `${input.sessionPrEvents.length} new bests today — you clearly showed up ready.`,
+        ],
+        String(input.sessionPrEvents.length),
+      ),
     );
   }
 
@@ -1745,7 +1860,14 @@ function buildWeeklyRecommendation(input: {
     return 'Aim to hit more of your planned sessions next week.';
   }
   if (input.mostImprovedExercise) {
-    return `Keep building on the momentum with ${input.mostImprovedExercise.exerciseName}.`;
+    return pickPhrasing(
+      [
+        `Keep building on your progress with ${input.mostImprovedExercise.exerciseName}.`,
+        `${input.mostImprovedExercise.exerciseName} is trending up — keep pushing it.`,
+        `Whatever you're doing with ${input.mostImprovedExercise.exerciseName}, it's working. Stay on it.`,
+      ],
+      input.mostImprovedExercise.exerciseName,
+    );
   }
   return "Keep the same approach — it's working.";
 }
